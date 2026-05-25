@@ -1,0 +1,93 @@
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id                   String               @id @default(uuid())
+  email                String               @unique
+  name                 String
+  avatarUrl            String?
+  role                 String               @default("user") // admin, user
+  balance              Int                  @default(0)
+  createdAt            DateTime             @default(now())
+  orders               Order[]
+  transactions         BalanceTransaction[] @relation("UserTransactions")
+  operatedTransactions BalanceTransaction[] @relation("AdminTransactions")
+}
+
+model Restaurant {
+  id        String           @id @default(uuid())
+  name      String
+  category  String
+  phone     String?
+  note      String?
+  isActive  Boolean          @default(true)
+  menuItems MenuItem[]
+  schedules WeeklySchedule[]
+}
+
+model MenuItem {
+  id           String      @id @default(uuid())
+  restaurantId String
+  restaurant   Restaurant  @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  name         String
+  price        Int
+  category     String
+  isAvailable  Boolean     @default(true)
+  orderItems   OrderItem[]
+}
+
+model WeeklySchedule {
+  id            String     @id @default(uuid())
+  date          String // YYYY-MM-DD format
+  restaurantId  String
+  restaurant    Restaurant @relation(fields: [restaurantId], references: [id])
+  orderDeadline String     @default("09:40") // HH:MM format
+  isOpen        Boolean    @default(true)
+  deliveredAt   DateTime?
+  orders        Order[]
+
+  @@unique([date])
+}
+
+model Order {
+  id           String               @id @default(uuid())
+  userId       String
+  user         User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  scheduleId   String
+  schedule     WeeklySchedule       @relation(fields: [scheduleId], references: [id])
+  totalAmount  Int
+  note         String?
+  status       String               @default("pending") // pending, confirmed, delivered, cancelled
+  chargedAt    DateTime?
+  orderItems   OrderItem[]
+  transactions BalanceTransaction[]
+}
+
+model OrderItem {
+  id         String   @id @default(uuid())
+  orderId    String
+  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  menuItemId String
+  menuItem   MenuItem @relation(fields: [menuItemId], references: [id])
+  quantity   Int
+  unitPrice  Int
+}
+
+model BalanceTransaction {
+  id         String   @id @default(uuid())
+  userId     String
+  user       User     @relation("UserTransactions", fields: [userId], references: [id], onDelete: Cascade)
+  type       String // topup, charge
+  amount     Int // positive for topup, negative for charge
+  orderId    String?
+  order      Order?   @relation(fields: [orderId], references: [id])
+  operatedBy String?
+  operator   User?    @relation("AdminTransactions", fields: [operatedBy], references: [id])
+  createdAt  DateTime @default(now())
+}

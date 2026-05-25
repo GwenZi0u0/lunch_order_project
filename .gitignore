@@ -1,0 +1,16 @@
+node_modules/
+.next/
+.node-dist/
+
+.env
+.env*.local
+
+prisma/dev.db
+prisma/dev.db-journal
+
+*.log
+server.out.log
+server.err.log
+
+.DS_Store
+Thumbs.db

@@ -1,0 +1,1575 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>午餐訂購系統 — 專案規劃 (KAIZEN Style)</title>
+  
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+  
+  <!-- Tabler Icons -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
+  
+  <style>
+    /* Reset and Base Styles */
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html {
+      font-size: 62.5%; /* 1rem = 10px */
+      scroll-behavior: smooth;
+    }
+    body {
+      background-color: var(--color-bg-page);
+      color: var(--color-dark);
+      font-family: var(--font-sans);
+      font-size: 1.6rem;
+      line-height: 1.8;
+      letter-spacing: 0.05em;
+      -webkit-font-smoothing: antialiased;
+    }
+    
+    /* Variables matching https://kaizen.tsk-corp.jp/ */
+    :root {
+      --color-dark: #333333;
+      --color-orange: #EA5B3C;
+      --color-yellow: #FFDB27;
+      --color-bg-page: #F9F8F5;
+      --color-bg-card: #FFFFFF;
+      --color-border: #EAE8E4;
+      --color-border-dark: #D6D1CA;
+      --color-text-muted: #888888;
+      --border-radius-xl: 40px;
+      --border-radius-lg: 20px;
+      --border-radius-md: 10px;
+      --font-sans: 'Noto Sans TC', 'Noto Sans JP', 'Roboto', sans-serif;
+    }
+
+    /* Scrollbar */
+    body::-webkit-scrollbar {
+      width: 8px;
+    }
+    body::-webkit-scrollbar-thumb {
+      background: var(--color-border-dark);
+      border-radius: 10px;
+    }
+    body::-webkit-scrollbar-track {
+      background: var(--color-bg-page);
+    }
+
+    /* Layout Elements */
+    .c-header {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: rgba(249, 248, 245, 0.9);
+      backdrop-filter: blur(10px);
+      border-bottom: 1px solid var(--color-border);
+      padding: 1.5rem 3rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .c-logo {
+      font-weight: 700;
+      font-size: 2.2rem;
+      color: var(--color-dark);
+      display: flex;
+      align-items: center;
+      gap: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+    }
+    .c-logo span {
+      background: var(--color-orange);
+      color: #fff;
+      padding: 0.2rem 0.8rem;
+      border-radius: 4px;
+      font-size: 1.4rem;
+    }
+    .c-nav {
+      display: flex;
+      gap: 2.5rem;
+    }
+    .c-nav-link {
+      font-size: 1.4rem;
+      font-weight: 500;
+      color: var(--color-dark);
+      text-decoration: none;
+      transition: color 0.3s;
+      position: relative;
+    }
+    .c-nav-link:hover {
+      color: var(--color-orange);
+    }
+    .c-nav-link::after {
+      content: '';
+      position: absolute;
+      bottom: -6px;
+      left: 0;
+      width: 0;
+      height: 2px;
+      background: var(--color-orange);
+      transition: width 0.3s;
+    }
+    .c-nav-link:hover::after {
+      width: 100%;
+    }
+
+    /* Hero Section */
+    .c-hero {
+      padding: 8rem 3rem 6rem;
+      max-width: 1200px;
+      margin: 0 auto;
+      text-align: center;
+    }
+    .c-hero-badge {
+      display: inline-block;
+      border: 1px solid var(--color-orange);
+      color: var(--color-orange);
+      font-size: 1.2rem;
+      font-weight: 700;
+      padding: 0.4rem 1.6rem;
+      border-radius: 50px;
+      margin-bottom: 2rem;
+      letter-spacing: 0.15em;
+    }
+    .c-hero-title {
+      font-size: 4.8rem;
+      font-weight: 700;
+      color: var(--color-dark);
+      line-height: 1.3;
+      margin-bottom: 1.5rem;
+    }
+    .c-hero-subtitle {
+      font-size: 1.6rem;
+      color: var(--color-text-muted);
+      font-weight: 500;
+      letter-spacing: 0.2em;
+      margin-bottom: 3rem;
+    }
+    .c-hero-concept {
+      display: inline-block;
+      background: var(--color-yellow);
+      color: var(--color-dark);
+      font-size: 1.8rem;
+      font-weight: 700;
+      padding: 1rem 3rem;
+      border-radius: 12px;
+      box-shadow: 0 4px 10px rgba(255, 219, 39, 0.2);
+    }
+
+    /* Main Container */
+    .c-main {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 3rem 10rem;
+    }
+
+    /* Section Component */
+    .c-section {
+      margin-bottom: 8rem;
+    }
+    .c-section-title {
+      position: relative;
+      padding-top: 2.5rem;
+      font-size: 2.4rem;
+      font-weight: 700;
+      color: var(--color-dark);
+      margin-bottom: 3.5rem;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+    .c-section-title i {
+      color: var(--color-orange);
+      font-size: 2.6rem;
+    }
+    .c-section-title::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 2px;
+      background: var(--color-border);
+    }
+    .c-section-title::after {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 40px;
+      height: 2px;
+      background: var(--color-orange);
+    }
+
+    /* Section Background Wrapper (Kaizen White Box style) */
+    .c-box {
+      background: var(--color-bg-card);
+      border-radius: var(--border-radius-xl);
+      padding: 5rem;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.02);
+      border: 1px solid var(--color-border);
+    }
+
+    /* Grid Layouts */
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 3rem;
+    }
+    .grid-4 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+      gap: 2.5rem;
+    }
+
+    /* Role Cards */
+    .c-role-card {
+      background: var(--color-bg-page);
+      border: 1px solid var(--color-border);
+      border-radius: var(--border-radius-lg);
+      padding: 3.5rem 3rem;
+      transition: all 0.3s ease;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+    }
+    .c-role-card:hover {
+      transform: translateY(-5px);
+      box-shadow: 0 12px 25px rgba(0, 0, 0, 0.05);
+      border-color: var(--color-orange);
+    }
+    .c-role-icon-wrap {
+      width: 70px;
+      height: 70px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 3rem;
+      margin-bottom: 2rem;
+      transition: transform 0.3s;
+    }
+    .c-role-card:hover .c-role-icon-wrap {
+      transform: scale(1.1);
+    }
+    .c-role-card.admin .c-role-icon-wrap {
+      background: rgba(234, 91, 60, 0.1);
+      color: var(--color-orange);
+    }
+    .c-role-card.user .c-role-icon-wrap {
+      background: rgba(255, 219, 39, 0.15);
+      color: #d1b000;
+    }
+    .c-role-card.cron .c-role-icon-wrap {
+      background: rgba(51, 51, 51, 0.05);
+      color: var(--color-dark);
+    }
+    .c-role-name {
+      font-size: 1.8rem;
+      font-weight: 700;
+      color: var(--color-dark);
+      margin-bottom: 1.5rem;
+    }
+    .c-role-perms {
+      font-size: 1.4rem;
+      color: var(--color-text-muted);
+      line-height: 1.8;
+      text-align: left;
+      width: 100%;
+    }
+    .c-role-perms li {
+      margin-bottom: 0.8rem;
+      list-style: none;
+      display: flex;
+      align-items: flex-start;
+      gap: 0.8rem;
+    }
+    .c-role-perms li::before {
+      content: "•";
+      color: var(--color-orange);
+      font-weight: bold;
+    }
+
+    /* Tech Stack Cards */
+    .c-tech-card {
+      background: var(--color-bg-card);
+      border: 1px solid var(--color-border);
+      border-radius: var(--border-radius-lg);
+      padding: 3rem;
+      transition: all 0.3s ease;
+    }
+    .c-tech-card:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.03);
+      border-color: var(--color-orange);
+    }
+    .c-tech-label {
+      font-size: 1.2rem;
+      font-weight: 700;
+      color: var(--color-text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-bottom: 1.5rem;
+      border-bottom: 1px solid var(--color-border);
+      padding-bottom: 0.8rem;
+    }
+    .c-tech-badges {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.8rem;
+      margin-bottom: 1.5rem;
+    }
+    .c-tech-badge {
+      background: var(--color-bg-page);
+      border: 1px solid var(--color-border);
+      color: var(--color-dark);
+      font-size: 1.2rem;
+      font-weight: 500;
+      padding: 0.4rem 1rem;
+      border-radius: 4px;
+    }
+    .c-tech-badge.highlight {
+      background: rgba(234, 91, 60, 0.08);
+      color: var(--color-orange);
+      border-color: rgba(234, 91, 60, 0.2);
+    }
+    .c-tech-desc {
+      font-size: 1.3rem;
+      color: var(--color-text-muted);
+      line-height: 1.6;
+    }
+
+    /* Feature Module Cards */
+    .c-feat-card {
+      background: var(--color-bg-card);
+      border: 1px solid var(--color-border);
+      border-top: 4px solid var(--color-border-dark);
+      border-radius: var(--border-radius-md);
+      padding: 2.5rem;
+      transition: all 0.3s ease;
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+    }
+    .c-feat-card:hover {
+      transform: translateY(-5px);
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.05);
+      border-top-color: var(--color-orange);
+    }
+    .c-feat-label {
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: var(--color-orange);
+      text-transform: uppercase;
+      margin-bottom: 1rem;
+    }
+    .c-feat-title {
+      font-size: 1.6rem;
+      font-weight: 700;
+      color: var(--color-dark);
+      margin-bottom: 1.2rem;
+    }
+    .c-feat-desc {
+      font-size: 1.3rem;
+      color: var(--color-text-muted);
+      line-height: 1.6;
+      flex-grow: 1;
+    }
+
+    /* Wallet Section Cards */
+    .c-wallet-card {
+      background: var(--color-bg-card);
+      border: 1px solid var(--color-border);
+      border-radius: var(--border-radius-lg);
+      padding: 3rem;
+      text-align: center;
+      transition: all 0.3s ease;
+    }
+    .c-wallet-card:hover {
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.03);
+    }
+    .c-wallet-card.positive {
+      border-left: 5px solid #2e7d32;
+    }
+    .c-wallet-card.neutral {
+      border-left: 5px solid var(--color-dark);
+    }
+    .c-wallet-card.negative {
+      border-left: 5px solid #d32f2f;
+      background: rgba(211, 47, 47, 0.01);
+    }
+    .c-wallet-label {
+      font-size: 1.2rem;
+      font-weight: 700;
+      color: var(--color-text-muted);
+      text-transform: uppercase;
+      margin-bottom: 1.5rem;
+    }
+    .c-wallet-value {
+      font-size: 2.8rem;
+      font-weight: 700;
+      margin-bottom: 1.5rem;
+    }
+    .c-wallet-card.positive .c-wallet-value {
+      color: #2e7d32;
+    }
+    .c-wallet-card.neutral .c-wallet-value {
+      color: var(--color-dark);
+    }
+    .c-wallet-card.negative .c-wallet-value {
+      color: #d32f2f;
+    }
+    .c-wallet-desc {
+      font-size: 1.3rem;
+      color: var(--color-text-muted);
+      line-height: 1.5;
+    }
+    .c-wallet-warning {
+      color: #d32f2f;
+      font-weight: 700;
+      font-size: 1.2rem;
+      margin-top: 0.8rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+    }
+
+    /* Flowchart Component (Kaizen Style Flow) */
+    .c-flow-container {
+      display: flex;
+      flex-direction: column;
+      gap: 3rem;
+    }
+    .c-flow-row {
+      display: flex;
+      align-items: center;
+      gap: 1.5rem;
+      flex-wrap: wrap;
+    }
+    .c-flow-step {
+      background: var(--color-bg-page);
+      border: 1px solid var(--color-border);
+      border-radius: var(--border-radius-lg);
+      padding: 2rem 2.5rem;
+      min-width: 180px;
+      box-sizing: border-box;
+      transition: all 0.3s;
+      position: relative;
+    }
+    .c-flow-step:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 5px 15px rgba(0, 0, 0, 0.03);
+      border-color: var(--color-orange);
+    }
+    .c-flow-step.highlight {
+      background: rgba(234, 91, 60, 0.05);
+      border-color: var(--color-orange);
+    }
+    .c-flow-step.accent {
+      background: rgba(255, 219, 39, 0.08);
+      border-color: rgba(255, 219, 39, 0.6);
+    }
+    .c-flow-step .step-tag {
+      font-size: 1rem;
+      font-weight: 700;
+      color: var(--color-orange);
+      text-transform: uppercase;
+      margin-bottom: 0.6rem;
+    }
+    .c-flow-step .step-title {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: var(--color-dark);
+      margin-bottom: 0.6rem;
+      display: flex;
+      align-items: center;
+      gap: 0.8rem;
+    }
+    .c-flow-step .step-desc {
+      font-size: 1.2rem;
+      color: var(--color-text-muted);
+      line-height: 1.5;
+    }
+    .c-flow-arrow {
+      color: var(--color-border-dark);
+      font-size: 2rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .c-flow-divider {
+      display: flex;
+      align-items: center;
+      gap: 1.5rem;
+      margin: 1rem 0;
+    }
+    .c-flow-divider .line {
+      flex: 1;
+      height: 1px;
+      background: var(--color-border);
+    }
+    .c-flow-divider .text {
+      font-size: 1.3rem;
+      color: var(--color-orange);
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 0.8rem;
+    }
+    
+    .c-flow-group {
+      border: 2px dashed var(--color-border-dark);
+      border-radius: var(--border-radius-xl);
+      padding: 4rem 3.5rem;
+      position: relative;
+    }
+    .c-flow-group-label {
+      position: absolute;
+      top: -14px;
+      left: 3rem;
+      background: var(--color-bg-card);
+      padding: 0 1.5rem;
+      font-size: 1.2rem;
+      font-weight: 700;
+      color: var(--color-text-muted);
+      letter-spacing: 0.1em;
+    }
+    .c-flow-branch {
+      display: flex;
+      flex-direction: column;
+      margin-left: 200px;
+      margin-top: 2rem;
+      max-width: 420px;
+      gap: 1rem;
+    }
+    .c-flow-branch-connector {
+      font-size: 1.3rem;
+      font-weight: 700;
+      color: var(--color-text-muted);
+      padding-left: 1.5rem;
+      margin-left: 3rem;
+      height: 20px;
+      display: flex;
+      align-items: center;
+      border-left: 2px dashed var(--color-border);
+    }
+
+    /* Database Table Layout */
+    .c-db-container {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 4rem;
+    }
+    .c-db-card {
+      background: var(--color-bg-page);
+      border: 1px solid var(--color-border);
+      border-radius: var(--border-radius-lg);
+      overflow: hidden;
+    }
+    .c-db-header {
+      background: var(--color-border);
+      padding: 1.8rem 2.5rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      cursor: pointer;
+      transition: background 0.3s;
+    }
+    .c-db-header:hover {
+      background: var(--color-border-dark);
+    }
+    .c-db-title {
+      font-size: 1.6rem;
+      font-weight: 700;
+      color: var(--color-dark);
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+    .c-db-title i {
+      color: var(--color-orange);
+    }
+    .c-db-info {
+      font-size: 1.2rem;
+      color: var(--color-text-muted);
+      font-family: monospace;
+    }
+    .c-db-fields {
+      display: flex;
+      flex-direction: column;
+      border-top: 1px solid var(--color-border);
+      transition: max-height 0.3s ease-out;
+      overflow: hidden;
+    }
+    .c-db-field-row {
+      display: grid;
+      grid-template-columns: 1.5fr 1fr 2.5fr;
+      padding: 1.2rem 2.5rem;
+      font-size: 1.4rem;
+      border-bottom: 1px solid var(--color-border);
+      align-items: center;
+    }
+    .c-db-field-row:last-child {
+      border-bottom: none;
+    }
+    .c-db-field-row:hover {
+      background: rgba(255, 255, 255, 0.5);
+    }
+    .c-db-field-name {
+      font-family: 'Roboto', monospace;
+      font-weight: 700;
+      color: var(--color-dark);
+    }
+    .c-db-field-type {
+      font-family: 'Roboto', monospace;
+      font-weight: 500;
+      color: var(--color-orange);
+      font-size: 1.2rem;
+    }
+    .c-db-field-desc {
+      color: var(--color-text-muted);
+      font-size: 1.3rem;
+    }
+
+    /* OCR Flow Diagram */
+    .c-ocr-timeline {
+      display: flex;
+      justify-content: space-between;
+      position: relative;
+      margin: 4rem 0 2rem;
+    }
+    .c-ocr-timeline::before {
+      content: '';
+      position: absolute;
+      top: 25px;
+      left: 0;
+      right: 0;
+      height: 2px;
+      background: var(--color-border);
+      z-index: 1;
+    }
+    .c-ocr-step {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      width: 18%;
+      position: relative;
+      z-index: 2;
+    }
+    .c-ocr-icon {
+      width: 50px;
+      height: 50px;
+      border-radius: 50%;
+      background: var(--color-bg-card);
+      border: 2px solid var(--color-border-dark);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 2rem;
+      color: var(--color-dark);
+      margin-bottom: 1.5rem;
+      transition: all 0.3s;
+    }
+    .c-ocr-step:hover .c-ocr-icon {
+      border-color: var(--color-orange);
+      background: var(--color-orange);
+      color: #fff;
+      transform: scale(1.1);
+    }
+    .c-ocr-step-title {
+      font-size: 1.4rem;
+      font-weight: 700;
+      margin-bottom: 0.8rem;
+    }
+    .c-ocr-step-desc {
+      font-size: 1.1rem;
+      color: var(--color-text-muted);
+      line-height: 1.4;
+    }
+
+    /* Note Banner */
+    .c-note-banner {
+      background: #fffdf5;
+      border-left: 4px solid var(--color-yellow);
+      border-radius: 4px;
+      padding: 2rem 2.5rem;
+      font-size: 1.4rem;
+      color: var(--color-dark);
+      display: flex;
+      gap: 1.5rem;
+      align-items: flex-start;
+      margin-top: 3rem;
+    }
+    .c-note-banner i {
+      color: #d1b000;
+      font-size: 2rem;
+      margin-top: 0.2rem;
+    }
+
+    /* Footer */
+    .c-footer {
+      background: var(--color-dark);
+      color: #fff;
+      padding: 6rem 3rem;
+      text-align: center;
+    }
+    .c-footer-logo {
+      font-size: 2.2rem;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      margin-bottom: 1.5rem;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.8rem;
+    }
+    .c-footer-logo span {
+      background: var(--color-orange);
+      color: #fff;
+      padding: 0.2rem 0.8rem;
+      border-radius: 4px;
+      font-size: 1.4rem;
+    }
+    .c-footer-desc {
+      font-size: 1.4rem;
+      color: #aaa;
+      margin-bottom: 3rem;
+    }
+    .c-footer-copy {
+      font-size: 1.2rem;
+      color: #666;
+    }
+
+    /* Back to Top Button */
+    .btn-top {
+      position: fixed;
+      bottom: 3rem;
+      right: 3rem;
+      width: 50px;
+      height: 50px;
+      border-radius: 50%;
+      background: var(--color-orange);
+      color: #fff;
+      border: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 2rem;
+      cursor: pointer;
+      box-shadow: 0 4px 10px rgba(234, 91, 60, 0.3);
+      opacity: 0;
+      transition: all 0.3s;
+      z-index: 99;
+    }
+    .btn-top.show {
+      opacity: 1;
+    }
+    .btn-top:hover {
+      background: var(--color-dark);
+      transform: translateY(-3px);
+    }
+
+    /* Responsive Styles */
+    @media (max-width: 1024px) {
+      .c-flow-row {
+        flex-direction: column;
+        align-items: stretch;
+      }
+      .c-flow-arrow {
+        transform: rotate(90deg);
+        margin: 1rem auto;
+      }
+      .c-flow-branch {
+        margin-left: 0;
+        max-width: 100%;
+      }
+      .c-flow-branch-connector {
+        margin-left: auto;
+        margin-right: auto;
+        transform: rotate(90deg);
+      }
+      .c-ocr-timeline {
+        flex-direction: column;
+        gap: 3rem;
+        padding-left: 3rem;
+      }
+      .c-ocr-timeline::before {
+        left: 25px;
+        top: 0;
+        bottom: 0;
+        width: 2px;
+        height: auto;
+      }
+      .c-ocr-step {
+        width: 100%;
+        flex-direction: row;
+        text-align: left;
+        gap: 2rem;
+      }
+      .c-ocr-icon {
+        margin-bottom: 0;
+      }
+    }
+
+    @media (max-width: 768px) {
+      .c-header {
+        flex-direction: column;
+        gap: 1.5rem;
+        padding: 1.5rem;
+      }
+      .c-nav {
+        gap: 1.5rem;
+        flex-wrap: wrap;
+        justify-content: center;
+      }
+      .c-hero-title {
+        font-size: 3.2rem;
+      }
+      .c-box {
+        padding: 3rem 2rem;
+      }
+      .c-db-field-row {
+        grid-template-columns: 1fr;
+        gap: 0.5rem;
+        padding: 1.5rem;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <header class="c-header">
+    <div class="c-logo">
+      Lunch Kaizen <span>改善</span>
+    </div>
+    <nav class="c-nav">
+      <a href="#roles" class="c-nav-link">使用角色</a>
+      <a href="#tech" class="c-nav-link">技術選型</a>
+      <a href="#features" class="c-nav-link">功能模組</a>
+      <a href="#flow" class="c-nav-link">每日流程</a>
+      <a href="#db" class="c-nav-link">資料結構</a>
+      <a href="#ocr" class="c-nav-link">OCR 辨識</a>
+    </nav>
+  </header>
+
+  <!-- Hero Section -->
+  <section class="c-hero">
+    <span class="c-hero-badge">LUNCH ORDER SYSTEM</span>
+    <h1 class="c-hero-title">午餐訂購系統 ─ 專案規劃</h1>
+    <p class="c-hero-subtitle">SYSTEM BLUEPRINT & DEVELOPMENT PLANNING</p>
+    <div class="c-hero-concept">現場をもっと自由に、面白く ─ 讓訂餐更自由、更便利、更有趣！</div>
+  </section>
+
+  <!-- Main Content -->
+  <main class="c-main">
+
+    <!-- 使用角色 Section -->
+    <section class="c-section" id="roles">
+      <h2 class="c-section-title">
+        <i class="ti ti-users"></i> 使用角色與權限分工
+      </h2>
+      <div class="c-box">
+        <div class="grid-3">
+          <!-- Admin -->
+          <div class="c-role-card admin">
+            <div class="c-role-icon-wrap">
+              <i class="ti ti-shield-check"></i>
+            </div>
+            <h3 class="c-role-name">管理者 Admin</h3>
+            <ul class="c-role-perms">
+              <li>設定每週菜單與餐廳</li>
+              <li>圖片掃描建立餐點 (AI OCR)</li>
+              <li>手動進行儲值金加值</li>
+              <li>檢視所有訂單與帳務明細</li>
+              <li>截止時間管理與訂單控制</li>
+            </ul>
+          </div>
+          <!-- User -->
+          <div class="c-role-card user">
+            <div class="c-role-icon-wrap">
+              <i class="ti ti-user"></i>
+            </div>
+            <h3 class="c-role-name">訂購者 User</h3>
+            <ul class="c-role-perms">
+              <li>使用 Google 帳號快速登入</li>
+              <li>瀏覽當週與預先開放之菜單</li>
+              <li>開放後至每日 09:40 前可訂餐/退單</li>
+              <li>即時查看儲值金餘額</li>
+              <li>瀏覽個人歷史訂單與扣款紀錄</li>
+            </ul>
+          </div>
+          <!-- Cron -->
+          <div class="c-role-card cron">
+            <div class="c-role-icon-wrap">
+              <i class="ti ti-tool"></i>
+            </div>
+            <h3 class="c-role-name">系統排程 Cron</h3>
+            <ul class="c-role-perms">
+              <li>每日 09:40 自動截止當日訂單</li>
+              <li>餐點確認送達後觸發自動扣款</li>
+              <li>每週五定時發送下週菜單設定提醒</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 技術選型 Section -->
+    <section class="c-section" id="tech">
+      <h2 class="c-section-title">
+        <i class="ti ti-stack-2"></i> 技術選型與架構規劃
+      </h2>
+      <div class="c-box">
+        <div class="grid-4">
+          <!-- Frontend -->
+          <div class="c-tech-card">
+            <h3 class="c-tech-label">前端 Frontend</h3>
+            <div class="c-tech-badges">
+              <span class="c-tech-badge highlight">Next.js 14</span>
+              <span class="c-tech-badge">React</span>
+              <span class="c-tech-badge">Tailwind CSS</span>
+              <span class="c-tech-badge">shadcn/ui</span>
+            </div>
+            <p class="c-tech-desc">使用 App Router、React Server Components (RSC) 以及完全響應式設計，確保極致的使用體驗。</p>
+          </div>
+          <!-- Backend -->
+          <div class="c-tech-card">
+            <h3 class="c-tech-label">後端 Backend</h3>
+            <div class="c-tech-badges">
+              <span class="c-tech-badge highlight">API Routes</span>
+              <span class="c-tech-badge">Prisma ORM</span>
+              <span class="c-tech-badge">node-cron</span>
+            </div>
+            <p class="c-tech-desc">基於 Next.js Serverless Function 開發 API；Prisma 做為 ORM 模型，並利用 node-cron 進行定時任務。</p>
+          </div>
+          <!-- Database -->
+          <div class="c-tech-card">
+            <h3 class="c-tech-label">資料庫 Database</h3>
+            <div class="c-tech-badges">
+              <span class="c-tech-badge highlight">PostgreSQL</span>
+              <span class="c-tech-badge">Supabase</span>
+            </div>
+            <p class="c-tech-desc">採用 Supabase 託管的雲端 PostgreSQL 資料庫，支援 Row Level Security (RLS) 保護資料隱私。</p>
+          </div>
+          <!-- Services -->
+          <div class="c-tech-card">
+            <h3 class="c-tech-label">第三方服務 Services</h3>
+            <div class="c-tech-badges">
+              <span class="c-tech-badge highlight">Google OAuth</span>
+              <span class="c-tech-badge">Vision API</span>
+              <span class="c-tech-badge">Vercel</span>
+            </div>
+            <p class="c-tech-desc">串接 Google 登入認證，Vision API 用於菜單圖片文字辨識，全站部署於 Vercel 雲端平台。</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 功能規劃 Section -->
+    <section class="c-section" id="features">
+      <h2 class="c-section-title">
+        <i class="ti ti-list-check"></i> 預計開發功能模組
+      </h2>
+      <div class="c-box">
+        <div class="grid-3" style="gap: 2.5rem;">
+          <!-- 認證 -->
+          <div class="c-feat-card">
+            <span class="c-feat-label">Auth Module</span>
+            <h3 class="c-feat-title">認證與授權</h3>
+            <p class="c-feat-desc">串接 Google OAuth 進行單一登入，依據資料庫設定動態判定角色屬性（管理者 / 訂購者），提供安全的 Session 管理。</p>
+          </div>
+          <!-- 餐廳 -->
+          <div class="c-feat-card">
+            <span class="c-feat-label">Restaurant</span>
+            <h3 class="c-feat-title">餐廳與菜單管理</h3>
+            <p class="c-feat-desc">管理者上傳實體菜單圖片，後台整合 Google Vision API OCR 辨識餐廳名稱、分類、品項與價格，由人工確認後一鍵儲存。</p>
+          </div>
+          <!-- 排程 -->
+          <div class="c-feat-card">
+            <span class="c-feat-label">Schedule</span>
+            <h3 class="c-feat-title">週菜單排程管理</h3>
+            <p class="c-feat-desc">每週五設定下週五天餐廳；設定完成後立即開放下週整週訂購，支援後台預排及拖曳調整順序。</p>
+          </div>
+          <!-- 訂餐 -->
+          <div class="c-feat-card">
+            <span class="c-feat-label">Order</span>
+            <h3 class="c-feat-title">每日與預先訂購</h3>
+            <p class="c-feat-desc">訂購者可提前瀏覽下週已設定之菜單並預先點餐；系統於每日 09:40 自動截止當日訂單，並發送訂單統計通知。</p>
+          </div>
+          <!-- 帳務 -->
+          <div class="c-feat-card">
+            <span class="c-feat-label">Billing</span>
+            <h3 class="c-feat-title">儲值金與異動系統</h3>
+            <p class="c-feat-desc">提供個人專屬儲值金帳戶。管理者可手動執行加值，當餐點確認送達後系統自動扣款，並顯示對應明細。</p>
+          </div>
+          <!-- 後台 -->
+          <div class="c-feat-card">
+            <span class="c-feat-label">Admin Console</span>
+            <h3 class="c-feat-title">訂單統計與整理</h3>
+            <p class="c-feat-desc">後台彙整當日訂單（依品項進行合計），可一鍵匯出明細方便聯繫餐廳，並可控制「確認送達」以觸發扣款。</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 儲值金顯示邏輯 Section -->
+    <section class="c-section" id="wallet-logic">
+      <h2 class="c-section-title">
+        <i class="ti ti-wallet"></i> 儲值金顯示邏輯 (使用者首頁)
+      </h2>
+      <div class="c-box">
+        <div class="grid-3">
+          <!-- Positive -->
+          <div class="c-wallet-card positive">
+            <span class="c-wallet-label">餘額充足 ( ＞ 0 )</span>
+            <div class="c-wallet-value">＋ NT$ 250</div>
+            <p class="c-wallet-desc">正常狀態。餘額顯示為綠色字體，使用者可正常點餐。</p>
+          </div>
+          <!-- Neutral -->
+          <div class="c-wallet-card neutral">
+            <span class="c-wallet-label">餘額歸零 ( ＝ 0 )</span>
+            <div class="c-wallet-value">NT$ 0</div>
+            <p class="c-wallet-desc">正常狀態。餘額正常顯示，無特別提示與警告。</p>
+          </div>
+          <!-- Negative -->
+          <div class="c-wallet-card negative">
+            <span class="c-wallet-label">帳戶欠款 ( ＜ 0 )</span>
+            <div class="c-wallet-value">－ NT$ 80</div>
+            <p class="c-wallet-desc">欠帳狀態。餘額以紅色字體警示。</p>
+            <div class="c-wallet-warning">
+              <i class="ti ti-alert-circle"></i> 請記得向管理員繳款
+            </div>
+          </div>
+        </div>
+        <div class="c-note-banner">
+          <i class="ti ti-info-circle"></i>
+          <div>
+            <strong>付款機制說明：</strong>本系統採用後付儲值制。即使儲值金餘額為負值，訂購者仍可繼續進行訂餐，不會阻擋點餐流程。後續由管理者人工收款後，於系統內手動為該用戶加值。
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 每日訂單流程 Section -->
+    <section class="c-section" id="flow">
+      <h2 class="c-section-title">
+        <i class="ti ti-timeline"></i> 每日訂單流程設計
+      </h2>
+      <div class="c-box">
+        <div class="c-flow-container">
+          <!-- 週五設定流程 -->
+          <div class="c-flow-row">
+            <div class="c-flow-step highlight">
+              <div class="step-tag">Step 1</div>
+              <div class="step-title">
+                <i class="ti ti-calendar-event"></i> 週五
+              </div>
+              <div class="step-desc">管理者設定下週菜單</div>
+            </div>
+            <div class="c-flow-arrow"><i class="ti ti-arrow-right"></i></div>
+            <div class="c-flow-step accent" style="flex: 1; min-width: 280px;">
+              <div class="step-tag">Status</div>
+              <div class="step-title">
+                <i class="ti ti-discount-check"></i> 下週五天立即開放訂購
+              </div>
+              <div class="step-desc">訂購者可提前瀏覽下週所有菜單、進行預先點餐</div>
+            </div>
+          </div>
+
+          <div class="c-flow-divider">
+            <div class="line"></div>
+            <div class="text"><i class="ti ti-repeat"></i> 下週開始，每日重複以下點餐與收單流程</div>
+            <div class="line"></div>
+          </div>
+
+          <!-- 每日重複流程 -->
+          <div class="c-flow-group">
+            <div class="c-flow-group-label">每日重複 (週一 ～ 週五)</div>
+            
+            <div class="c-flow-row">
+              <div class="c-flow-step">
+                <div class="step-title">當天開始</div>
+                <div class="step-desc">當日供餐日開始</div>
+              </div>
+              <div class="c-flow-arrow"><i class="ti ti-arrow-right"></i></div>
+              <div class="c-flow-step highlight">
+                <div class="step-title">開放訂購</div>
+                <div class="step-desc">持續接受點餐或修改</div>
+              </div>
+              <div class="c-flow-arrow"><i class="ti ti-arrow-right"></i></div>
+              <div class="c-flow-step accent" style="border-color: var(--color-orange);">
+                <div class="step-title" style="color: var(--color-orange);">
+                  <i class="ti ti-alarm"></i> 09:40
+                </div>
+                <div class="step-desc"><strong>當天截止收單</strong></div>
+              </div>
+              <div class="c-flow-arrow"><i class="ti ti-arrow-right"></i></div>
+              <div class="c-flow-step">
+                <div class="step-title">管理者整理</div>
+                <div class="step-desc">彙整品項、聯繫餐廳下訂</div>
+              </div>
+              <div class="c-flow-arrow"><i class="ti ti-arrow-right"></i></div>
+              <div class="c-flow-step highlight">
+                <div class="step-title">餐點送達</div>
+                <div class="step-desc">管理員清點並確認收貨</div>
+              </div>
+              <div class="c-flow-arrow"><i class="ti ti-arrow-right"></i></div>
+              <div class="c-flow-step" style="background: rgba(124, 58, 237, 0.05); border-color: rgba(124, 58, 237, 0.3);">
+                <div class="step-title" style="color: #7c3aed;">自動扣款</div>
+                <div class="step-desc">系統自動扣除用戶餘額</div>
+              </div>
+            </div>
+
+            <!-- 額外說明分支 -->
+            <div class="c-flow-branch">
+              <div class="c-flow-branch-connector">⤓ 其餘天數訂單狀態</div>
+              <div class="c-flow-step">
+                <div class="step-title">
+                  <i class="ti ti-info-circle"></i> 其他天的訂購仍持續開放
+                </div>
+                <div class="step-desc">例如：週二 09:40 僅截止當天（週二）的訂單，週三～週五的預先訂單仍可繼續進行點餐或修改。</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 資料庫結構 Section -->
+    <section class="c-section" id="db">
+      <h2 class="c-section-title">
+        <i class="ti ti-database"></i> 資料庫實體關係結構 (主要資料表)
+      </h2>
+      <div class="c-box">
+        <div class="c-db-container">
+          
+          <!-- users -->
+          <div class="c-db-card">
+            <div class="c-db-header">
+              <div class="c-db-title"><i class="ti ti-user-circle"></i> users (使用者)</div>
+              <div class="c-db-info">Primary User Profile Data</div>
+              <i class="ti ti-chevron-down"></i>
+            </div>
+            <div class="c-db-fields">
+              <div class="c-db-field-row">
+                <span class="c-db-field-name">id</span>
+                <span class="c-db-field-type">UUID PK</span>
+                <span class="c-db-field-desc">使用者唯一主鍵</span>
+              </div>
+              <div class="c-db-field-row">
+                <span class="c-db-field-name">email</span>
+                <span class="c-db-field-type">VARCHAR</span>
+                <span class="c-db-field-desc">Google 帳號 Email (唯一索引)</span>
+              </div>
+              <div class="c-db-field-row">
+                <span class="c-db-field-name">name</span>
+                <span class="c-db-field-type">VARCHAR</span>
+                <span class="c-db-field-desc">顯示姓名</span>
+              </div>
+              <div class="c-db-field-row">
+                <span class="c-db-field-name">avatar_url</span>
+                <span class="c-db-field-type">TEXT</span>
+                <span class="c-db-field-desc">Google 帳號頭像圖片位址</span>
+              </div>
+              <div class="c-db-field-row">
+                <span class="c-db-field-name">role</span>
+                <span class="c-db-field-type">ENUM</span>
+                <span class="c-db-field-desc">角色權限：admin / user</span>
+              </div>
+              <div class="c-db-field-row">
+                <span class="c-db-field-name">balance</span>
+                <span class="c-db-field-type">INTEGER</span>
+                <span class="c-db-field-desc">儲值金餘額 (預設值為 0，允許負值)</span>
+              </div>
+              <div class="c-db-field-row">
+                <span class="c-db-field-name">created_at</span>
+                <span class="c-db-field-type">TIMESTAMP</span>
+                <span class="c-db-field-desc">帳號建立時間</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- restaurants -->
+          <div class="c-db-card">
+            <div class="c-db-header">
+              <div class="c-db-title"><i class="ti ti-building-store"></i> restaurants (餐廳)</div>
+              <div class="c-db-info">Restaurant Info & Contact</div>
+              <i class="ti ti-chevron-down"></i>
+            </div>
+            <div class="c-db-fields">
+              <div class="c-db-field-row">
+                <span class="c-db-field-name">id</span>
+                <span class="c-db-field-type">UUID PK</span>
+                <span class="c-db-field-desc">餐廳唯一主鍵</span>
+              </div>
+              <div class="c-db-field-row">
+                <span class="c-db-field-name">name</span>
+                <span class="c-db-field-type">VARCHAR</span>
+                <span class="c-db-field-desc">餐廳名稱</span>
+              </div>
+              <div class="c-db-field-row">
+                <span class="c-db-field-name">category</span>
+                <span class="c-db-field-type">VARCHAR</span>
+                <span class="c-db-field-desc">餐點類別 (便當、麵食、日式、飲料等)</span>
+              </div>
+              <div class="c-db-field-row">
+                <span class="c-db-field-name">phone</span>
+                <span class="c-db-field-type">VARCHAR</span>
+                <span class="c-db-field-desc">餐廳聯絡電話</span>
+              </div>
+              <div class="c-db-field-row">
+                <span class="c-db-field-name">note</span>
+                <span class="c-db-field-type">TEXT</span>
+                <span class="c-db-field-desc">備註事項 (如最低訂購外送金額限制)</span>
+              </div>
+              <div class="c-db-field-row">
+                <span class="c-db-field-name">is_active</span>
+                <span class="c-db-field-type">BOOLEAN</span>
+                <span class="c-db-field-desc">是否啟用此餐廳 (預設為 true)</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- menu_items -->
+          <div class="c-db-card">
+            <div class="c-db-header">
+              <div class="c-db-title"><i class="ti ti-clipboard-list"></i> menu_items (菜單品項)</div>
+              <div class="c-db-info">Restaurant Menu Details</div>
+              <i class="ti ti-chevron-down"></i>
+            </div>
+            <div class="c-db-fields">
+              <div class="c-db-field-row">
+                <span class="c-db-field-name">id</span>
+                <span class="c-db-field-type">UUID PK</span>
+                <span class="c-db-field-desc">品項唯一主鍵</span>
+              </div>
+              <div class="c-db-field-row">
+                <span class="c-db-field-name">restaurant_id</span>
+                <span class="c-db-field-type">UUID FK</span>
+                <span class="c-db-field-desc">關聯餐廳 (ForeignKey -> restaurants.id)</span>
+              </div>
+              <div class="c-db-field-row">
+                <span class="c-db-field-name">name</span>
+                <span class="c-db-field-type">VARCHAR</span>
+                <span class="c-db-field-desc">品項名稱</span>
+              </div>
+              <div class="c-db-field-row">
+                <span class="c-db-field-name">price</span>
+                <span class="c-db-field-type">INTEGER</span>
+                <span class="c-db-field-desc">單價金額</span>
+              </div>
+              <div class="c-db-field-row">
+                <span class="c-db-field-name">category</span>
+                <span class="c-db-field-type">VARCHAR</span>
+                <span class="c-db-field-desc">品項分類 (如：主食、配菜、飲料)</span>
+              </div>
+              <div class="c-db-field-row">
+                <span class="c-db-field-name">is_available</span>
+                <span class="c-db-field-type">BOOLEAN</span>
+                <span class="c-db-field-desc">當前是否正常供應中</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- weekly_schedules -->
+          <div class="c-db-card">
+            <div class="c-db-header">
+              <div class="c-db-title"><i class="ti ti-calendar-week"></i> weekly_schedules (週菜單排程)</div>
+              <div class="c-db-info">Daily Active Restaurant Schedule</div>
+              <i class="ti ti-chevron-down"></i>
+            </div>
+            <div class="c-db-fields">
+              <div class="c-db-field-row">
+                <span class="c-db-field-name">id</span>
+                <span class="c-db-field-type">UUID PK</span>
+                <span class="c-db-field-desc">供餐日程唯一主鍵</span>
+              </div>
+              <div class="c-db-field-row">
+                <span class="c-db-field-name">date</span>
+                <span class="c-db-field-type">DATE</span>
+                <span class="c-db-field-desc">供餐日期 (週一至週五)</span>
+              </div>
+              <div class="c-db-field-row">
+                <span class="c-db-field-name">restaurant_id</span>
+                <span class="c-db-field-type">UUID FK</span>
+                <span class="c-db-field-desc">當日指定之餐廳 (ForeignKey -> restaurants.id)</span>
+              </div>
+              <div class="c-db-field-row">
+                <span class="c-db-field-name">order_deadline</span>
+                <span class="c-db-field-type">TIME</span>
+                <span class="c-db-field-desc">訂單截止時間 (預設為 09:40:00)</span>
+              </div>
+              <div class="c-db-field-row">
+                <span class="c-db-field-name">is_open</span>
+                <span class="c-db-field-type">BOOLEAN</span>
+                <span class="c-db-field-desc">該日期當前是否開放訂購</span>
+              </div>
+              <div class="c-db-field-row">
+                <span class="c-db-field-name">delivered_at</span>
+                <span class="c-db-field-type">TIMESTAMP</span>
+                <span class="c-db-field-desc">餐點送達點收時間 (以此觸發扣款)</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- orders -->
+          <div class="c-db-card">
+            <div class="c-db-header">
+              <div class="c-db-title"><i class="ti ti-shopping-cart"></i> orders (訂單)</div>
+              <div class="c-db-info">User Master Orders</div>
+              <i class="ti ti-chevron-down"></i>
+            </div>
+            <div class="c-db-fields">
+              <div class="c-db-field-row">
+                <span class="c-db-field-name">id</span>
+                <span class="c-db-field-type">UUID PK</span>
+                <span class="c-db-field-desc">訂單唯一主鍵</span>
+              </div>
+              <div class="c-db-field-row">
+                <span class="c-db-field-name">user_id</span>
+                <span class="c-db-field-type">UUID FK</span>
+                <span class="c-db-field-desc">訂購者 (ForeignKey -> users.id)</span>
+              </div>
+              <div class="c-db-field-row">
+                <span class="c-db-field-name">schedule_id</span>
+                <span class="c-db-field-type">UUID FK</span>
+                <span class="c-db-field-desc">對應排程供餐日 (ForeignKey -> weekly_schedules.id)</span>
+              </div>
+              <div class="c-db-field-row">
+                <span class="c-db-field-name">total_amount</span>
+                <span class="c-db-field-type">INTEGER</span>
+                <span class="c-db-field-desc">訂單總金額</span>
+              </div>
+              <div class="c-db-field-row">
+                <span class="c-db-field-name">note</span>
+                <span class="c-db-field-type">TEXT</span>
+                <span class="c-db-field-desc">個人訂餐備註 (如：不辣、不要香菜等)</span>
+              </div>
+              <div class="c-db-field-row">
+                <span class="c-db-field-name">status</span>
+                <span class="c-db-field-type">ENUM</span>
+                <span class="c-db-field-desc">訂單狀態：pending / confirmed / delivered / cancelled</span>
+              </div>
+              <div class="c-db-field-row">
+                <span class="c-db-field-name">charged_at</span>
+                <span class="c-db-field-type">TIMESTAMP</span>
+                <span class="c-db-field-desc">實際扣款時間 (若為 null 表示尚未扣款)</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- order_items -->
+          <div class="c-db-card">
+            <div class="c-db-header">
+              <div class="c-db-title"><i class="ti ti-receipt"></i> order_items (訂單明細)</div>
+              <div class="c-db-info">Order Line Items</div>
+              <i class="ti ti-chevron-down"></i>
+            </div>
+            <div class="c-db-fields">
+              <div class="c-db-field-row">
+                <span class="c-db-field-name">id</span>
+                <span class="c-db-field-type">UUID PK</span>
+                <span class="c-db-field-desc">明細唯一主鍵</span>
+              </div>
+              <div class="c-db-field-row">
+                <span class="c-db-field-name">order_id</span>
+                <span class="c-db-field-type">UUID FK</span>
+                <span class="c-db-field-desc">關聯訂單 (ForeignKey -> orders.id)</span>
+              </div>
+              <div class="c-db-field-row">
+                <span class="c-db-field-name">menu_item_id</span>
+                <span class="c-db-field-type">UUID FK</span>
+                <span class="c-db-field-desc">關聯菜單品項 (ForeignKey -> menu_items.id)</span>
+              </div>
+              <div class="c-db-field-row">
+                <span class="c-db-field-name">quantity</span>
+                <span class="c-db-field-type">INTEGER</span>
+                <span class="c-db-field-desc">購買數量</span>
+              </div>
+              <div class="c-db-field-row">
+                <span class="c-db-field-name">unit_price</span>
+                <span class="c-db-field-type">INTEGER</span>
+                <span class="c-db-field-desc">下單當下價格快照 (防止後續調整價格影響帳務)</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- balance_transactions -->
+          <div class="c-db-card">
+            <div class="c-db-header">
+              <div class="c-db-title"><i class="ti ti-arrows-exchange"></i> balance_transactions (儲值金異動紀錄)</div>
+              <div class="c-db-info">Financial Audit Trail</div>
+              <i class="ti ti-chevron-down"></i>
+            </div>
+            <div class="c-db-fields">
+              <div class="c-db-field-row">
+                <span class="c-db-field-name">id</span>
+                <span class="c-db-field-type">UUID PK</span>
+                <span class="c-db-field-desc">交易紀錄唯一主鍵</span>
+              </div>
+              <div class="c-db-field-row">
+                <span class="c-db-field-name">user_id</span>
+                <span class="c-db-field-type">UUID FK</span>
+                <span class="c-db-field-desc">對象使用者 (ForeignKey -> users.id)</span>
+              </div>
+              <div class="c-db-field-row">
+                <span class="c-db-field-name">type</span>
+                <span class="c-db-field-type">ENUM</span>
+                <span class="c-db-field-desc">交易類型：topup (儲值) / charge (扣款)</span>
+              </div>
+              <div class="c-db-field-row">
+                <span class="c-db-field-name">amount</span>
+                <span class="c-db-field-type">INTEGER</span>
+                <span class="c-db-field-desc">異動金額 (正數為加值，負數為扣款)</span>
+              </div>
+              <div class="c-db-field-row">
+                <span class="c-db-field-name">order_id</span>
+                <span class="c-db-field-type">UUID FK</span>
+                <span class="c-db-field-desc">關聯訂單 (若為手動儲值則此欄為 null)</span>
+              </div>
+              <div class="c-db-field-row">
+                <span class="c-db-field-name">operated_by</span>
+                <span class="c-db-field-type">UUID FK</span>
+                <span class="c-db-field-desc">操作此交易紀錄者 (如為加值則為管理者 ID)</span>
+              </div>
+              <div class="c-db-field-row">
+                <span class="c-db-field-name">created_at</span>
+                <span class="c-db-field-type">TIMESTAMP</span>
+                <span class="c-db-field-desc">交易發生時間</span>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </section>
+
+    <!-- OCR 流程 Section -->
+    <section class="c-section" id="ocr">
+      <h2 class="c-section-title">
+        <i class="ti ti-scan"></i> 菜單圖片掃描辨識流程 (OCR)
+      </h2>
+      <div class="c-box">
+        <div class="c-ocr-timeline">
+          <div class="c-ocr-step">
+            <div class="c-ocr-icon"><i class="ti ti-cloud-upload"></i></div>
+            <h3 class="c-ocr-step-title">1. 上傳圖片</h3>
+            <p class="c-ocr-step-desc">管理者上傳菜單紙本拍照相片或電子檔</p>
+          </div>
+          <div class="c-ocr-step">
+            <div class="c-ocr-icon"><i class="ti ti-cpu"></i></div>
+            <h3 class="c-ocr-step-title">2. OCR 辨識</h3>
+            <p class="c-ocr-step-desc">呼叫 Google Vision API 解析圖中文字區塊</p>
+          </div>
+          <div class="c-ocr-step">
+            <div class="c-ocr-icon"><i class="ti ti-brain"></i></div>
+            <h3 class="c-ocr-step-title">3. AI 結構化</h3>
+            <p class="c-ocr-step-desc">大模型提取菜單名稱、價格、品項分類</p>
+          </div>
+          <div class="c-ocr-step">
+            <div class="c-ocr-icon"><i class="ti ti-edit"></i></div>
+            <h3 class="c-ocr-step-title">4. 管理者確認</h3>
+            <p class="c-ocr-step-desc">後台 UI 顯示結果供管理者編輯修正錯漏</p>
+          </div>
+          <div class="c-ocr-step">
+            <div class="c-ocr-icon"><i class="ti ti-database-enter"></i></div>
+            <h3 class="c-ocr-step-title">5. 儲存入庫</h3>
+            <p class="c-ocr-step-desc">確認無誤後，正式將餐廳與菜單存入資料表</p>
+          </div>
+        </div>
+        <div class="c-note-banner" style="border-left-color: var(--color-orange); background: rgba(234,91,60,0.01);">
+          <i class="ti ti-alert-triangle" style="color: var(--color-orange);"></i>
+          <div>
+            <strong>辨識校對機制：</strong>OCR 自動辨識結果必須經過人工最後校對審核，以避免因印刷模糊或字體特殊而導致價格、餐點品項寫入錯誤，確保帳務與出餐之準確性。後台將一併保存菜單原始圖片以供隨時核對。
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Footer -->
+  <footer class="c-footer">
+    <div class="c-footer-logo">
+      Lunch Kaizen <span>改善</span>
+    </div>
+    <p class="c-footer-desc">午餐訂購系統專案開發規劃 · KAIZEN 現場改善計畫</p>
+    <p class="c-footer-copy">© 2026 TSK Corp. KAIZEN project team. All Rights Reserved.</p>
+  </footer>
+
+  <!-- Scroll to Top -->
+  <button class="btn-top" title="回頂端"><i class="ti ti-arrow-narrow-up"></i></button>
+
+  <!-- Javascript -->
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      // Collapsible Database Schema Card Headers
+      const dbHeaders = document.querySelectorAll('.c-db-header');
+      dbHeaders.forEach(header => {
+        const fields = header.nextElementSibling;
+        const icon = header.querySelector('.ti-chevron-down, .ti-chevron-right');
+        
+        // Initial setup - open all by default and set height
+        fields.style.maxHeight = fields.scrollHeight + 'px';
+        
+        header.addEventListener('click', () => {
+          if (fields.style.maxHeight) {
+            fields.style.maxHeight = null;
+            icon.className = 'ti ti-chevron-right';
+          } else {
+            fields.style.maxHeight = fields.scrollHeight + 'px';
+            icon.className = 'ti ti-chevron-down';
+          }
+        });
+      });
+
+      // Sticky Navbar Highlighting active link on scroll
+      const navLinks = document.querySelectorAll('.c-nav-link');
+      const sections = document.querySelectorAll('section[id]');
+      
+      window.addEventListener('scroll', () => {
+        let currentSectionId = '';
+        const scrollPosition = window.scrollY + 120; // offset header height
+
+        sections.forEach(section => {
+          const sectionTop = section.offsetTop;
+          const sectionHeight = section.offsetHeight;
+          if (scrollPosition >= sectionTop && scrollPosition < sectionTop + sectionHeight) {
+            currentSectionId = section.getAttribute('id');
+          }
+        });
+
+        navLinks.forEach(link => {
+          link.classList.remove('active');
+          if (link.getAttribute('href') === `#${currentSectionId}`) {
+            link.style.color = 'var(--color-orange)';
+          } else {
+            link.style.color = 'var(--color-dark)';
+          }
+        });
+      });
+
+      // Back to Top Button script
+      const btnTop = document.querySelector('.btn-top');
+      window.addEventListener('scroll', () => {
+        if (window.scrollY > 300) {
+          btnTop.classList.add('show');
+        } else {
+          btnTop.classList.remove('show');
+        }
+      });
+      btnTop.addEventListener('click', () => {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      });
+    });
+  </script>
+
+</body>
+</html>

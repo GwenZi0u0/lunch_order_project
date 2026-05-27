@@ -36,10 +36,10 @@ export async function POST(request) {
     }
 
     const body = await request.json();
-    const { name, category, phone, note, menuItems } = body;
+    const { name, phone, note, menuItems } = body;
 
-    if (!name || !category) {
-      return NextResponse.json({ error: 'Name and category are required' }, { status: 400 });
+    if (!name) {
+      return NextResponse.json({ error: 'Name is required' }, { status: 400 });
     }
 
     // Use a transaction to create restaurant and items
@@ -47,7 +47,6 @@ export async function POST(request) {
       const newRest = await tx.restaurant.create({
         data: {
           name,
-          category,
           phone,
           note,
         }
@@ -73,6 +72,97 @@ export async function POST(request) {
     });
 
     return NextResponse.json(finalRestaurant);
+  } catch (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+export async function PUT(request) {
+  try {
+    const user = await getCurrentUser(request);
+    if (!user || user.role !== 'admin') {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
+    const body = await request.json();
+    const { id, name, phone, note, menuItems } = body;
+
+    if (!id || !name) {
+      return NextResponse.json({ error: 'Restaurant ID and name are required' }, { status: 400 });
+    }
+
+    const restaurant = await prisma.$transaction(async (tx) => {
+      const updatedRest = await tx.restaurant.update({
+        where: { id },
+        data: {
+          name,
+          phone,
+          note,
+          isActive: true,
+        }
+      });
+
+      await tx.menuItem.updateMany({
+        where: { restaurantId: id },
+        data: { isAvailable: false }
+      });
+
+      if (menuItems && menuItems.length > 0) {
+        await tx.menuItem.createMany({
+          data: menuItems.map(item => ({
+            restaurantId: id,
+            name: item.name,
+            price: parseInt(item.price, 10) || 0,
+            category: item.category || '主食',
+          }))
+        });
+      }
+
+      return updatedRest;
+    });
+
+    const finalRestaurant = await prisma.restaurant.findUnique({
+      where: { id: restaurant.id },
+      include: {
+        menuItems: {
+          where: { isAvailable: true }
+        }
+      }
+    });
+
+    return NextResponse.json(finalRestaurant);
+  } catch (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+export async function DELETE(request) {
+  try {
+    const user = await getCurrentUser(request);
+    if (!user || user.role !== 'admin') {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get('id');
+
+    if (!id) {
+      return NextResponse.json({ error: 'Restaurant ID is required' }, { status: 400 });
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.restaurant.update({
+        where: { id },
+        data: { isActive: false }
+      });
+
+      await tx.menuItem.updateMany({
+        where: { restaurantId: id },
+        data: { isAvailable: false }
+      });
+    });
+
+    return NextResponse.json({ success: true });
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

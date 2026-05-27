@@ -383,7 +383,7 @@ export default function AdminDashboard() {
                   >
                     <option value="">-- 請選擇餐廳 --</option>
                     {restaurants.map(rest => (
-                      <option key={rest.id} value={rest.id}>{rest.name} ({rest.category})</option>
+                      <option key={rest.id} value={rest.id}>{rest.name}</option>
                     ))}
                   </select>
                 </div>

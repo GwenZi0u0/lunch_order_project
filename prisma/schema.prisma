@@ -23,7 +23,6 @@ model User {
 model Restaurant {
   id        String           @id @default(uuid())
   name      String
-  category  String
   phone     String?
   note      String?
   isActive  Boolean          @default(true)

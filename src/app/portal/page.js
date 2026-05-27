@@ -426,9 +426,6 @@ export default function PortalPage() {
                   {/* Restaurant Details */}
                   <div className="border-b border-[#EAE8E4] pb-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                     <div>
-                      <div className="inline-block bg-[#FFDB27] text-[#333333] text-xs font-bold px-2.5 py-1 rounded-md mb-2">
-                        {activeSchedule.restaurant.category}
-                      </div>
                       <h3 className="text-2xl font-bold text-[#333333]">{activeSchedule.restaurant.name}</h3>
                       {activeSchedule.restaurant.phone && (
                         <p className="text-xs text-[#888888] mt-1">

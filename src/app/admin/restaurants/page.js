@@ -23,15 +23,15 @@ export default function RestaurantsPage() {
   const [ocrWarning, setOcrWarning] = useState('');
   const [newRestName, setNewRestName] = useState('');
   const [newRestPhone, setNewRestPhone] = useState('');
-  const [newRestCategory, setNewRestCategory] = useState('便當');
   const [newRestNote, setNewRestNote] = useState('');
-  const [menuItems, setMenuItems] = useState([]); // [{ name, price, category }]
+  const [menuItems, setMenuItems] = useState([]); // [{ name, price, category }] category maps to JSON "類型"
   
   // UI states
   const [statusMsg, setStatusMsg] = useState({ text: '', type: '' });
   const [isSaving, setIsSaving] = useState(false);
   const [jsonDialogOpen, setJsonDialogOpen] = useState(false);
   const [jsonInput, setJsonInput] = useState('');
+  const [editingRestaurantId, setEditingRestaurantId] = useState('');
 
   useEffect(() => {
     // Check authentication
@@ -57,7 +57,7 @@ export default function RestaurantsPage() {
   }, []);
 
   const fetchRestaurants = () => {
-    fetch('/api/restaurants?active=false') // fetch all, active or inactive
+    fetch('/api/restaurants')
       .then(res => res.json())
       .then(data => {
         if (Array.isArray(data)) {
@@ -87,7 +87,6 @@ export default function RestaurantsPage() {
 
     return {
       name: restaurantName,
-      category: parsed['類型'] || parsed.category || normalizedItems[0]?.category || '便當',
       phone: parsed['電話'] || parsed.phone || '',
       note: parsed['備註'] || parsed.note || '',
       menuItems: normalizedItems,
@@ -104,7 +103,6 @@ export default function RestaurantsPage() {
 
       setNewRestName(parsed.name);
       setNewRestPhone(parsed.phone);
-      setNewRestCategory(parsed.category);
       setNewRestNote(parsed.note);
       setMenuItems(parsed.menuItems);
       setJsonDialogOpen(false);
@@ -128,7 +126,7 @@ export default function RestaurantsPage() {
   };
 
   const openJsonDialog = () => {
-    setJsonInput((current) => current || JSON.stringify(MENU_JSON_EXAMPLE, null, 2));
+    setJsonInput('');
     setJsonDialogOpen(true);
     setStatusMsg({ text: '', type: '' });
   };
@@ -159,7 +157,6 @@ export default function RestaurantsPage() {
       const parsed = result.data;
       setNewRestName(parsed.name || '');
       setNewRestPhone(parsed.phone || '');
-      setNewRestCategory(parsed.category || '便當');
       setMenuItems(parsed.menuItems || []);
       
       if (result.warning) {
@@ -185,11 +182,60 @@ export default function RestaurantsPage() {
   };
 
   const handleAddMenuItem = () => {
-    setMenuItems(prev => [...prev, { name: '', price: 0, category: '主食' }]);
+    setMenuItems(prev => [...prev, { name: '', price: 0, category: '餐盒' }]);
   };
 
   const handleRemoveMenuItem = (index) => {
     setMenuItems(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const resetRestaurantForm = () => {
+    setEditingRestaurantId('');
+    setNewRestName('');
+    setNewRestPhone('');
+    setNewRestNote('');
+    setMenuItems([]);
+    setOcrWarning('');
+  };
+
+  const handleEditRestaurant = (restaurant) => {
+    setEditingRestaurantId(restaurant.id);
+    setNewRestName(restaurant.name || '');
+    setNewRestPhone(restaurant.phone || '');
+    setNewRestNote(restaurant.note || '');
+    setMenuItems((restaurant.menuItems || []).map(item => ({
+      name: item.name,
+      price: item.price,
+      category: item.category || '',
+    })));
+    setOcrWarning('');
+    setStatusMsg({ text: `正在編輯「${restaurant.name}」。`, type: 'success' });
+  };
+
+  const handleDeleteRestaurant = async (restaurant) => {
+    if (!window.confirm(`確定要刪除「${restaurant.name}」嗎？`)) return;
+
+    setStatusMsg({ text: '', type: '' });
+
+    try {
+      const res = await fetch(`/api/restaurants?id=${restaurant.id}`, {
+        method: 'DELETE',
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || '刪除失敗');
+      }
+
+      if (editingRestaurantId === restaurant.id) {
+        resetRestaurantForm();
+      }
+
+      setStatusMsg({ text: '餐廳已刪除。', type: 'success' });
+      fetchRestaurants();
+    } catch (err) {
+      setStatusMsg({ text: err.message, type: 'error' });
+    }
   };
 
   const handleSaveRestaurant = async () => {
@@ -208,11 +254,11 @@ export default function RestaurantsPage() {
 
     try {
       const res = await fetch('/api/restaurants', {
-        method: 'POST',
+        method: editingRestaurantId ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          id: editingRestaurantId,
           name: newRestName,
-          category: newRestCategory,
           phone: newRestPhone,
           note: newRestNote,
           menuItems
@@ -224,16 +270,9 @@ export default function RestaurantsPage() {
         throw new Error(data.error || '儲存失敗');
       }
 
-      setStatusMsg({ text: '餐廳與菜單已成功儲存入庫！', type: 'success' });
+      setStatusMsg({ text: editingRestaurantId ? '餐廳與菜單已成功更新！' : '餐廳與菜單已成功儲存入庫！', type: 'success' });
       fetchRestaurants();
-      
-      // Clear forms
-      setNewRestName('');
-      setNewRestPhone('');
-      setNewRestCategory('便當');
-      setNewRestNote('');
-      setMenuItems([]);
-      setOcrWarning('');
+      resetRestaurantForm();
     } catch (err) {
       setStatusMsg({ text: err.message, type: 'error' });
     } finally {
@@ -292,9 +331,24 @@ export default function RestaurantsPage() {
                     >
                       <div className="flex justify-between items-center">
                         <span className="font-bold text-sm text-[#333333] truncate max-w-[150px]">{rest.name}</span>
-                        <span className="bg-[#EAE8E4] text-[#333333] text-[9px] font-bold px-2 py-0.5 rounded-full">
-                          {rest.category}
-                        </span>
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => handleEditRestaurant(rest)}
+                            className="w-7 h-7 rounded-full border border-[#EAE8E4] bg-white text-[#333333] hover:border-[#EA5B3C] hover:text-[#EA5B3C] flex items-center justify-center transition-all"
+                            aria-label={`編輯 ${rest.name}`}
+                          >
+                            <i className="ti ti-pencil text-sm"></i>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteRestaurant(rest)}
+                            className="w-7 h-7 rounded-full border border-[#EAE8E4] bg-white text-red-600 hover:border-red-200 hover:bg-red-50 flex items-center justify-center transition-all"
+                            aria-label={`刪除 ${rest.name}`}
+                          >
+                            <i className="ti ti-trash text-sm"></i>
+                          </button>
+                        </div>
                       </div>
                       
                       {rest.phone && (
@@ -318,10 +372,21 @@ export default function RestaurantsPage() {
             <div className="c-box space-y-6">
               <h3 className="font-bold text-base text-[#333333] border-b border-[#EAE8E4] pb-3 flex items-center justify-between">
                 <span className="flex items-center gap-2">
-                  <i className="ti ti-file-import text-lg text-[#EA5B3C]"></i> 新增餐廳與菜單匯入
+                  <i className="ti ti-file-import text-lg text-[#EA5B3C]"></i>
+                  {editingRestaurantId ? '編輯餐廳與菜單' : '新增餐廳與菜單匯入'}
                 </span>
                 
                 <div className="flex items-center gap-2">
+                  {editingRestaurantId && (
+                    <button
+                      type="button"
+                      onClick={resetRestaurantForm}
+                      className="text-xs font-bold border border-[#EAE8E4] text-[#333333] hover:text-[#EA5B3C] hover:border-[#EA5B3C] px-4 py-2 rounded-lg bg-white transition-all flex items-center gap-1.5"
+                    >
+                      <i className="ti ti-x"></i>
+                      取消編輯
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={openJsonDialog}
@@ -361,7 +426,7 @@ export default function RestaurantsPage() {
               )}
 
               {/* Form Input Block */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-1">
                   <label className="text-xs font-bold text-[#888888]">餐廳名稱 <span className="text-red-500">*</span></label>
                   <input
@@ -371,22 +436,6 @@ export default function RestaurantsPage() {
                     placeholder="例如: 池上木片便當"
                     className="w-full text-xs px-3 py-2 border border-[#EAE8E4] rounded-lg focus:outline-none focus:border-[#EA5B3C] bg-white font-medium"
                   />
-                </div>
-                
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-[#888888]">分類</label>
-                  <select
-                    value={newRestCategory}
-                    onChange={(e) => setNewRestCategory(e.target.value)}
-                    className="w-full text-xs px-3 py-2 border border-[#EAE8E4] rounded-lg focus:outline-none focus:border-[#EA5B3C] bg-white font-medium"
-                  >
-                    <option value="便當">便當</option>
-                    <option value="麵食">麵食</option>
-                    <option value="日式">日式</option>
-                    <option value="小吃">小吃</option>
-                    <option value="飲料">飲料</option>
-                    <option value="其他">其他</option>
-                  </select>
                 </div>
 
                 <div className="space-y-1">
@@ -438,7 +487,7 @@ export default function RestaurantsPage() {
                         <tr className="bg-[#F9F8F5] text-[#888888] font-bold border-b border-[#EAE8E4]">
                           <th className="p-3">品項名稱</th>
                           <th className="p-3 w-[120px]">單價 (NT$)</th>
-                          <th className="p-3 w-[150px]">品項分類</th>
+                          <th className="p-3 w-[150px]">類型</th>
                           <th className="p-3 w-[60px] text-center">操作</th>
                         </tr>
                       </thead>
@@ -463,15 +512,13 @@ export default function RestaurantsPage() {
                               />
                             </td>
                             <td className="p-2">
-                              <select
-                                value={item.category || '主食'}
+                              <input
+                                type="text"
+                                value={item.category || ''}
                                 onChange={(e) => handleMenuItemChange(index, 'category', e.target.value)}
+                                placeholder="例如: 餐盒"
                                 className="w-full text-xs px-2 py-1.5 border border-[#EAE8E4] rounded focus:outline-none focus:border-[#EA5B3C] bg-white font-medium"
-                              >
-                                <option value="主食">主食</option>
-                                <option value="配菜">配菜</option>
-                                <option value="飲料湯品">飲料湯品</option>
-                              </select>
+                              />
                             </td>
                             <td className="p-2 text-center">
                               <button
@@ -497,7 +544,11 @@ export default function RestaurantsPage() {
                     onClick={handleSaveRestaurant}
                     className="px-8 py-3 text-xs font-bold bg-[#EA5B3C] text-white rounded-xl shadow-sm hover:bg-[#333333] transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
                   >
-                    {isSaving ? '正在儲存入庫...' : '確認結構無誤，儲存建立餐廳'}
+                    {isSaving
+                      ? '正在儲存...'
+                      : editingRestaurantId
+                        ? '儲存餐廳變更'
+                        : '確認結構無誤，儲存建立餐廳'}
                   </button>
                 </div>
               )}
@@ -535,17 +586,7 @@ export default function RestaurantsPage() {
                 spellCheck={false}
               />
 
-              <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-3">
-                <button
-                  type="button"
-                  onClick={handleCopyJsonExample}
-                  className="text-xs font-bold border border-[#EAE8E4] text-[#333333] hover:text-[#EA5B3C] hover:border-[#EA5B3C] px-4 py-2 rounded-lg bg-white transition-all flex items-center justify-center gap-1.5"
-                >
-                  <i className="ti ti-copy"></i>
-                  複製範例
-                </button>
-
-                <div className="flex items-center justify-end gap-2">
+              <div className="flex items-center justify-end gap-2">
                   <button
                     type="button"
                     onClick={() => setJsonDialogOpen(false)}
@@ -562,7 +603,6 @@ export default function RestaurantsPage() {
                     <i className="ti ti-check"></i>
                     提交匯入
                   </button>
-                </div>
               </div>
             </div>
           </div>

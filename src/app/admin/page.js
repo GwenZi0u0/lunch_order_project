@@ -265,7 +265,7 @@ export default function AdminDashboard() {
               onClick={() => router.push('/admin/restaurants')}
               className="text-xs font-bold bg-[#333333] text-white px-4 py-2 rounded-lg hover:bg-[#EA5B3C] transition-colors"
             >
-              餐廳菜單管理 (OCR)
+              餐廳菜單管理
             </button>
             <button
               onClick={() => router.push('/admin/wallets')}

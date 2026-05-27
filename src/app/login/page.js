@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
 export default function LoginPage() {
@@ -8,6 +8,15 @@ export default function LoginPage() {
   const [activeTab, setActiveTab] = useState('dev'); // 'google' or 'dev'
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const oauthError = params.get('error');
+    if (oauthError) {
+      setActiveTab('google');
+      setError(oauthError);
+    }
+  }, []);
 
   const handleDeveloperLogin = async (role, userType = '') => {
     setLoading(true);
@@ -35,6 +44,12 @@ export default function LoginPage() {
       setError(err.message);
       setLoading(false);
     }
+  };
+
+  const handleGoogleLogin = () => {
+    setLoading(true);
+    setError('');
+    window.location.href = '/api/auth/google';
   };
 
   return (
@@ -180,8 +195,9 @@ export default function LoginPage() {
 
               {/* Google Button */}
               <button
-                disabled={true}
-                className="w-full flex items-center justify-center gap-3 px-6 py-4 border border-[#EAE8E4] rounded-xl bg-[#F9F8F5] text-[#888888] font-bold cursor-not-allowed transition-all"
+                disabled={loading}
+                onClick={handleGoogleLogin}
+                className="w-full flex items-center justify-center gap-3 px-6 py-4 border border-[#EAE8E4] rounded-xl bg-white text-[#333333] font-bold hover:border-[#EA5B3C] hover:text-[#EA5B3C] disabled:opacity-60 disabled:cursor-not-allowed transition-all"
               >
                 <svg className="w-5 h-5" viewBox="0 0 24 24">
                   <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v3.92h6.69a5.74 5.74 0 0 1-2.49 3.77v3.12h4.01c2.34-2.15 3.53-5.32 3.53-8.74Z"/>

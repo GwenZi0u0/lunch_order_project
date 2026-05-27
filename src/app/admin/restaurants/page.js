@@ -4,12 +4,21 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Navbar from '@/components/Navbar';
 
+const MENU_JSON_EXAMPLE = {
+  "餐廳": "好食肌",
+  "品項列表": [
+    { "類型": "餐盒", "品項": "香煎鮭魚餐盒", "價格": 160 },
+    { "類型": "餐盒", "品項": "板腱牛排餐盒", "價格": 160 },
+    { "類型": "餐盒", "品項": "低溫烹調嫩雞肉餐盒", "價格": 120 }
+  ]
+};
+
 export default function RestaurantsPage() {
   const router = useRouter();
   const [user, setUser] = useState(null);
   const [restaurants, setRestaurants] = useState([]);
   
-  // OCR and New Restaurant State
+  // Import and New Restaurant State
   const [ocrLoading, setOcrLoading] = useState(false);
   const [ocrWarning, setOcrWarning] = useState('');
   const [newRestName, setNewRestName] = useState('');
@@ -21,6 +30,8 @@ export default function RestaurantsPage() {
   // UI states
   const [statusMsg, setStatusMsg] = useState({ text: '', type: '' });
   const [isSaving, setIsSaving] = useState(false);
+  const [jsonDialogOpen, setJsonDialogOpen] = useState(false);
+  const [jsonInput, setJsonInput] = useState('');
 
   useEffect(() => {
     // Check authentication
@@ -54,6 +65,72 @@ export default function RestaurantsPage() {
         }
       })
       .catch(err => console.error('無法載入餐廳列表:', err));
+  };
+
+  const normalizeImportedMenu = (parsed) => {
+    const restaurantName = parsed['餐廳'] || parsed.restaurant || parsed.name || '';
+    const importedItems = parsed['品項列表'] || parsed.menuItems || parsed.items || [];
+
+    if (!restaurantName || !Array.isArray(importedItems) || importedItems.length === 0) {
+      throw new Error('JSON 格式不正確，請確認包含「餐廳」與「品項列表」。');
+    }
+
+    const normalizedItems = importedItems.map((item) => ({
+      category: item['類型'] || item.category || '主食',
+      name: item['品項'] || item.name || '',
+      price: Number(item['價格'] ?? item.price ?? 0),
+    })).filter(item => item.name && Number.isFinite(item.price) && item.price > 0);
+
+    if (normalizedItems.length === 0) {
+      throw new Error('JSON 內沒有可匯入的品項，請確認每個品項都有名稱與價格。');
+    }
+
+    return {
+      name: restaurantName,
+      category: parsed['類型'] || parsed.category || normalizedItems[0]?.category || '便當',
+      phone: parsed['電話'] || parsed.phone || '',
+      note: parsed['備註'] || parsed.note || '',
+      menuItems: normalizedItems,
+    };
+  };
+
+  const handleJsonImport = () => {
+    setOcrLoading(true);
+    setOcrWarning('');
+    setStatusMsg({ text: '', type: '' });
+
+    try {
+      const parsed = normalizeImportedMenu(JSON.parse(jsonInput));
+
+      setNewRestName(parsed.name);
+      setNewRestPhone(parsed.phone);
+      setNewRestCategory(parsed.category);
+      setNewRestNote(parsed.note);
+      setMenuItems(parsed.menuItems);
+      setJsonDialogOpen(false);
+      setStatusMsg({ text: 'JSON 匯入完成！請在下方表格中校對確認項目。', type: 'success' });
+    } catch (err) {
+      setStatusMsg({ text: err.message || 'JSON 匯入失敗', type: 'error' });
+    } finally {
+      setOcrLoading(false);
+    }
+  };
+
+  const handleCopyJsonExample = async () => {
+    try {
+      const exampleText = JSON.stringify(MENU_JSON_EXAMPLE, null, 2);
+      await navigator.clipboard.writeText(exampleText);
+      setJsonInput(exampleText);
+      setStatusMsg({ text: '已複製 JSON 範例。', type: 'success' });
+    } catch (err) {
+      setStatusMsg({ text: '複製失敗，請確認瀏覽器剪貼簿權限。', type: 'error' });
+    }
+  };
+
+  const openJsonDialog = () => {
+    setJsonInput((current) => current || JSON.stringify(MENU_JSON_EXAMPLE, null, 2));
+    setJsonDialogOpen(true);
+    setStatusMsg({ text: '', type: '' });
   };
 
   // OCR upload handler
@@ -236,26 +313,33 @@ export default function RestaurantsPage() {
             </div>
           </div>
 
-          {/* AI OCR Scan and Add Menu Panel (Col-span 2) */}
+          {/* JSON Import and Add Menu Panel (Col-span 2) */}
           <div className="lg:col-span-2 space-y-6">
             <div className="c-box space-y-6">
               <h3 className="font-bold text-base text-[#333333] border-b border-[#EAE8E4] pb-3 flex items-center justify-between">
                 <span className="flex items-center gap-2">
-                  <i className="ti ti-scan text-lg text-[#EA5B3C]"></i> 新增餐廳與 AI 菜單掃描
+                  <i className="ti ti-file-import text-lg text-[#EA5B3C]"></i> 新增餐廳與菜單匯入
                 </span>
                 
-                {/* File Upload Selector */}
-                <label className="text-xs font-bold bg-[#EA5B3C] hover:bg-[#333333] text-white px-4 py-2 rounded-lg cursor-pointer shadow-sm transition-all flex items-center gap-1.5">
-                  <i className="ti ti-cloud-upload"></i>
-                  {ocrLoading ? 'AI 辨識中...' : '上傳菜單照片 OCR'}
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={handleOcrUpload}
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={openJsonDialog}
                     disabled={ocrLoading}
-                    className="hidden"
-                  />
-                </label>
+                    className="text-xs font-bold bg-[#EA5B3C] hover:bg-[#333333] text-white px-4 py-2 rounded-lg shadow-sm transition-all flex items-center gap-1.5 disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    <i className="ti ti-file-import"></i>
+                    {ocrLoading ? '匯入中...' : '匯入 JSON'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleCopyJsonExample}
+                    className="text-xs font-bold border border-[#EAE8E4] text-[#333333] hover:text-[#EA5B3C] hover:border-[#EA5B3C] px-4 py-2 rounded-lg bg-white transition-all flex items-center gap-1.5"
+                  >
+                    <i className="ti ti-copy"></i>
+                    複製範例
+                  </button>
+                </div>
               </h3>
 
               {statusMsg.text && (
@@ -424,6 +508,66 @@ export default function RestaurantsPage() {
         </section>
 
       </main>
+
+      {jsonDialogOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-[680px] rounded-xl bg-white shadow-2xl border border-[#EAE8E4] overflow-hidden">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-[#EAE8E4]">
+              <h3 className="font-bold text-base text-[#333333] flex items-center gap-2">
+                <i className="ti ti-file-import text-[#EA5B3C]"></i>
+                匯入 JSON
+              </h3>
+              <button
+                type="button"
+                onClick={() => setJsonDialogOpen(false)}
+                className="w-8 h-8 rounded-full border border-transparent hover:border-[#EAE8E4] hover:bg-[#F9F8F5] text-[#888888] flex items-center justify-center transition-all"
+                aria-label="關閉"
+              >
+                <i className="ti ti-x"></i>
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <textarea
+                value={jsonInput}
+                onChange={(e) => setJsonInput(e.target.value)}
+                className="w-full min-h-[320px] resize-y rounded-lg border border-[#EAE8E4] bg-[#F9F8F5] p-4 font-mono text-xs leading-relaxed text-[#333333] focus:outline-none focus:border-[#EA5B3C]"
+                spellCheck={false}
+              />
+
+              <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-3">
+                <button
+                  type="button"
+                  onClick={handleCopyJsonExample}
+                  className="text-xs font-bold border border-[#EAE8E4] text-[#333333] hover:text-[#EA5B3C] hover:border-[#EA5B3C] px-4 py-2 rounded-lg bg-white transition-all flex items-center justify-center gap-1.5"
+                >
+                  <i className="ti ti-copy"></i>
+                  複製範例
+                </button>
+
+                <div className="flex items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setJsonDialogOpen(false)}
+                    className="text-xs font-bold border border-[#EAE8E4] text-[#333333] hover:border-[#333333] px-4 py-2 rounded-lg bg-white transition-all"
+                  >
+                    取消
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleJsonImport}
+                    disabled={ocrLoading || !jsonInput.trim()}
+                    className="text-xs font-bold bg-[#EA5B3C] hover:bg-[#333333] text-white px-5 py-2 rounded-lg shadow-sm transition-all flex items-center gap-1.5 disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    <i className="ti ti-check"></i>
+                    提交匯入
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

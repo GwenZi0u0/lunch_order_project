@@ -206,10 +206,10 @@ export default function WalletsManagementPage() {
           </div>
         )}
 
-        <section className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <section className="grid grid-cols-1 lg:grid-cols-4 gap-4">
           
-          {/* User List and Search (Col-span 2) */}
-          <div className="lg:col-span-2 space-y-6">
+          {/* User List and Search (Col-span 3) */}
+          <div className="lg:col-span-3 space-y-6">
             <div className="c-box space-y-6">
               <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <h3 className="font-bold text-sm text-[#333333] border-l-4 border-l-[#EA5B3C] pl-2.5">

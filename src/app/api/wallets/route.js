@@ -27,8 +27,11 @@ export async function GET(request) {
     if (action === 'history') {
       const targetUserId = searchParams.get('userId');
       
-      // Normal users can only see their own history
-      const queryUserId = user.role === 'admin' && targetUserId ? targetUserId : user.userId;
+      // Admins can see all history by default, or filter by a specific user.
+      // Normal users can only see their own history.
+      const queryUserId = user.role === 'admin'
+        ? targetUserId || null
+        : user.userId;
       
       if (user.role !== 'admin' && targetUserId && targetUserId !== user.userId) {
         return NextResponse.json({ error: 'Forbidden' }, { status: 403 });

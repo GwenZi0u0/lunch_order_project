@@ -32,6 +32,18 @@ export default function RestaurantsPage() {
   const [jsonDialogOpen, setJsonDialogOpen] = useState(false);
   const [jsonInput, setJsonInput] = useState('');
   const [editingRestaurantId, setEditingRestaurantId] = useState('');
+  const [editingOriginalData, setEditingOriginalData] = useState(null);
+
+  const buildComparableRestaurant = (name, phone, note, items) => ({
+    name: (name || '').trim(),
+    phone: (phone || '').trim(),
+    note: (note || '').trim(),
+    menuItems: (items || []).map(item => ({
+      name: (item.name || '').trim(),
+      price: parseInt(item.price, 10) || 0,
+      category: (item.category || '').trim(),
+    })),
+  });
 
   useEffect(() => {
     // Check authentication
@@ -182,7 +194,7 @@ export default function RestaurantsPage() {
   };
 
   const handleAddMenuItem = () => {
-    setMenuItems(prev => [...prev, { name: '', price: 0, category: '餐盒' }]);
+    setMenuItems(prev => [{ name: '', price: 0, category: '餐盒' }, ...prev]);
   };
 
   const handleRemoveMenuItem = (index) => {
@@ -191,6 +203,7 @@ export default function RestaurantsPage() {
 
   const resetRestaurantForm = () => {
     setEditingRestaurantId('');
+    setEditingOriginalData(null);
     setNewRestName('');
     setNewRestPhone('');
     setNewRestNote('');
@@ -199,17 +212,33 @@ export default function RestaurantsPage() {
   };
 
   const handleEditRestaurant = (restaurant) => {
+    const editableItems = (restaurant.menuItems || []).map(item => ({
+      name: item.name,
+      price: item.price,
+      category: item.category || '',
+    }));
+
     setEditingRestaurantId(restaurant.id);
     setNewRestName(restaurant.name || '');
     setNewRestPhone(restaurant.phone || '');
     setNewRestNote(restaurant.note || '');
-    setMenuItems((restaurant.menuItems || []).map(item => ({
-      name: item.name,
-      price: item.price,
-      category: item.category || '',
-    })));
+    setMenuItems(editableItems);
+    setEditingOriginalData(buildComparableRestaurant(
+      restaurant.name,
+      restaurant.phone,
+      restaurant.note,
+      editableItems
+    ));
     setOcrWarning('');
     setStatusMsg({ text: `正在編輯「${restaurant.name}」。`, type: 'success' });
+  };
+
+  const currentEditData = buildComparableRestaurant(newRestName, newRestPhone, newRestNote, menuItems);
+  const hasEditChanges = !!editingRestaurantId && JSON.stringify(currentEditData) !== JSON.stringify(editingOriginalData);
+
+  const handleCancelEdit = () => {
+    if (hasEditChanges && !window.confirm('資料有變更，確認要取消嗎？')) return;
+    resetRestaurantForm();
   };
 
   const handleDeleteRestaurant = async (restaurant) => {
@@ -377,16 +406,6 @@ export default function RestaurantsPage() {
                 </span>
                 
                 <div className="flex items-center gap-2">
-                  {editingRestaurantId && (
-                    <button
-                      type="button"
-                      onClick={resetRestaurantForm}
-                      className="text-xs font-bold border border-[#EAE8E4] text-[#333333] hover:text-[#EA5B3C] hover:border-[#EA5B3C] px-4 py-2 rounded-lg bg-white transition-all flex items-center gap-1.5"
-                    >
-                      <i className="ti ti-x"></i>
-                      取消編輯
-                    </button>
-                  )}
                   <button
                     type="button"
                     onClick={openJsonDialog}
@@ -404,6 +423,29 @@ export default function RestaurantsPage() {
                     <i className="ti ti-copy"></i>
                     複製範例
                   </button>
+                  {editingRestaurantId && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={handleCancelEdit}
+                        title="取消編輯"
+                        aria-label="取消編輯"
+                        className="w-9 h-9 rounded-lg border border-[#EAE8E4] bg-white text-[#888888] hover:text-red-600 hover:border-red-200 hover:bg-red-50 transition-all flex items-center justify-center"
+                      >
+                        <i className="ti ti-x text-lg"></i>
+                      </button>
+                      <button
+                        type="button"
+                        disabled={isSaving || !newRestName || menuItems.length === 0 || !hasEditChanges}
+                        onClick={handleSaveRestaurant}
+                        title="儲存餐廳變更"
+                        aria-label="儲存餐廳變更"
+                        className="w-9 h-9 rounded-lg border border-green-200 bg-white text-green-600 hover:border-green-300 hover:bg-green-50 transition-all flex items-center justify-center disabled:text-[#C9C3BA] disabled:border-[#EAE8E4] disabled:bg-white disabled:hover:bg-white disabled:hover:border-[#EAE8E4] disabled:cursor-not-allowed"
+                      >
+                        <i className="ti ti-check text-lg"></i>
+                      </button>
+                    </>
+                  )}
                 </div>
               </h3>
 
@@ -537,18 +579,14 @@ export default function RestaurantsPage() {
               </div>
 
               {/* Submit Button */}
-              {menuItems.length > 0 && (
+              {menuItems.length > 0 && !editingRestaurantId && (
                 <div className="pt-4 border-t border-[#EAE8E4] flex justify-end">
                   <button
                     disabled={isSaving || !newRestName}
                     onClick={handleSaveRestaurant}
                     className="px-8 py-3 text-xs font-bold bg-[#EA5B3C] text-white rounded-xl shadow-sm hover:bg-[#333333] transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
                   >
-                    {isSaving
-                      ? '正在儲存...'
-                      : editingRestaurantId
-                        ? '儲存餐廳變更'
-                        : '確認結構無誤，儲存建立餐廳'}
+                    {isSaving ? '正在儲存...' : '確認結構無誤，儲存建立餐廳'}
                   </button>
                 </div>
               )}

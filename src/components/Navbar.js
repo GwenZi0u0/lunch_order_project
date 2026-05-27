@@ -1,9 +1,12 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 
 export default function Navbar({ user }) {
   const router = useRouter();
+  const pathname = usePathname();
+  const isAdmin = user?.role === 'admin';
+  const isOrderingView = pathname?.startsWith('/portal');
 
   const handleLogout = async () => {
     try {
@@ -33,7 +36,7 @@ export default function Navbar({ user }) {
 
         {user && (
           <nav className="hidden md:flex gap-6 items-center">
-            {user.role === 'admin' ? (
+            {isAdmin && !isOrderingView ? (
               <>
                 <button 
                   onClick={() => router.push('/admin')} 
@@ -76,6 +79,16 @@ export default function Navbar({ user }) {
 
       {user ? (
         <div className="flex items-center gap-4">
+          {isAdmin && (
+            <button
+              onClick={() => router.push(isOrderingView ? '/admin' : '/portal')}
+              className="hidden sm:flex items-center gap-1.5 text-xs font-bold border border-[#EAE8E4] px-3 py-2 bg-white rounded-full hover:border-[#EA5B3C] hover:text-[#EA5B3C] transition-all"
+            >
+              <i className={isOrderingView ? 'ti ti-settings' : 'ti ti-tools-kitchen-2'}></i>
+              {isOrderingView ? '管理者模式' : '訂購者模式'}
+            </button>
+          )}
+
           {/* User Info */}
           <div className="flex items-center gap-3 bg-white border border-[#EAE8E4] px-4 py-1.5 rounded-full shadow-sm">
             {user.avatarUrl ? (
@@ -92,7 +105,7 @@ export default function Navbar({ user }) {
             <div className="flex flex-col text-left">
               <span className="text-xs font-bold text-[#333333] line-clamp-1 max-w-[120px]">{user.name}</span>
               <span className="text-[10px] text-[#888888] font-bold uppercase tracking-wider">
-                {user.role === 'admin' ? '管理員' : '訂購者'}
+                {isAdmin ? (isOrderingView ? '管理者 / 訂購視角' : '管理者') : '訂購者'}
               </span>
             </div>
           </div>

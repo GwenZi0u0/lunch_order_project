@@ -81,9 +81,6 @@ export default function PortalPage() {
       .then(data => {
         if (data) {
           setUser(data.user);
-          if (data.user.role === 'admin') {
-            router.push('/admin');
-          }
         }
       })
       .catch(() => router.push('/login'));

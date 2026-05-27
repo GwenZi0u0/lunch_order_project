@@ -73,10 +73,23 @@ export async function POST(request) {
     }
 
     const body = await request.json();
-    const { targetUserId, type, amount } = body; // type: 'topup', amount: Int (positive number)
+    const { targetUserId, type, amount } = body;
+    const numericAmount = parseInt(amount, 10);
 
-    if (!targetUserId || !type || !amount || amount <= 0) {
+    if (!targetUserId || !type || !Number.isFinite(numericAmount)) {
       return NextResponse.json({ error: 'Invalid wallet transaction data' }, { status: 400 });
+    }
+
+    if (type === 'topup' && numericAmount <= 0) {
+      return NextResponse.json({ error: 'Topup amount must be greater than 0' }, { status: 400 });
+    }
+
+    if (type === 'adjustment' && numericAmount === 0) {
+      return NextResponse.json({ error: 'Adjustment amount cannot be 0' }, { status: 400 });
+    }
+
+    if (!['topup', 'adjustment'].includes(type)) {
+      return NextResponse.json({ error: 'Invalid wallet transaction type' }, { status: 400 });
     }
 
     const targetUser = await prisma.user.findUnique({
@@ -87,7 +100,7 @@ export async function POST(request) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
 
-    const transactionAmount = type === 'topup' ? amount : -amount;
+    const transactionAmount = type === 'topup' ? numericAmount : numericAmount;
 
     // Use transaction to update user's balance and insert ledger record
     const updatedUser = await prisma.$transaction(async (tx) => {
@@ -115,6 +128,35 @@ export async function POST(request) {
     });
 
     return NextResponse.json({ success: true, balance: updatedUser.balance });
+  } catch (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+export async function PATCH(request) {
+  try {
+    const user = await getCurrentUser(request);
+    if (!user || user.role !== 'admin') {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
+    const body = await request.json();
+    const { targetUserId, role } = body;
+
+    if (!targetUserId || !['admin', 'user'].includes(role)) {
+      return NextResponse.json({ error: 'Invalid role update data' }, { status: 400 });
+    }
+
+    if (targetUserId === user.userId && role !== 'admin') {
+      return NextResponse.json({ error: 'Cannot remove your own admin role' }, { status: 400 });
+    }
+
+    const updatedUser = await prisma.user.update({
+      where: { id: targetUserId },
+      data: { role }
+    });
+
+    return NextResponse.json({ success: true, user: updatedUser });
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

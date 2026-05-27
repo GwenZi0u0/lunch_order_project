@@ -10,11 +10,14 @@ export default function WalletsManagementPage() {
   const [users, setUsers] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [transactions, setTransactions] = useState([]);
+  const [selectedLedgerUserId, setSelectedLedgerUserId] = useState('');
   
   // Deposit Modal State
   const [selectedUser, setSelectedUser] = useState(null); // User object to deposit to
+  const [walletMode, setWalletMode] = useState('topup');
   const [depositAmount, setDepositAmount] = useState(500);
   const [customAmount, setCustomAmount] = useState('');
+  const [adjustmentDirection, setAdjustmentDirection] = useState('increase');
   const [isSubmittingDeposit, setIsSubmittingDeposit] = useState(false);
   const [statusMsg, setStatusMsg] = useState({ text: '', type: '' });
 
@@ -35,7 +38,7 @@ export default function WalletsManagementPage() {
             router.push('/portal');
           } else {
             fetchUsers();
-            fetchTransactions();
+            fetchTransactions('');
           }
         }
       })
@@ -53,8 +56,9 @@ export default function WalletsManagementPage() {
       .catch(err => console.error('無法載入使用者:', err));
   };
 
-  const fetchTransactions = () => {
-    fetch('/api/wallets?action=history')
+  const fetchTransactions = (userId = selectedLedgerUserId) => {
+    const query = userId ? `&userId=${userId}` : '';
+    fetch(`/api/wallets?action=history${query}`)
       .then(res => res.json())
       .then(data => {
         if (Array.isArray(data)) {
@@ -64,15 +68,49 @@ export default function WalletsManagementPage() {
       .catch(err => console.error('無法載入交易日誌:', err));
   };
 
+  const handleLedgerUserChange = (userId) => {
+    setSelectedLedgerUserId(userId);
+    fetchTransactions(userId);
+  };
+
+  const handleRoleChange = async (targetUser, role) => {
+    setStatusMsg({ text: '', type: '' });
+
+    try {
+      const res = await fetch('/api/wallets', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          targetUserId: targetUser.id,
+          role
+        })
+      });
+
+      const result = await res.json();
+      if (!res.ok) {
+        throw new Error(result.error || '角色更新失敗');
+      }
+
+      setUsers(prev => prev.map(u => u.id === targetUser.id ? result.user : u));
+      setStatusMsg({ text: `已將「${targetUser.name}」角色更新為${role === 'admin' ? '管理者' : '訂購者'}。`, type: 'success' });
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+
   const handleDepositSubmit = async (e) => {
     e.preventDefault();
     if (!selectedUser) return;
 
     const finalAmount = customAmount ? parseInt(customAmount, 10) : depositAmount;
     if (!finalAmount || finalAmount <= 0) {
-      alert('請輸入或選擇大於 0 的儲值金額！');
+      alert('請輸入或選擇大於 0 的金額！');
       return;
     }
+
+    const signedAmount = walletMode === 'adjustment' && adjustmentDirection === 'decrease'
+      ? -finalAmount
+      : finalAmount;
 
     setIsSubmittingDeposit(true);
     setStatusMsg({ text: '', type: '' });
@@ -83,8 +121,8 @@ export default function WalletsManagementPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           targetUserId: selectedUser.id,
-          type: 'topup',
-          amount: finalAmount
+          type: walletMode === 'topup' ? 'topup' : 'adjustment',
+          amount: signedAmount
         })
       });
 
@@ -93,8 +131,12 @@ export default function WalletsManagementPage() {
         throw new Error(result.error || '儲值加值失敗');
       }
 
+      const actionText = walletMode === 'topup'
+        ? `加值 NT$ ${finalAmount}`
+        : `${signedAmount > 0 ? '調增' : '調減'} NT$ ${Math.abs(signedAmount)}`;
+
       setStatusMsg({ 
-        text: `儲值成功！已為「${selectedUser.name}」加值 NT$ ${finalAmount}。`, 
+        text: `帳務處理成功！已為「${selectedUser.name}」${actionText}。`, 
         type: 'success' 
       });
       fetchUsers();
@@ -102,6 +144,8 @@ export default function WalletsManagementPage() {
       
       // Close modal/form
       setSelectedUser(null);
+      setWalletMode('topup');
+      setAdjustmentDirection('increase');
       setCustomAmount('');
     } catch (err) {
       alert(err.message);
@@ -115,6 +159,15 @@ export default function WalletsManagementPage() {
     u.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     u.email.toLowerCase().includes(searchTerm.toLowerCase())
   );
+
+  const openWalletAction = (targetUser, mode) => {
+    setSelectedUser(targetUser);
+    setWalletMode(mode);
+    setDepositAmount(mode === 'topup' ? 500 : 100);
+    setCustomAmount('');
+    setAdjustmentDirection('increase');
+    setStatusMsg({ text: '', type: '' });
+  };
 
   if (!user) {
     return (
@@ -212,7 +265,11 @@ export default function WalletsManagementPage() {
                         }
 
                         return (
-                          <tr key={u.id} className="hover:bg-[#F9F8F5]/30">
+                          <tr
+                            key={u.id}
+                            onClick={() => handleLedgerUserChange(u.id)}
+                            className={`hover:bg-[#F9F8F5]/30 cursor-pointer ${selectedLedgerUserId === u.id ? 'bg-orange-50/50' : ''}`}
+                          >
                             <td className="p-3 font-bold flex items-center gap-2">
                               {u.avatarUrl && (
                                 <img src={u.avatarUrl} alt="" className="w-5 h-5 rounded-full object-cover" />
@@ -221,13 +278,23 @@ export default function WalletsManagementPage() {
                             </td>
                             <td className="p-3 text-[#888888]">{u.email}</td>
                             <td className="p-3">
-                              <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${
-                                u.role === 'admin' 
-                                  ? 'bg-orange-100 text-orange-700 border border-orange-200' 
-                                  : 'bg-gray-100 text-gray-700'
-                              }`}>
-                                {u.role === 'admin' ? '管理員' : '訂購者'}
-                              </span>
+                              <select
+                                value={u.role}
+                                disabled={u.id === user.id}
+                                onClick={(e) => e.stopPropagation()}
+                                onChange={(e) => {
+                                  e.stopPropagation();
+                                  handleRoleChange(u, e.target.value);
+                                }}
+                                className={`text-[10px] font-bold px-2 py-1 rounded border bg-white focus:outline-none focus:border-[#EA5B3C] ${
+                                  u.role === 'admin'
+                                    ? 'text-orange-700 border-orange-200'
+                                    : 'text-gray-700 border-[#EAE8E4]'
+                                } disabled:opacity-60 disabled:cursor-not-allowed`}
+                              >
+                                <option value="admin">管理者</option>
+                                <option value="user">訂購者</option>
+                              </select>
                             </td>
                             <td className="p-3 text-right font-bold text-sm">
                               <span className={balanceColor}>
@@ -236,15 +303,28 @@ export default function WalletsManagementPage() {
                               {warningBadge}
                             </td>
                             <td className="p-3 text-center">
-                              <button
-                                onClick={() => {
-                                  setSelectedUser(u);
-                                  setStatusMsg({ text: '', type: '' });
-                                }}
-                                className="text-[10px] font-bold border border-[#EAE8E4] px-2.5 py-1 rounded bg-white hover:border-[#EA5B3C] hover:text-[#EA5B3C] transition-all"
-                              >
-                                <i className="ti ti-plus mr-0.5"></i>手動儲值
-                              </button>
+                              <div className="flex items-center justify-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    openWalletAction(u, 'topup');
+                                  }}
+                                  className="text-[10px] font-bold border border-[#EAE8E4] px-2.5 py-1 rounded bg-white hover:border-[#EA5B3C] hover:text-[#EA5B3C] transition-all"
+                                >
+                                  <i className="ti ti-plus mr-0.5"></i>儲值
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    openWalletAction(u, 'adjustment');
+                                  }}
+                                  className="text-[10px] font-bold border border-[#EAE8E4] px-2.5 py-1 rounded bg-white hover:border-[#EA5B3C] hover:text-[#EA5B3C] transition-all"
+                                >
+                                  <i className="ti ti-adjustments-dollar mr-0.5"></i>異動
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         );
@@ -262,10 +342,16 @@ export default function WalletsManagementPage() {
               <div className="bg-white border border-[#EAE8E4] rounded-xl shadow-sm p-6 space-y-6 sticky top-24">
                 <div className="flex justify-between items-center border-b border-[#EAE8E4] pb-3">
                   <h3 className="font-bold text-base text-[#333333] flex items-center gap-1.5">
-                    <i className="ti ti-piggy-bank text-[#EA5B3C]"></i> 手動儲值加值
+                    <i className={`${walletMode === 'topup' ? 'ti ti-piggy-bank' : 'ti ti-adjustments-dollar'} text-[#EA5B3C]`}></i>
+                    {walletMode === 'topup' ? '儲值' : '異動'}
                   </h3>
                   <button 
-                    onClick={() => setSelectedUser(null)}
+                    onClick={() => {
+                      setSelectedUser(null);
+                      setWalletMode('topup');
+                      setAdjustmentDirection('increase');
+                      setCustomAmount('');
+                    }}
                     className="text-[#888888] hover:text-[#EA5B3C] text-sm"
                   >
                     取消
@@ -285,9 +371,36 @@ export default function WalletsManagementPage() {
                   </div>
 
                   <form onSubmit={handleDepositSubmit} className="space-y-4">
+                    {walletMode === 'adjustment' && (
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-[#888888]">異動方向</label>
+                        <div className="grid grid-cols-2 gap-2">
+                          {[
+                            { value: 'increase', label: '調增金額', icon: 'ti ti-plus' },
+                            { value: 'decrease', label: '調減金額', icon: 'ti ti-minus' },
+                          ].map(option => (
+                            <button
+                              key={option.value}
+                              type="button"
+                              onClick={() => setAdjustmentDirection(option.value)}
+                              className={`py-2 rounded-lg text-xs font-bold border transition-all flex items-center justify-center gap-1 ${
+                                adjustmentDirection === option.value
+                                  ? 'border-[#EA5B3C] bg-orange-[0.005] text-[#EA5B3C]'
+                                  : 'border-[#EAE8E4] bg-white text-[#333333] hover:border-[#D6D1CA]'
+                              }`}
+                            >
+                              <i className={option.icon}></i>{option.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
                     {/* Preset Amounts */}
                     <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-[#888888]">選擇儲值金額</label>
+                      <label className="text-xs font-bold text-[#888888]">
+                        {walletMode === 'topup' ? '選擇儲值金額' : '選擇異動金額'}
+                      </label>
                       <div className="grid grid-cols-3 gap-2">
                         {[100, 500, 1000].map(amt => (
                           <button
@@ -329,7 +442,11 @@ export default function WalletsManagementPage() {
                       disabled={isSubmittingDeposit}
                       className="w-full py-3 text-xs font-bold bg-[#EA5B3C] text-white rounded-xl shadow-sm hover:bg-[#333333] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      {isSubmittingDeposit ? '處理加值中...' : `確認加值 NT$ ${customAmount || depositAmount}`}
+                      {isSubmittingDeposit
+                        ? '處理中...'
+                        : walletMode === 'topup'
+                          ? `確認加值 NT$ ${customAmount || depositAmount}`
+                          : `確認${adjustmentDirection === 'increase' ? '調增' : '調減'} NT$ ${customAmount || depositAmount}`}
                     </button>
                   </form>
                 </div>
@@ -337,7 +454,7 @@ export default function WalletsManagementPage() {
             ) : (
               <div className="bg-[#F9F8F5] border border-dashed border-[#D6D1CA] rounded-xl p-8 text-center text-xs text-[#888888] space-y-2 sticky top-24">
                 <i className="ti ti-pointer-hand text-3xl text-[#888888]"></i>
-                <p className="font-bold">請點擊成員右側的「手動儲值」按鈕開始為其進行錢包加值。</p>
+                <p className="font-bold">請點擊成員右側的「儲值」或「異動」開始處理錢包金額。</p>
               </div>
             )}
           </div>
@@ -346,13 +463,36 @@ export default function WalletsManagementPage() {
 
         {/* Global Transaction Audit Ledger (Full width) */}
         <section className="c-box space-y-6">
-          <h3 className="font-bold text-[#333333] text-base border-l-4 border-l-[#EA5B3C] pl-2.5">
-            全站儲值與扣款異動日誌 (帳務審計軌跡)
-          </h3>
+          <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
+            <div className="space-y-1">
+              <h3 className="font-bold text-[#333333] text-base border-l-4 border-l-[#EA5B3C] pl-2.5">
+                全站儲值與扣款異動日誌 (帳務審計軌跡)
+              </h3>
+              <p className="text-xs text-[#888888] pl-3">
+                點擊上方成員列，或使用右側下拉選單查看指定成員紀錄。
+              </p>
+            </div>
+
+            <div className="space-y-1.5 w-full md:w-[280px]">
+              <label className="text-xs font-bold text-[#888888]">成員</label>
+              <select
+                value={selectedLedgerUserId}
+                onChange={(e) => handleLedgerUserChange(e.target.value)}
+                className="w-full text-xs px-3 py-2 border border-[#EAE8E4] rounded-lg focus:outline-none focus:border-[#EA5B3C] bg-white font-medium"
+              >
+                <option value="">全部成員</option>
+                {users.map(member => (
+                  <option key={member.id} value={member.id}>
+                    {member.name} ({member.email})
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
 
           {transactions.length === 0 ? (
             <div className="text-center py-12 text-xs text-[#888888]">
-              系統尚無任何交易明細與變動日誌。
+              {selectedLedgerUserId ? '此成員尚無任何交易明細與變動日誌。' : '系統尚無任何交易明細與變動日誌。'}
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -370,6 +510,8 @@ export default function WalletsManagementPage() {
                 <tbody className="divide-y divide-[#EAE8E4] text-[#333333]">
                   {transactions.map(tx => {
                     const isTopup = tx.type === 'topup';
+                    const isAdjustment = tx.type === 'adjustment';
+                    const isPositive = tx.amount > 0;
                     return (
                       <tr key={tx.id} className="hover:bg-[#F9F8F5]/30">
                         <td className="py-3">
@@ -380,19 +522,27 @@ export default function WalletsManagementPage() {
                         </td>
                         <td className="py-3">
                           <span className={`inline-block px-2 py-0.5 rounded text-[9px] font-bold ${
-                            isTopup 
+                            isTopup || (isAdjustment && isPositive)
                               ? 'bg-green-50 text-green-700 border border-green-200' 
-                              : 'bg-orange-50 text-orange-700 border border-orange-200'
+                              : isAdjustment
+                                ? 'bg-red-50 text-red-700 border border-red-200'
+                                : 'bg-orange-50 text-orange-700 border border-orange-200'
                           }`}>
-                            {isTopup ? '帳戶加值' : '餐點扣款'}
+                            {isTopup
+                              ? '帳戶加值'
+                              : isAdjustment
+                                ? (isPositive ? '帳務調增' : '帳務調減')
+                                : '餐點扣款'}
                           </span>
                         </td>
-                        <td className={`py-3 font-bold ${isTopup ? 'text-green-600' : 'text-red-600'}`}>
-                          {isTopup ? '＋' : '－'}NT$ {Math.abs(tx.amount)}
+                        <td className={`py-3 font-bold ${tx.amount >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                          {tx.amount >= 0 ? '＋' : '－'}NT$ {Math.abs(tx.amount)}
                         </td>
                         <td className="py-3">
                           {isTopup ? (
                             <span>後台管理員手動加值儲值金</span>
+                          ) : isAdjustment ? (
+                            <span>後台管理員帳務{isPositive ? '調增' : '調減'}</span>
                           ) : (
                             tx.order ? (
                               <span>

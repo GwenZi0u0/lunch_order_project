@@ -23,11 +23,7 @@ export default function HistoryPage() {
       .then(data => {
         if (data) {
           setUser(data.user);
-          if (data.user.role === 'admin') {
-            router.push('/admin');
-          } else {
-            fetchTransactions();
-          }
+          fetchTransactions();
         }
       })
       .catch(() => router.push('/login'));
@@ -104,6 +100,8 @@ export default function HistoryPage() {
                 <tbody className="divide-y divide-[#EAE8E4] text-[#333333]">
                   {transactions.map(tx => {
                     const isTopup = tx.type === 'topup';
+                    const isAdjustment = tx.type === 'adjustment';
+                    const isPositive = tx.amount > 0;
                     return (
                       <tr key={tx.id} className="hover:bg-[#F9F8F5]/50 transition-colors">
                         <td className="py-4 font-medium">
@@ -111,19 +109,27 @@ export default function HistoryPage() {
                         </td>
                         <td className="py-4">
                           <span className={`inline-block px-2.5 py-1 rounded text-[10px] font-bold ${
-                            isTopup 
+                            isTopup || (isAdjustment && isPositive)
                               ? 'bg-green-50 text-green-700 border border-green-200' 
-                              : 'bg-orange-50 text-orange-700 border border-orange-200'
+                              : isAdjustment
+                                ? 'bg-red-50 text-red-700 border border-red-200'
+                                : 'bg-orange-50 text-orange-700 border border-orange-200'
                           }`}>
-                            {isTopup ? '帳戶加值' : '餐點扣款'}
+                            {isTopup
+                              ? '帳戶加值'
+                              : isAdjustment
+                                ? (isPositive ? '帳務調增' : '帳務調減')
+                                : '餐點扣款'}
                           </span>
                         </td>
-                        <td className={`py-4 font-bold text-sm ${isTopup ? 'text-green-600' : 'text-red-600'}`}>
-                          {isTopup ? '＋' : '－'}NT$ {Math.abs(tx.amount)}
+                        <td className={`py-4 font-bold text-sm ${tx.amount >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                          {tx.amount >= 0 ? '＋' : '－'}NT$ {Math.abs(tx.amount)}
                         </td>
                         <td className="py-4 leading-normal max-w-[400px]">
                           {isTopup ? (
                             <span>管理者為您的帳戶手動儲值</span>
+                          ) : isAdjustment ? (
+                            <span>管理者進行帳務{isPositive ? '調增' : '調減'}</span>
                           ) : (
                             tx.order ? (
                               <div>

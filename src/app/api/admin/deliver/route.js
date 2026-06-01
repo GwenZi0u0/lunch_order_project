@@ -55,6 +55,7 @@ export async function POST(request) {
             userId: order.userId,
             type: 'charge',
             amount: -order.totalAmount,
+            source: '訂單扣款',
             orderId: order.id,
             operatedBy: user.userId
           }

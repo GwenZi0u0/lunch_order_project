@@ -4,6 +4,36 @@ import { getCurrentUser } from '@/lib/auth';
 
 const WALLET_TRANSACTION_SOURCES = ['-', '現金', '線上支付平台', '銀行轉帳'];
 
+function getTaipeiDateRange(startDate, endDate) {
+  const datePattern = /^\d{4}-\d{2}-\d{2}$/;
+  const hasStart = typeof startDate === 'string' && startDate.length > 0;
+  const hasEnd = typeof endDate === 'string' && endDate.length > 0;
+
+  if ((hasStart && !datePattern.test(startDate)) || (hasEnd && !datePattern.test(endDate))) {
+    throw new Error('Invalid date filter');
+  }
+
+  if (!hasStart && !hasEnd) return null;
+
+  const range = {};
+  const effectiveEndDate = hasEnd ? endDate : startDate;
+
+  if (hasStart) {
+    range.gte = new Date(`${startDate}T00:00:00+08:00`);
+  }
+
+  if (effectiveEndDate) {
+    range.lt = new Date(`${effectiveEndDate}T00:00:00+08:00`);
+    range.lt.setUTCDate(range.lt.getUTCDate() + 1);
+  }
+
+  if (range.gte && range.lt && range.gte >= range.lt) {
+    throw new Error('Invalid date range');
+  }
+
+  return range;
+}
+
 export async function GET(request) {
   try {
     const user = await getCurrentUser(request);
@@ -29,6 +59,8 @@ export async function GET(request) {
     if (action === 'history') {
       const targetUserId = searchParams.get('userId');
       const scope = searchParams.get('scope');
+      const startDate = searchParams.get('startDate') || '';
+      const endDate = searchParams.get('endDate') || '';
       
       // Admins can see all history by default, or filter by a specific user.
       // Normal users can only see their own history.
@@ -42,8 +74,19 @@ export async function GET(request) {
         return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
       }
 
+      let createdAtRange;
+      try {
+        createdAtRange = getTaipeiDateRange(startDate, endDate);
+      } catch (error) {
+        return NextResponse.json({ error: error.message }, { status: 400 });
+      }
+
+      const where = {};
+      if (queryUserId) where.userId = queryUserId;
+      if (createdAtRange) where.createdAt = createdAtRange;
+
       const transactions = await prisma.balanceTransaction.findMany({
-        where: queryUserId ? { userId: queryUserId } : {},
+        where,
         include: {
           user: {
             select: { id: true, name: true, email: true }
@@ -81,9 +124,10 @@ export async function POST(request) {
     }
 
     const body = await request.json();
-    const { targetUserId, type, amount, source } = body;
+    const { targetUserId, type, amount, source, note } = body;
     const numericAmount = parseInt(amount, 10);
     const normalizedSource = typeof source === 'string' ? source.trim() : '';
+    const normalizedNote = typeof note === 'string' ? note.trim() : '';
 
     if (!targetUserId || !type || !Number.isFinite(numericAmount)) {
       return NextResponse.json({ error: 'Invalid wallet transaction data' }, { status: 400 });
@@ -134,6 +178,7 @@ export async function POST(request) {
           type,
           amount: transactionAmount,
           source: normalizedSource,
+          note: normalizedNote || null,
           operatedBy: user.userId,
         }
       });

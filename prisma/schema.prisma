@@ -85,6 +85,7 @@ model BalanceTransaction {
   type       String // topup, charge
   amount     Int // positive for topup, negative for charge
   source     String?
+  note       String?
   orderId    String?
   order      Order?   @relation(fields: [orderId], references: [id])
   operatedBy String?

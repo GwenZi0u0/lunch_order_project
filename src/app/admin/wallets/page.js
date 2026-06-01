@@ -7,6 +7,38 @@ import Navbar from '@/components/Navbar';
 const WALLET_TRANSACTION_SOURCES = ['-', '現金', '線上支付平台', '銀行轉帳'];
 const DEFAULT_TOPUP_SOURCE = '現金';
 const DEFAULT_ADJUSTMENT_SOURCE = '-';
+const WEEKDAY_LABELS = ['日', '一', '二', '三', '四', '五', '六'];
+
+function toDateKey(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function getMonthDays(monthDate) {
+  const year = monthDate.getFullYear();
+  const month = monthDate.getMonth();
+  const firstDate = new Date(year, month, 1);
+  const lastDate = new Date(year, month + 1, 0);
+  const days = [];
+
+  for (let i = 0; i < firstDate.getDay(); i++) {
+    days.push(null);
+  }
+
+  for (let day = 1; day <= lastDate.getDate(); day++) {
+    days.push(new Date(year, month, day));
+  }
+
+  return days;
+}
+
+function getDateLabel(startDate, endDate) {
+  if (!startDate) return '全部日期';
+  if (!endDate || startDate === endDate) return startDate;
+  return `${startDate} - ${endDate}`;
+}
 
 export default function WalletsManagementPage() {
   const router = useRouter();
@@ -15,6 +47,10 @@ export default function WalletsManagementPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [transactions, setTransactions] = useState([]);
   const [selectedLedgerUserId, setSelectedLedgerUserId] = useState('');
+  const [ledgerStartDate, setLedgerStartDate] = useState('');
+  const [ledgerEndDate, setLedgerEndDate] = useState('');
+  const [isLedgerCalendarOpen, setIsLedgerCalendarOpen] = useState(false);
+  const [ledgerCalendarMonth, setLedgerCalendarMonth] = useState(() => new Date());
   
   // Deposit Modal State
   const [selectedUser, setSelectedUser] = useState(null); // User object to deposit to
@@ -23,6 +59,7 @@ export default function WalletsManagementPage() {
   const [customAmount, setCustomAmount] = useState('');
   const [adjustmentDirection, setAdjustmentDirection] = useState('increase');
   const [transactionSource, setTransactionSource] = useState(DEFAULT_TOPUP_SOURCE);
+  const [transactionNote, setTransactionNote] = useState('');
   const [isSubmittingDeposit, setIsSubmittingDeposit] = useState(false);
   const [statusMsg, setStatusMsg] = useState({ text: '', type: '' });
 
@@ -43,12 +80,22 @@ export default function WalletsManagementPage() {
             router.push('/portal');
           } else {
             fetchUsers();
-            fetchTransactions('');
+            fetchTransactions({ userId: '' });
           }
         }
       })
       .catch(() => router.push('/login'));
   }, []);
+
+  useEffect(() => {
+    if (!statusMsg.text) return;
+
+    const timer = setTimeout(() => {
+      setStatusMsg({ text: '', type: '' });
+    }, 5000);
+
+    return () => clearTimeout(timer);
+  }, [statusMsg.text]);
 
   const fetchUsers = () => {
     fetch('/api/wallets?action=list_users')
@@ -61,9 +108,17 @@ export default function WalletsManagementPage() {
       .catch(err => console.error('無法載入使用者:', err));
   };
 
-  const fetchTransactions = (userId = selectedLedgerUserId) => {
-    const query = userId ? `&userId=${userId}` : '';
-    fetch(`/api/wallets?action=history${query}`)
+  const fetchTransactions = ({
+    userId = selectedLedgerUserId,
+    startDate = ledgerStartDate,
+    endDate = ledgerEndDate
+  } = {}) => {
+    const params = new URLSearchParams({ action: 'history' });
+    if (userId) params.set('userId', userId);
+    if (startDate) params.set('startDate', startDate);
+    if (endDate) params.set('endDate', endDate);
+
+    fetch(`/api/wallets?${params.toString()}`)
       .then(res => res.json())
       .then(data => {
         if (Array.isArray(data)) {
@@ -75,7 +130,42 @@ export default function WalletsManagementPage() {
 
   const handleLedgerUserChange = (userId) => {
     setSelectedLedgerUserId(userId);
-    fetchTransactions(userId);
+    fetchTransactions({ userId });
+  };
+
+  const handleLedgerDateSelect = (dateKey) => {
+    let nextStartDate = dateKey;
+    let nextEndDate = '';
+
+    if (ledgerStartDate && !ledgerEndDate) {
+      if (dateKey > ledgerStartDate) {
+        nextStartDate = ledgerStartDate;
+        nextEndDate = dateKey;
+        setIsLedgerCalendarOpen(false);
+      } else if (dateKey === ledgerStartDate) {
+        nextStartDate = dateKey;
+        setIsLedgerCalendarOpen(false);
+      }
+    }
+
+    setLedgerStartDate(nextStartDate);
+    setLedgerEndDate(nextEndDate);
+    fetchTransactions({
+      userId: selectedLedgerUserId,
+      startDate: nextStartDate,
+      endDate: nextEndDate
+    });
+  };
+
+  const clearLedgerDateFilter = () => {
+    setLedgerStartDate('');
+    setLedgerEndDate('');
+    setIsLedgerCalendarOpen(false);
+    fetchTransactions({
+      userId: selectedLedgerUserId,
+      startDate: '',
+      endDate: ''
+    });
   };
 
   const handleRoleChange = async (targetUser, role) => {
@@ -128,7 +218,8 @@ export default function WalletsManagementPage() {
           targetUserId: selectedUser.id,
           type: walletMode === 'topup' ? 'topup' : 'adjustment',
           amount: signedAmount,
-          source: transactionSource
+          source: transactionSource,
+          note: transactionNote
         })
       });
 
@@ -153,6 +244,7 @@ export default function WalletsManagementPage() {
       setWalletMode('topup');
       setAdjustmentDirection('increase');
       setTransactionSource(DEFAULT_TOPUP_SOURCE);
+      setTransactionNote('');
       setCustomAmount('');
     } catch (err) {
       alert(err.message);
@@ -174,6 +266,7 @@ export default function WalletsManagementPage() {
     setCustomAmount('');
     setAdjustmentDirection('increase');
     setTransactionSource(mode === 'topup' ? DEFAULT_TOPUP_SOURCE : DEFAULT_ADJUSTMENT_SOURCE);
+    setTransactionNote('');
     setStatusMsg({ text: '', type: '' });
   };
 
@@ -208,9 +301,9 @@ export default function WalletsManagementPage() {
         </div>
 
         {statusMsg.text && (
-          <div className="p-4 bg-green-50 border border-green-200 text-green-700 text-xs font-bold rounded-xl flex items-center gap-2">
+          <div className="fixed bottom-6 right-6 z-50 max-w-[360px] p-4 bg-green-50 border border-green-200 text-green-700 text-xs font-bold rounded-xl shadow-[0_12px_30px_rgba(0,0,0,0.08)] flex items-start gap-2">
             <i className="ti ti-discount-check text-lg"></i>
-            {statusMsg.text}
+            <span className="leading-relaxed">{statusMsg.text}</span>
           </div>
         )}
 
@@ -359,6 +452,7 @@ export default function WalletsManagementPage() {
                       setWalletMode('topup');
                       setAdjustmentDirection('increase');
                       setTransactionSource(DEFAULT_TOPUP_SOURCE);
+                      setTransactionNote('');
                       setCustomAmount('');
                     }}
                     className="text-[#888888] hover:text-[#EA5B3C] text-sm"
@@ -459,6 +553,18 @@ export default function WalletsManagementPage() {
                       </select>
                     </div>
 
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-[#888888]">備註</label>
+                      <textarea
+                        value={transactionNote}
+                        onChange={(e) => setTransactionNote(e.target.value)}
+                        maxLength={200}
+                        rows={3}
+                        placeholder="例：補登上週餐費、現金已收"
+                        className="w-full text-xs px-3 py-2 border border-[#EAE8E4] rounded-lg focus:outline-none focus:border-[#EA5B3C] bg-white font-bold resize-none"
+                      />
+                    </div>
+
                     <button
                       type="submit"
                       disabled={isSubmittingDeposit}
@@ -495,20 +601,107 @@ export default function WalletsManagementPage() {
               </p>
             </div>
 
-            <div className="space-y-1.5 w-full md:w-[280px]">
-              <label className="text-xs font-bold text-[#888888]">成員</label>
-              <select
-                value={selectedLedgerUserId}
-                onChange={(e) => handleLedgerUserChange(e.target.value)}
-                className="w-full text-xs px-3 py-2 border border-[#EAE8E4] rounded-lg focus:outline-none focus:border-[#EA5B3C] bg-white font-medium"
-              >
-                <option value="">全部成員</option>
-                {users.map(member => (
-                  <option key={member.id} value={member.id}>
-                    {member.name} ({member.email})
-                  </option>
-                ))}
-              </select>
+            <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_240px] gap-3 w-full md:w-[560px]">
+              <div className="space-y-1.5">
+                <div className="h-4 flex items-center">
+                  <label className="text-xs font-bold text-[#888888]">成員</label>
+                </div>
+                <select
+                  value={selectedLedgerUserId}
+                  onChange={(e) => handleLedgerUserChange(e.target.value)}
+                  className="w-full h-9 text-xs px-3 border border-[#EAE8E4] rounded-lg focus:outline-none focus:border-[#EA5B3C] bg-white font-medium"
+                >
+                  <option value="">全部成員</option>
+                  {users.map(member => (
+                    <option key={member.id} value={member.id}>
+                      {member.name} ({member.email})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-1.5 relative">
+                <div className="h-4 flex items-center justify-between gap-2">
+                  <label className="text-xs font-bold text-[#888888]">日期</label>
+                  {(ledgerStartDate || ledgerEndDate) && (
+                    <button
+                      type="button"
+                      onClick={clearLedgerDateFilter}
+                      className="text-[10px] font-bold text-[#888888] hover:text-[#EA5B3C] transition-all"
+                    >
+                      清除
+                    </button>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsLedgerCalendarOpen(prev => !prev)}
+                  className="w-full h-9 text-xs px-3 border border-[#EAE8E4] rounded-lg focus:outline-none focus:border-[#EA5B3C] bg-white font-medium text-left flex items-center justify-between gap-2 hover:border-[#D6D1CA] transition-all"
+                >
+                  <span>{getDateLabel(ledgerStartDate, ledgerEndDate)}</span>
+                  <i className="ti ti-calendar text-[#888888]"></i>
+                </button>
+
+                {isLedgerCalendarOpen && (
+                  <div className="absolute right-0 top-full mt-2 z-30 w-[280px] rounded-xl border border-[#EAE8E4] bg-white shadow-[0_12px_30px_rgba(0,0,0,0.08)] p-3">
+                    <div className="flex items-center justify-between mb-3">
+                      <button
+                        type="button"
+                        onClick={() => setLedgerCalendarMonth(prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1))}
+                        className="w-8 h-8 rounded-lg border border-[#EAE8E4] text-[#888888] hover:text-[#EA5B3C] hover:border-[#EA5B3C] transition-all"
+                      >
+                        <i className="ti ti-chevron-left"></i>
+                      </button>
+                      <div className="text-xs font-bold text-[#333333]">
+                        {ledgerCalendarMonth.getFullYear()} 年 {ledgerCalendarMonth.getMonth() + 1} 月
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setLedgerCalendarMonth(prev => new Date(prev.getFullYear(), prev.getMonth() + 1, 1))}
+                        className="w-8 h-8 rounded-lg border border-[#EAE8E4] text-[#888888] hover:text-[#EA5B3C] hover:border-[#EA5B3C] transition-all"
+                      >
+                        <i className="ti ti-chevron-right"></i>
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-bold text-[#888888] mb-1">
+                      {WEEKDAY_LABELS.map(label => (
+                        <div key={label} className="py-1">{label}</div>
+                      ))}
+                    </div>
+
+                    <div className="grid grid-cols-7 gap-1">
+                      {getMonthDays(ledgerCalendarMonth).map((date, index) => {
+                        if (!date) {
+                          return <div key={`empty-${index}`} className="h-8" />;
+                        }
+
+                        const dateKey = toDateKey(date);
+                        const isStart = dateKey === ledgerStartDate;
+                        const isEnd = dateKey === ledgerEndDate;
+                        const isInRange = ledgerStartDate && ledgerEndDate && dateKey > ledgerStartDate && dateKey < ledgerEndDate;
+
+                        return (
+                          <button
+                            key={dateKey}
+                            type="button"
+                            onClick={() => handleLedgerDateSelect(dateKey)}
+                            className={`h-8 rounded-lg text-[11px] font-bold transition-all ${
+                              isStart || isEnd
+                                ? 'bg-[#EA5B3C] text-white'
+                                : isInRange
+                                  ? 'bg-orange-50 text-[#EA5B3C]'
+                                  : 'text-[#333333] hover:bg-[#F9F8F5] hover:text-[#EA5B3C]'
+                            }`}
+                          >
+                            {date.getDate()}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
@@ -523,18 +716,14 @@ export default function WalletsManagementPage() {
                   <tr className="border-b border-[#EAE8E4] text-[#888888] font-bold">
                     <th className="py-3 font-bold">交易日期</th>
                     <th className="py-3 font-bold">對象成員</th>
-                    <th className="py-3 font-bold">類別</th>
                     <th className="py-3 font-bold">異動金額</th>
                     <th className="py-3 font-bold">來源</th>
-                    <th className="py-3 font-bold">內容說明</th>
                     <th className="py-3 font-bold">操作經手人</th>
+                    <th className="py-3 font-bold">備註</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#EAE8E4] text-[#333333]">
                   {transactions.map(tx => {
-                    const isTopup = tx.type === 'topup';
-                    const isAdjustment = tx.type === 'adjustment';
-                    const isPositive = tx.amount > 0;
                     return (
                       <tr key={tx.id} className="hover:bg-[#F9F8F5]/30">
                         <td className="py-3">
@@ -543,44 +732,17 @@ export default function WalletsManagementPage() {
                         <td className="py-3 font-bold">
                           {tx.user?.name} <span className="text-[10px] text-[#888888] font-normal">({tx.user?.email})</span>
                         </td>
-                        <td className="py-3">
-                          <span className={`inline-block px-2 py-0.5 rounded text-[9px] font-bold ${
-                            isTopup || (isAdjustment && isPositive)
-                              ? 'bg-green-50 text-green-700 border border-green-200' 
-                              : isAdjustment
-                                ? 'bg-red-50 text-red-700 border border-red-200'
-                                : 'bg-orange-50 text-orange-700 border border-orange-200'
-                          }`}>
-                            {isTopup
-                              ? '帳戶加值'
-                              : isAdjustment
-                                ? (isPositive ? '帳務調增' : '帳務調減')
-                                : '餐點扣款'}
-                          </span>
-                        </td>
                         <td className={`py-3 font-bold ${tx.amount >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                           {tx.amount >= 0 ? '＋' : '－'}NT$ {Math.abs(tx.amount)}
                         </td>
                         <td className="py-3 text-[#555555]">
-                          {tx.source || '-'}
-                        </td>
-                        <td className="py-3">
-                          {isTopup ? (
-                            <span>後台管理員手動加值儲值金</span>
-                          ) : isAdjustment ? (
-                            <span>後台管理員帳務{isPositive ? '調增' : '調減'}</span>
-                          ) : (
-                            tx.order ? (
-                              <span>
-                                便當點餐扣款：<b>{tx.order.schedule.restaurant.name}</b> ({tx.order.schedule.date})
-                              </span>
-                            ) : (
-                              <span>餐點自動扣款</span>
-                            )
-                          )}
+                          {tx.source || (tx.type === 'charge' ? '訂單扣款' : '-')}
                         </td>
                         <td className="py-3 text-[#888888]">
                           {tx.operator ? tx.operator.name : '系統自動'}
+                        </td>
+                        <td className="py-3 max-w-[240px] text-[#555555]">
+                          {tx.note || '-'}
                         </td>
                       </tr>
                     );

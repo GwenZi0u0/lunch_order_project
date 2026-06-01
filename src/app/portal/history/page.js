@@ -4,11 +4,48 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Navbar from '@/components/Navbar';
 
+const WEEKDAY_LABELS = ['日', '一', '二', '三', '四', '五', '六'];
+
+function toDateKey(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function getMonthDays(monthDate) {
+  const year = monthDate.getFullYear();
+  const month = monthDate.getMonth();
+  const firstDate = new Date(year, month, 1);
+  const lastDate = new Date(year, month + 1, 0);
+  const days = [];
+
+  for (let i = 0; i < firstDate.getDay(); i++) {
+    days.push(null);
+  }
+
+  for (let day = 1; day <= lastDate.getDate(); day++) {
+    days.push(new Date(year, month, day));
+  }
+
+  return days;
+}
+
+function getDateLabel(startDate, endDate) {
+  if (!startDate) return '全部日期';
+  if (!endDate || startDate === endDate) return startDate;
+  return `${startDate} - ${endDate}`;
+}
+
 export default function HistoryPage() {
   const router = useRouter();
   const [user, setUser] = useState(null);
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [ledgerStartDate, setLedgerStartDate] = useState('');
+  const [ledgerEndDate, setLedgerEndDate] = useState('');
+  const [isLedgerCalendarOpen, setIsLedgerCalendarOpen] = useState(false);
+  const [ledgerCalendarMonth, setLedgerCalendarMonth] = useState(() => new Date());
 
   useEffect(() => {
     // Check authentication
@@ -29,8 +66,18 @@ export default function HistoryPage() {
       .catch(() => router.push('/login'));
   }, []);
 
-  const fetchTransactions = () => {
-    fetch('/api/wallets?action=history&scope=mine')
+  const fetchTransactions = ({
+    startDate = ledgerStartDate,
+    endDate = ledgerEndDate
+  } = {}) => {
+    const params = new URLSearchParams({
+      action: 'history',
+      scope: 'mine'
+    });
+    if (startDate) params.set('startDate', startDate);
+    if (endDate) params.set('endDate', endDate);
+
+    fetch(`/api/wallets?${params.toString()}`)
       .then(res => res.json())
       .then(data => {
         if (Array.isArray(data)) {
@@ -42,6 +89,39 @@ export default function HistoryPage() {
         console.error('無法載入交易紀錄:', err);
         setLoading(false);
       });
+  };
+
+  const handleLedgerDateSelect = (dateKey) => {
+    let nextStartDate = dateKey;
+    let nextEndDate = '';
+
+    if (ledgerStartDate && !ledgerEndDate) {
+      if (dateKey > ledgerStartDate) {
+        nextStartDate = ledgerStartDate;
+        nextEndDate = dateKey;
+        setIsLedgerCalendarOpen(false);
+      } else if (dateKey === ledgerStartDate) {
+        nextStartDate = dateKey;
+        setIsLedgerCalendarOpen(false);
+      }
+    }
+
+    setLedgerStartDate(nextStartDate);
+    setLedgerEndDate(nextEndDate);
+    fetchTransactions({
+      startDate: nextStartDate,
+      endDate: nextEndDate
+    });
+  };
+
+  const clearLedgerDateFilter = () => {
+    setLedgerStartDate('');
+    setLedgerEndDate('');
+    setIsLedgerCalendarOpen(false);
+    fetchTransactions({
+      startDate: '',
+      endDate: ''
+    });
   };
 
   if (!user || loading) {
@@ -76,9 +156,94 @@ export default function HistoryPage() {
 
         {/* Ledger Transactions Grid */}
         <div className="c-box">
-          <h3 className="font-bold text-[#333333] text-base mb-6 border-l-4 border-l-[#EA5B3C] pl-2.5">
-            儲值金變動與消費日誌
-          </h3>
+          <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4 mb-6">
+            <h3 className="font-bold text-[#333333] text-base border-l-4 border-l-[#EA5B3C] pl-2.5">
+              儲值金變動與消費日誌
+            </h3>
+
+            <div className="space-y-1.5 relative w-full md:w-[240px]">
+              <div className="h-4 flex items-center justify-between gap-2">
+                <label className="text-xs font-bold text-[#888888]">日期</label>
+                {(ledgerStartDate || ledgerEndDate) && (
+                  <button
+                    type="button"
+                    onClick={clearLedgerDateFilter}
+                    className="text-[10px] font-bold text-[#888888] hover:text-[#EA5B3C] transition-all"
+                  >
+                    清除
+                  </button>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsLedgerCalendarOpen(prev => !prev)}
+                className="w-full h-9 text-xs px-3 border border-[#EAE8E4] rounded-lg focus:outline-none focus:border-[#EA5B3C] bg-white font-medium text-left flex items-center justify-between gap-2 hover:border-[#D6D1CA] transition-all"
+              >
+                <span>{getDateLabel(ledgerStartDate, ledgerEndDate)}</span>
+                <i className="ti ti-calendar text-[#888888]"></i>
+              </button>
+
+              {isLedgerCalendarOpen && (
+                <div className="absolute right-0 top-full mt-2 z-30 w-[280px] rounded-xl border border-[#EAE8E4] bg-white shadow-[0_12px_30px_rgba(0,0,0,0.08)] p-3">
+                  <div className="flex items-center justify-between mb-3">
+                    <button
+                      type="button"
+                      onClick={() => setLedgerCalendarMonth(prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1))}
+                      className="w-8 h-8 rounded-lg border border-[#EAE8E4] text-[#888888] hover:text-[#EA5B3C] hover:border-[#EA5B3C] transition-all"
+                    >
+                      <i className="ti ti-chevron-left"></i>
+                    </button>
+                    <div className="text-xs font-bold text-[#333333]">
+                      {ledgerCalendarMonth.getFullYear()} 年 {ledgerCalendarMonth.getMonth() + 1} 月
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setLedgerCalendarMonth(prev => new Date(prev.getFullYear(), prev.getMonth() + 1, 1))}
+                      className="w-8 h-8 rounded-lg border border-[#EAE8E4] text-[#888888] hover:text-[#EA5B3C] hover:border-[#EA5B3C] transition-all"
+                    >
+                      <i className="ti ti-chevron-right"></i>
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-bold text-[#888888] mb-1">
+                    {WEEKDAY_LABELS.map(label => (
+                      <div key={label} className="py-1">{label}</div>
+                    ))}
+                  </div>
+
+                  <div className="grid grid-cols-7 gap-1">
+                    {getMonthDays(ledgerCalendarMonth).map((date, index) => {
+                      if (!date) {
+                        return <div key={`empty-${index}`} className="h-8" />;
+                      }
+
+                      const dateKey = toDateKey(date);
+                      const isStart = dateKey === ledgerStartDate;
+                      const isEnd = dateKey === ledgerEndDate;
+                      const isInRange = ledgerStartDate && ledgerEndDate && dateKey > ledgerStartDate && dateKey < ledgerEndDate;
+
+                      return (
+                        <button
+                          key={dateKey}
+                          type="button"
+                          onClick={() => handleLedgerDateSelect(dateKey)}
+                          className={`h-8 rounded-lg text-[11px] font-bold transition-all ${
+                            isStart || isEnd
+                              ? 'bg-[#EA5B3C] text-white'
+                              : isInRange
+                                ? 'bg-orange-50 text-[#EA5B3C]'
+                                : 'text-[#333333] hover:bg-[#F9F8F5] hover:text-[#EA5B3C]'
+                          }`}
+                        >
+                          {date.getDate()}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
 
           {transactions.length === 0 ? (
             <div className="text-center py-16 text-xs text-[#888888] space-y-3">
@@ -91,69 +256,30 @@ export default function HistoryPage() {
                 <thead>
                   <tr className="border-b border-[#EAE8E4] text-[#888888] font-bold">
                     <th className="py-4 font-bold">交易日期</th>
-                    <th className="py-4 font-bold">類別</th>
                     <th className="py-4 font-bold">異動金額</th>
                     <th className="py-4 font-bold">來源</th>
-                    <th className="py-4 font-bold">交易內容說明</th>
                     <th className="py-4 font-bold">經手人</th>
+                    <th className="py-4 font-bold">備註</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#EAE8E4] text-[#333333]">
                   {transactions.map(tx => {
-                    const isTopup = tx.type === 'topup';
-                    const isAdjustment = tx.type === 'adjustment';
-                    const isPositive = tx.amount > 0;
                     return (
                       <tr key={tx.id} className="hover:bg-[#F9F8F5]/50 transition-colors">
                         <td className="py-4 font-medium">
                           {new Date(tx.createdAt).toLocaleString('zh-TW', { hour12: false })}
                         </td>
-                        <td className="py-4">
-                          <span className={`inline-block px-2.5 py-1 rounded text-[10px] font-bold ${
-                            isTopup || (isAdjustment && isPositive)
-                              ? 'bg-green-50 text-green-700 border border-green-200' 
-                              : isAdjustment
-                                ? 'bg-red-50 text-red-700 border border-red-200'
-                                : 'bg-orange-50 text-orange-700 border border-orange-200'
-                          }`}>
-                            {isTopup
-                              ? '帳戶加值'
-                              : isAdjustment
-                                ? (isPositive ? '帳務調增' : '帳務調減')
-                                : '餐點扣款'}
-                          </span>
-                        </td>
                         <td className={`py-4 font-bold text-sm ${tx.amount >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                           {tx.amount >= 0 ? '＋' : '－'}NT$ {Math.abs(tx.amount)}
                         </td>
                         <td className="py-4 text-[#555555]">
-                          {tx.source || '-'}
-                        </td>
-                        <td className="py-4 leading-normal max-w-[400px]">
-                          {isTopup ? (
-                            <span>管理者為您的帳戶手動儲值</span>
-                          ) : isAdjustment ? (
-                            <span>管理者進行帳務{isPositive ? '調增' : '調減'}</span>
-                          ) : (
-                            tx.order ? (
-                              <div>
-                                <span className="font-bold">{tx.order.schedule.restaurant.name}</span>
-                                <span className="text-[#888888] ml-2 font-normal">
-                                  ({tx.order.schedule.date})
-                                </span>
-                                {tx.order.note && (
-                                  <div className="text-[10px] text-[#888888] mt-1 bg-[#F9F8F5] inline-block px-1.5 py-0.5 rounded border border-[#EAE8E4]">
-                                    備註: {tx.order.note}
-                                  </div>
-                                )}
-                              </div>
-                            ) : (
-                              <span>系統自動扣款</span>
-                            )
-                          )}
+                          {tx.source || (tx.type === 'charge' ? '訂單扣款' : '-')}
                         </td>
                         <td className="py-4 text-[#888888]">
                           {tx.operator ? tx.operator.name : '系統自動'}
+                        </td>
+                        <td className="py-4 leading-normal max-w-[400px] text-[#555555]">
+                          {tx.note || '-'}
                         </td>
                       </tr>
                     );

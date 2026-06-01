@@ -4,6 +4,10 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Navbar from '@/components/Navbar';
 
+const WALLET_TRANSACTION_SOURCES = ['-', '現金', '線上支付平台', '銀行轉帳'];
+const DEFAULT_TOPUP_SOURCE = '現金';
+const DEFAULT_ADJUSTMENT_SOURCE = '-';
+
 export default function WalletsManagementPage() {
   const router = useRouter();
   const [user, setUser] = useState(null);
@@ -18,6 +22,7 @@ export default function WalletsManagementPage() {
   const [depositAmount, setDepositAmount] = useState(500);
   const [customAmount, setCustomAmount] = useState('');
   const [adjustmentDirection, setAdjustmentDirection] = useState('increase');
+  const [transactionSource, setTransactionSource] = useState(DEFAULT_TOPUP_SOURCE);
   const [isSubmittingDeposit, setIsSubmittingDeposit] = useState(false);
   const [statusMsg, setStatusMsg] = useState({ text: '', type: '' });
 
@@ -122,7 +127,8 @@ export default function WalletsManagementPage() {
         body: JSON.stringify({
           targetUserId: selectedUser.id,
           type: walletMode === 'topup' ? 'topup' : 'adjustment',
-          amount: signedAmount
+          amount: signedAmount,
+          source: transactionSource
         })
       });
 
@@ -146,6 +152,7 @@ export default function WalletsManagementPage() {
       setSelectedUser(null);
       setWalletMode('topup');
       setAdjustmentDirection('increase');
+      setTransactionSource(DEFAULT_TOPUP_SOURCE);
       setCustomAmount('');
     } catch (err) {
       alert(err.message);
@@ -166,6 +173,7 @@ export default function WalletsManagementPage() {
     setDepositAmount(mode === 'topup' ? 500 : 100);
     setCustomAmount('');
     setAdjustmentDirection('increase');
+    setTransactionSource(mode === 'topup' ? DEFAULT_TOPUP_SOURCE : DEFAULT_ADJUSTMENT_SOURCE);
     setStatusMsg({ text: '', type: '' });
   };
 
@@ -229,9 +237,9 @@ export default function WalletsManagementPage() {
                 </div>
               </div>
 
-              <div className="overflow-x-auto border border-[#EAE8E4] rounded-xl bg-white">
+              <div className="max-h-[430px] overflow-auto border border-[#EAE8E4] rounded-xl bg-white kaizen-scrollbar">
                 <table className="w-full text-left border-collapse text-xs">
-                  <thead>
+                  <thead className="sticky top-0 z-10">
                     <tr className="bg-[#F9F8F5] text-[#888888] font-bold border-b border-[#EAE8E4]">
                       <th className="p-3">姓名</th>
                       <th className="p-3">電子信箱</th>
@@ -350,6 +358,7 @@ export default function WalletsManagementPage() {
                       setSelectedUser(null);
                       setWalletMode('topup');
                       setAdjustmentDirection('increase');
+                      setTransactionSource(DEFAULT_TOPUP_SOURCE);
                       setCustomAmount('');
                     }}
                     className="text-[#888888] hover:text-[#EA5B3C] text-sm"
@@ -437,6 +446,19 @@ export default function WalletsManagementPage() {
                       />
                     </div>
 
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-bold text-[#888888]">來源</label>
+                      <select
+                        value={transactionSource}
+                        onChange={(e) => setTransactionSource(e.target.value)}
+                        className="w-full text-xs px-3 py-2 border border-[#EAE8E4] rounded-lg focus:outline-none focus:border-[#EA5B3C] bg-white font-bold"
+                      >
+                        {WALLET_TRANSACTION_SOURCES.map(source => (
+                          <option key={source} value={source}>{source}</option>
+                        ))}
+                      </select>
+                    </div>
+
                     <button
                       type="submit"
                       disabled={isSubmittingDeposit}
@@ -495,14 +517,15 @@ export default function WalletsManagementPage() {
               {selectedLedgerUserId ? '此成員尚無任何交易明細與變動日誌。' : '系統尚無任何交易明細與變動日誌。'}
             </div>
           ) : (
-            <div className="overflow-x-auto">
+            <div className="max-h-[445px] overflow-auto kaizen-scrollbar">
               <table className="w-full text-left border-collapse text-xs">
-                <thead>
+                <thead className="sticky top-0 z-10 bg-white">
                   <tr className="border-b border-[#EAE8E4] text-[#888888] font-bold">
                     <th className="py-3 font-bold">交易日期</th>
                     <th className="py-3 font-bold">對象成員</th>
                     <th className="py-3 font-bold">類別</th>
                     <th className="py-3 font-bold">異動金額</th>
+                    <th className="py-3 font-bold">來源</th>
                     <th className="py-3 font-bold">內容說明</th>
                     <th className="py-3 font-bold">操作經手人</th>
                   </tr>
@@ -537,6 +560,9 @@ export default function WalletsManagementPage() {
                         </td>
                         <td className={`py-3 font-bold ${tx.amount >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                           {tx.amount >= 0 ? '＋' : '－'}NT$ {Math.abs(tx.amount)}
+                        </td>
+                        <td className="py-3 text-[#555555]">
+                          {tx.source || '-'}
                         </td>
                         <td className="py-3">
                           {isTopup ? (

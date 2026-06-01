@@ -25,6 +25,31 @@
   background: #F9F8F5; /* kaizen bg */
 }
 
+.kaizen-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: #D6D1CA #F9F8F5;
+}
+
+.kaizen-scrollbar::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.kaizen-scrollbar::-webkit-scrollbar-track {
+  background: #F9F8F5;
+  border-radius: 999px;
+}
+
+.kaizen-scrollbar::-webkit-scrollbar-thumb {
+  background: #D6D1CA;
+  border: 2px solid #F9F8F5;
+  border-radius: 999px;
+}
+
+.kaizen-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #EA5B3C;
+}
+
 /* Kaizen UI Elements */
 .c-box {
   background: #FFFFFF;

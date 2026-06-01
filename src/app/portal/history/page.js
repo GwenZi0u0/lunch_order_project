@@ -30,7 +30,7 @@ export default function HistoryPage() {
   }, []);
 
   const fetchTransactions = () => {
-    fetch('/api/wallets?action=history')
+    fetch('/api/wallets?action=history&scope=mine')
       .then(res => res.json())
       .then(data => {
         if (Array.isArray(data)) {
@@ -93,6 +93,7 @@ export default function HistoryPage() {
                     <th className="py-4 font-bold">交易日期</th>
                     <th className="py-4 font-bold">類別</th>
                     <th className="py-4 font-bold">異動金額</th>
+                    <th className="py-4 font-bold">來源</th>
                     <th className="py-4 font-bold">交易內容說明</th>
                     <th className="py-4 font-bold">經手人</th>
                   </tr>
@@ -124,6 +125,9 @@ export default function HistoryPage() {
                         </td>
                         <td className={`py-4 font-bold text-sm ${tx.amount >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                           {tx.amount >= 0 ? '＋' : '－'}NT$ {Math.abs(tx.amount)}
+                        </td>
+                        <td className="py-4 text-[#555555]">
+                          {tx.source || '-'}
                         </td>
                         <td className="py-4 leading-normal max-w-[400px]">
                           {isTopup ? (

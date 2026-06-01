@@ -84,6 +84,7 @@ model BalanceTransaction {
   user       User     @relation("UserTransactions", fields: [userId], references: [id], onDelete: Cascade)
   type       String // topup, charge
   amount     Int // positive for topup, negative for charge
+  source     String?
   orderId    String?
   order      Order?   @relation(fields: [orderId], references: [id])
   operatedBy String?

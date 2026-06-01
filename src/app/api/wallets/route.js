@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import prisma from '@/lib/db';
 import { getCurrentUser } from '@/lib/auth';
 
+const WALLET_TRANSACTION_SOURCES = ['-', '現金', '線上支付平台', '銀行轉帳'];
+
 export async function GET(request) {
   try {
     const user = await getCurrentUser(request);
@@ -26,10 +28,13 @@ export async function GET(request) {
 
     if (action === 'history') {
       const targetUserId = searchParams.get('userId');
+      const scope = searchParams.get('scope');
       
       // Admins can see all history by default, or filter by a specific user.
       // Normal users can only see their own history.
-      const queryUserId = user.role === 'admin'
+      const queryUserId = scope === 'mine'
+        ? user.userId
+        : user.role === 'admin'
         ? targetUserId || null
         : user.userId;
       
@@ -76,8 +81,9 @@ export async function POST(request) {
     }
 
     const body = await request.json();
-    const { targetUserId, type, amount } = body;
+    const { targetUserId, type, amount, source } = body;
     const numericAmount = parseInt(amount, 10);
+    const normalizedSource = typeof source === 'string' ? source.trim() : '';
 
     if (!targetUserId || !type || !Number.isFinite(numericAmount)) {
       return NextResponse.json({ error: 'Invalid wallet transaction data' }, { status: 400 });
@@ -93,6 +99,10 @@ export async function POST(request) {
 
     if (!['topup', 'adjustment'].includes(type)) {
       return NextResponse.json({ error: 'Invalid wallet transaction type' }, { status: 400 });
+    }
+
+    if (!WALLET_TRANSACTION_SOURCES.includes(normalizedSource)) {
+      return NextResponse.json({ error: 'Invalid wallet transaction source' }, { status: 400 });
     }
 
     const targetUser = await prisma.user.findUnique({
@@ -123,6 +133,7 @@ export async function POST(request) {
           userId: targetUserId,
           type,
           amount: transactionAmount,
+          source: normalizedSource,
           operatedBy: user.userId,
         }
       });

@@ -64,10 +64,7 @@ export default function PortalPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [orderError, setOrderError] = useState('');
   const [orderSuccess, setOrderSuccess] = useState('');
-  const [announcementTitle, setAnnouncementTitle] = useState('');
-  const [announcement, setAnnouncement] = useState('');
-  const [orderGuideTitle, setOrderGuideTitle] = useState('');
-  const [orderGuide, setOrderGuide] = useState('');
+  const [announcements, setAnnouncements] = useState([]);
   
   // Current system date/time check
   const [currentDateTime, setCurrentDateTime] = useState({ dateStr: '', timeStr: '' });
@@ -141,17 +138,8 @@ export default function PortalPage() {
     fetch('/api/announcement')
       .then(res => res.json())
       .then(data => {
-        if (typeof data.announcementTitle === 'string') {
-          setAnnouncementTitle(data.announcementTitle);
-        }
-        if (typeof data.announcement === 'string') {
-          setAnnouncement(data.announcement);
-        }
-        if (typeof data.orderGuideTitle === 'string') {
-          setOrderGuideTitle(data.orderGuideTitle);
-        }
-        if (typeof data.orderGuide === 'string') {
-          setOrderGuide(data.orderGuide);
+        if (Array.isArray(data.announcements)) {
+          setAnnouncements(data.announcements);
         }
       })
       .catch(err => console.error('Failed to load announcement:', err));
@@ -400,37 +388,45 @@ export default function PortalPage() {
           </div>
         </section>
 
-        {/* Announcement and Guide Board */}
+        {/* Announcement Board */}
         <section className="bg-white rounded-xl border border-[#EAE8E4] p-6 shadow-sm">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div className="flex items-start gap-4">
-              <div className="w-10 h-10 rounded-full bg-[#FFF3EF] text-[#EA5B3C] flex items-center justify-center shrink-0">
-                <i className="ti ti-speakerphone text-xl"></i>
-              </div>
-              <div className="min-w-0 flex-1 space-y-3">
-                <div>
-                  <p className="text-xs font-bold text-[#888888] tracking-widest uppercase">公告欄</p>
-                  <h2 className="text-lg font-bold text-[#333333] mt-1">{announcementTitle || '午餐訂購規則'}</h2>
-                </div>
-                <div className="text-sm text-[#555555] leading-7 whitespace-pre-wrap">
-                  {announcement || '目前尚無公告。'}
-                </div>
-              </div>
+          <div className="flex items-start gap-4">
+            <div className="w-10 h-10 rounded-full bg-[#FFF3EF] text-[#EA5B3C] flex items-center justify-center shrink-0">
+              <i className="ti ti-speakerphone text-xl"></i>
             </div>
+            <div className="min-w-0 flex-1 space-y-5">
+              <h2 className="text-lg font-bold text-[#333333]">公告欄</h2>
 
-            <div className="flex items-start gap-4 lg:border-l lg:border-[#EAE8E4] lg:pl-6">
-              <div className="w-10 h-10 rounded-full bg-[#FFFBEA] text-[#C99A00] flex items-center justify-center shrink-0">
-                <i className="ti ti-bulb text-xl"></i>
-              </div>
-              <div className="min-w-0 flex-1 space-y-3">
-                <div>
-                  <p className="text-xs font-bold text-[#888888] tracking-widest uppercase">流程說明</p>
-                  <h2 className="text-lg font-bold text-[#333333] mt-1">{orderGuideTitle || '每日訂單流程說明'}</h2>
+              {announcements.length > 0 ? (
+                <div className="space-y-4">
+                  {announcements.map(item => (
+                    <article key={item.id} className="rounded-xl border border-[#EAE8E4] bg-[#F9F8F5] p-4 space-y-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <h3 className="text-base font-bold text-[#333333] break-words">
+                          {item.title || '未命名公告'}
+                        </h3>
+                        {item.pinned && (
+                          <span className="shrink-0 inline-flex items-center gap-1 rounded-full border border-[#EA5B3C]/20 bg-[#FFF3EF] px-2 py-1 text-[11px] font-bold text-[#EA5B3C]">
+                            <i className="ti ti-pin text-xs"></i> 置頂
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-sm text-[#555555] leading-7 whitespace-pre-wrap break-words">
+                        {item.content || '此公告尚無內容。'}
+                      </div>
+                      {item.updatedAt && (
+                        <p className="text-[11px] text-[#888888] text-right">
+                          最後更新：{new Date(item.updatedAt).toLocaleString()}
+                        </p>
+                      )}
+                    </article>
+                  ))}
                 </div>
-                <div className="text-sm text-[#555555] leading-7 whitespace-pre-wrap">
-                  {orderGuide || '目前尚無每日訂單流程說明。'}
+              ) : (
+                <div className="text-sm text-[#888888] leading-7">
+                  目前尚無公告。
                 </div>
-              </div>
+              )}
             </div>
           </div>
         </section>

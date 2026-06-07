@@ -67,11 +67,8 @@ export default function AdminDashboard() {
   // Billing action state
   const [isProcessingDelivery, setIsProcessingDelivery] = useState(false);
   const [message, setMessage] = useState({ text: '', type: '' });
-  const [announcementTitle, setAnnouncementTitle] = useState('');
-  const [announcement, setAnnouncement] = useState('');
-  const [orderGuideTitle, setOrderGuideTitle] = useState('');
-  const [orderGuide, setOrderGuide] = useState('');
-  const [isSavingAnnouncement, setIsSavingAnnouncement] = useState(false);
+  const [announcements, setAnnouncements] = useState([]);
+  const [savingAnnouncementId, setSavingAnnouncementId] = useState('');
   const [announcementMessage, setAnnouncementMessage] = useState('');
 
   useEffect(() => {
@@ -129,31 +126,22 @@ export default function AdminDashboard() {
     fetch('/api/announcement')
       .then(res => res.json())
       .then(data => {
-        if (typeof data.announcementTitle === 'string') {
-          setAnnouncementTitle(data.announcementTitle);
-        }
-        if (typeof data.announcement === 'string') {
-          setAnnouncement(data.announcement);
-        }
-        if (typeof data.orderGuideTitle === 'string') {
-          setOrderGuideTitle(data.orderGuideTitle);
-        }
-        if (typeof data.orderGuide === 'string') {
-          setOrderGuide(data.orderGuide);
+        if (Array.isArray(data.announcements)) {
+          setAnnouncements(data.announcements);
         }
       })
       .catch(err => console.error('Failed to load announcement:', err));
   };
 
-  const handleSaveAnnouncement = async () => {
-    setIsSavingAnnouncement(true);
+  const persistAnnouncements = async (nextAnnouncements, savingId, successMessage) => {
+    setSavingAnnouncementId(savingId);
     setAnnouncementMessage('');
 
     try {
       const res = await fetch('/api/announcement', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ announcementTitle, announcement, orderGuideTitle, orderGuide })
+        body: JSON.stringify({ announcements: nextAnnouncements })
       });
       const data = await res.json();
 
@@ -161,17 +149,54 @@ export default function AdminDashboard() {
         throw new Error(data.error || '公告儲存失敗');
       }
 
-      setAnnouncementTitle(data.announcementTitle);
-      setAnnouncement(data.announcement);
-      setOrderGuideTitle(data.orderGuideTitle);
-      setOrderGuide(data.orderGuide);
-      setAnnouncementMessage('公告已更新。');
+      setAnnouncements(Array.isArray(data.announcements) ? data.announcements : nextAnnouncements);
+      setAnnouncementMessage(successMessage);
       setTimeout(() => setAnnouncementMessage(''), 3000);
     } catch (err) {
       setAnnouncementMessage(err.message);
     } finally {
-      setIsSavingAnnouncement(false);
+      setSavingAnnouncementId('');
     }
+  };
+
+  const handleAddAnnouncement = () => {
+    const now = new Date().toISOString();
+    setAnnouncements(prev => [
+      {
+        id: `local-${Date.now()}`,
+        title: '',
+        content: '',
+        pinned: false,
+        updatedAt: now
+      },
+      ...prev
+    ]);
+  };
+
+  const handleAnnouncementChange = (id, field, value) => {
+    setAnnouncements(prev => prev.map(item => (
+      item.id === id ? { ...item, [field]: value } : item
+    )));
+  };
+
+  const handleSaveAnnouncementItem = (id) => {
+    const nextAnnouncements = announcements.map(item => (
+      item.id === id ? { ...item, updatedAt: new Date().toISOString() } : item
+    ));
+    persistAnnouncements(nextAnnouncements, id, '公告已儲存。');
+  };
+
+  const handleTogglePinnedAnnouncement = (id) => {
+    const nextAnnouncements = announcements.map(item => (
+      item.id === id ? { ...item, pinned: !item.pinned, updatedAt: new Date().toISOString() } : item
+    ));
+    persistAnnouncements(nextAnnouncements, id, '公告釘選狀態已更新。');
+  };
+
+  const handleDeleteAnnouncement = (id) => {
+    if (!confirm('確認要刪除此公告嗎？')) return;
+    const nextAnnouncements = announcements.filter(item => item.id !== id);
+    persistAnnouncements(nextAnnouncements, id, '公告已刪除。');
   };
 
   const activeSchedule = schedules.find(s => s.date === selectedDate);
@@ -418,54 +443,94 @@ export default function AdminDashboard() {
             </div>
           </div>
 
-          <div id="announcement-editor" className="scroll-mt-24 bg-white border border-[#EAE8E4] rounded-xl shadow-sm p-6 space-y-4">
-            <div className="border-b border-[#EAE8E4] pb-4">
-              <p className="text-xs font-bold text-[#888888] tracking-widest uppercase">訂購者首頁管理</p>
-              <h3 className="text-lg font-bold text-[#333333] mt-1">公告欄編輯</h3>
-            </div>
-            <div className="space-y-2">
-              <label className="text-xs font-bold text-[#888888] tracking-widest uppercase">午餐訂購規則標題</label>
-              <input
-                type="text"
-                value={announcementTitle}
-                onChange={(e) => setAnnouncementTitle(e.target.value)}
-                className="w-full text-sm px-4 py-3 border border-[#EAE8E4] rounded-lg focus:outline-none focus:border-[#EA5B3C] bg-[#F9F8F5]"
-                placeholder="請輸入午餐訂購規則標題"
-              />
-            </div>
-            <textarea
-              value={announcement}
-              onChange={(e) => setAnnouncement(e.target.value)}
-              rows={6}
-              className="w-full resize-none text-sm leading-6 px-4 py-3 border border-[#EAE8E4] rounded-lg focus:outline-none focus:border-[#EA5B3C] bg-[#F9F8F5]"
-              placeholder="請輸入公告欄內容"
-            />
-            <div className="space-y-2">
-              <label className="text-xs font-bold text-[#888888] tracking-widest uppercase">每日訂單流程說明</label>
-              <input
-                type="text"
-                value={orderGuideTitle}
-                onChange={(e) => setOrderGuideTitle(e.target.value)}
-                className="w-full text-sm px-4 py-3 border border-[#EAE8E4] rounded-lg focus:outline-none focus:border-[#EA5B3C] bg-[#F9F8F5]"
-                placeholder="請輸入每日訂單流程說明標題"
-              />
-              <textarea
-                value={orderGuide}
-                onChange={(e) => setOrderGuide(e.target.value)}
-                rows={5}
-                className="w-full resize-none text-sm leading-6 px-4 py-3 border border-[#EAE8E4] rounded-lg focus:outline-none focus:border-[#EA5B3C] bg-[#F9F8F5]"
-                placeholder="請輸入訂購者首頁的每日訂單流程說明"
-              />
-            </div>
-            <div className="flex items-center justify-between gap-3">
-              <span className="text-xs text-[#888888] min-h-[1rem]">{announcementMessage}</span>
+          <div id="announcement-editor" className="scroll-mt-24 bg-white border border-[#EAE8E4] rounded-xl shadow-sm p-6 space-y-5">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 border-b border-[#EAE8E4] pb-4">
+              <div>
+                <p className="text-xs font-bold text-[#888888] tracking-widest uppercase">訂購者首頁管理</p>
+                <h3 className="text-lg font-bold text-[#333333] mt-1">公告欄編輯</h3>
+              </div>
               <button
-                onClick={handleSaveAnnouncement}
-                disabled={isSavingAnnouncement || announcementTitle.trim().length === 0 || announcement.trim().length === 0 || orderGuideTitle.trim().length === 0 || orderGuide.trim().length === 0}
-                className="shrink-0 text-xs font-bold bg-[#EA5B3C] text-white px-4 py-2 rounded-lg hover:bg-[#333333] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                onClick={handleAddAnnouncement}
+                className="inline-flex items-center gap-1.5 text-xs font-bold bg-[#EA5B3C] text-white px-4 py-2 rounded-lg hover:bg-[#333333] transition-colors"
               >
-                {isSavingAnnouncement ? '儲存中...' : '儲存首頁內容'}
+                <i className="ti ti-plus text-sm"></i> 新增公告
               </button>
+            </div>
+
+            {announcementMessage && (
+              <div className="p-3 text-xs rounded-lg bg-green-50 border border-green-200 text-green-700 flex items-center gap-1.5">
+                <i className="ti ti-info-circle"></i>
+                {announcementMessage}
+              </div>
+            )}
+
+            <div className="space-y-4">
+              {announcements.length > 0 ? announcements.map((item, index) => (
+                <div key={item.id} className="border border-[#EAE8E4] rounded-xl bg-[#F9F8F5] p-4 space-y-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-xs font-bold text-[#888888] tracking-widest uppercase">
+                      {item.pinned ? '釘選公告' : `公告 ${index + 1}`}
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => handleTogglePinnedAnnouncement(item.id)}
+                        disabled={savingAnnouncementId === item.id}
+                        className={`inline-flex items-center justify-center w-9 h-9 rounded-full border transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
+                          item.pinned
+                            ? 'border-[#EA5B3C] bg-[#FFF3EF] text-[#EA5B3C] hover:bg-[#FFE7DE]'
+                            : 'border-[#EAE8E4] bg-white text-[#888888] hover:border-[#EA5B3C] hover:text-[#EA5B3C]'
+                        }`}
+                        title={item.pinned ? '取消釘選' : '釘選公告'}
+                        aria-label={item.pinned ? '取消釘選' : '釘選公告'}
+                      >
+                        <i className="ti ti-pin text-base"></i>
+                      </button>
+                      <button
+                        onClick={() => handleSaveAnnouncementItem(item.id)}
+                        disabled={savingAnnouncementId === item.id}
+                        className="inline-flex items-center justify-center w-9 h-9 rounded-full border border-green-200 bg-green-50 text-green-700 hover:bg-green-100 hover:border-green-300 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                        title="儲存公告"
+                        aria-label="儲存公告"
+                      >
+                        <i className={savingAnnouncementId === item.id ? 'ti ti-loader animate-spin text-base' : 'ti ti-check text-base'}></i>
+                      </button>
+                      <button
+                        onClick={() => handleDeleteAnnouncement(item.id)}
+                        disabled={savingAnnouncementId === item.id}
+                        className="inline-flex items-center justify-center w-9 h-9 rounded-full border border-red-200 bg-white text-red-600 hover:bg-red-50 hover:border-red-300 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                        title="刪除公告"
+                        aria-label="刪除公告"
+                      >
+                        <i className="ti ti-trash text-base"></i>
+                      </button>
+                    </div>
+                  </div>
+
+                  <input
+                    type="text"
+                    value={item.title}
+                    onChange={(e) => handleAnnouncementChange(item.id, 'title', e.target.value)}
+                    className="w-full text-sm px-4 py-3 border border-[#EAE8E4] rounded-lg focus:outline-none focus:border-[#EA5B3C] bg-white font-bold"
+                    placeholder="請輸入公告標題"
+                  />
+                  <textarea
+                    value={item.content}
+                    onChange={(e) => handleAnnouncementChange(item.id, 'content', e.target.value)}
+                    rows={6}
+                    className="w-full resize-none text-sm leading-6 px-4 py-3 border border-[#EAE8E4] rounded-lg focus:outline-none focus:border-[#EA5B3C] bg-white"
+                    placeholder="請輸入公告內容"
+                  />
+                  {item.updatedAt && (
+                    <p className="text-[11px] text-[#888888] text-right">
+                      最後更新：{new Date(item.updatedAt).toLocaleString()}
+                    </p>
+                  )}
+                </div>
+              )) : (
+                <div className="text-center py-10 text-xs text-[#888888] border border-dashed border-[#D6D1CA] rounded-xl bg-[#F9F8F5]">
+                  目前尚無公告，請點擊「新增公告」建立第一則公告。
+                </div>
+              )}
             </div>
           </div>
         </section>

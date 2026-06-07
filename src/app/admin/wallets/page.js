@@ -334,8 +334,7 @@ export default function WalletsManagementPage() {
                 <table className="w-full text-left border-collapse text-xs">
                   <thead className="sticky top-0 z-10">
                     <tr className="bg-[#F9F8F5] text-[#888888] font-bold border-b border-[#EAE8E4]">
-                      <th className="p-3">姓名</th>
-                      <th className="p-3">電子信箱</th>
+                      <th className="py-3 pl-6 pr-3">姓名</th>
                       <th className="p-3">角色</th>
                       <th className="p-3 text-right">當前餘額</th>
                       <th className="p-3 text-center">帳務操作</th>
@@ -344,7 +343,7 @@ export default function WalletsManagementPage() {
                   <tbody className="divide-y divide-[#EAE8E4] text-[#333333]">
                     {filteredUsers.length === 0 ? (
                       <tr>
-                        <td colSpan="5" className="text-center py-8 text-[#888888]">
+                        <td colSpan="4" className="text-center py-8 text-[#888888]">
                           找不到相符的成員。
                         </td>
                       </tr>
@@ -371,13 +370,21 @@ export default function WalletsManagementPage() {
                             onClick={() => handleLedgerUserChange(u.id)}
                             className={`hover:bg-[#F9F8F5]/30 cursor-pointer ${selectedLedgerUserId === u.id ? 'bg-orange-50/50' : ''}`}
                           >
-                            <td className="p-3 font-bold flex items-center gap-2">
-                              {u.avatarUrl && (
-                                <img src={u.avatarUrl} alt="" className="w-5 h-5 rounded-full object-cover" />
-                              )}
+                            <td className="py-3 pl-6 pr-3 font-bold flex items-center gap-2">
+                              <span className="relative inline-flex group">
+                                {u.avatarUrl ? (
+                                  <img src={u.avatarUrl} alt="" className="w-5 h-5 rounded-full object-cover" />
+                                ) : (
+                                  <span className="w-5 h-5 rounded-full bg-[#F9F8F5] border border-[#EAE8E4] text-[9px] text-[#888888] flex items-center justify-center">
+                                    {u.name?.slice(0, 1)}
+                                  </span>
+                                )}
+                                <span className="pointer-events-none absolute left-full top-1/2 z-[999] ml-2 -translate-y-1/2 whitespace-nowrap rounded-lg border border-[#EAE8E4] bg-white px-2.5 py-1.5 text-[10px] font-bold text-[#555555] opacity-0 shadow-[0_8px_20px_rgba(0,0,0,0.08)] transition-opacity group-hover:opacity-100">
+                                  {u.email}
+                                </span>
+                              </span>
                               {u.name}
                             </td>
-                            <td className="p-3 text-[#888888]">{u.email}</td>
                             <td className="p-3">
                               <select
                                 value={u.role}
@@ -730,7 +737,12 @@ export default function WalletsManagementPage() {
                           {new Date(tx.createdAt).toLocaleString('zh-TW', { hour12: false })}
                         </td>
                         <td className="py-3 font-bold">
-                          {tx.user?.name} <span className="text-[10px] text-[#888888] font-normal">({tx.user?.email})</span>
+                          <span className="relative inline-flex group">
+                            {tx.user?.name}
+                            <span className="pointer-events-none absolute left-full top-1/2 z-[999] ml-2 -translate-y-1/2 whitespace-nowrap rounded-lg border border-[#EAE8E4] bg-white px-2.5 py-1.5 text-[10px] font-bold text-[#555555] opacity-0 shadow-[0_8px_20px_rgba(0,0,0,0.08)] transition-opacity group-hover:opacity-100">
+                              {tx.user?.email}
+                            </span>
+                          </span>
                         </td>
                         <td className={`py-3 font-bold ${tx.amount >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                           {tx.amount >= 0 ? '＋' : '－'}NT$ {Math.abs(tx.amount)}

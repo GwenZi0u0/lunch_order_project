@@ -64,6 +64,8 @@ export default function PortalPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [orderError, setOrderError] = useState('');
   const [orderSuccess, setOrderSuccess] = useState('');
+  const [announcement, setAnnouncement] = useState('');
+  const [orderGuide, setOrderGuide] = useState('');
   
   // Current system date/time check
   const [currentDateTime, setCurrentDateTime] = useState({ dateStr: '', timeStr: '' });
@@ -104,6 +106,7 @@ export default function PortalPage() {
     }
 
     fetchSchedules();
+    fetchAnnouncement();
 
     return () => clearInterval(timer);
   }, []);
@@ -130,6 +133,20 @@ export default function PortalPage() {
         }
       })
       .catch(err => console.error('無法載入排程:', err));
+  };
+
+  const fetchAnnouncement = () => {
+    fetch('/api/announcement')
+      .then(res => res.json())
+      .then(data => {
+        if (typeof data.announcement === 'string') {
+          setAnnouncement(data.announcement);
+        }
+        if (typeof data.orderGuide === 'string') {
+          setOrderGuide(data.orderGuide);
+        }
+      })
+      .catch(err => console.error('Failed to load announcement:', err));
   };
 
   const refreshUser = () => {
@@ -345,6 +362,24 @@ export default function PortalPage() {
                 <li>每天 <b>09:40</b> 截止當日訂單，截止前可自由點餐、改單或退單。</li>
                 <li>餐點送達後，管理員將於系統內確認，屆時會自動從您的錢包扣款。</li>
               </ul>
+            </div>
+          </div>
+        </section>
+
+        {/* Announcement Board */}
+        <section className="bg-white rounded-xl border border-[#EAE8E4] p-6 shadow-sm">
+          <div className="flex items-start gap-4">
+            <div className="w-10 h-10 rounded-full bg-[#FFF3EF] text-[#EA5B3C] flex items-center justify-center shrink-0">
+              <i className="ti ti-speakerphone text-xl"></i>
+            </div>
+            <div className="min-w-0 flex-1 space-y-3">
+              <div>
+                <p className="text-xs font-bold text-[#888888] tracking-widest uppercase">公告欄</p>
+                <h2 className="text-lg font-bold text-[#333333] mt-1">午餐訂購規則</h2>
+              </div>
+              <div className="text-sm text-[#555555] leading-7 whitespace-pre-wrap">
+                {announcement || '目前尚無公告。'}
+              </div>
             </div>
           </div>
         </section>

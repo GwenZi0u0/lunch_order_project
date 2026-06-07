@@ -101,7 +101,19 @@ export async function GET(request) {
         stats: user.role === 'admin' ? {
           totalOrders: orderCount,
           totalAmount: sched.orders.filter(o => o.status !== 'cancelled').reduce((sum, o) => sum + o.totalAmount, 0)
-        } : null
+        } : null,
+        orders: user.role === 'admin'
+          ? sched.orders.map(order => ({
+            id: order.id,
+            userId: order.userId,
+            user: order.user,
+            totalAmount: order.totalAmount,
+            note: order.note,
+            status: order.status,
+            chargedAt: order.chargedAt,
+            orderItems: order.orderItems
+          }))
+          : undefined
       };
     });
 

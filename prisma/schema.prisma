@@ -92,3 +92,9 @@ model BalanceTransaction {
   operator   User?    @relation("AdminTransactions", fields: [operatedBy], references: [id])
   createdAt  DateTime @default(now())
 }
+
+model SiteSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}

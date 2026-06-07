@@ -67,6 +67,10 @@ export default function AdminDashboard() {
   // Billing action state
   const [isProcessingDelivery, setIsProcessingDelivery] = useState(false);
   const [message, setMessage] = useState({ text: '', type: '' });
+  const [announcement, setAnnouncement] = useState('');
+  const [orderGuide, setOrderGuide] = useState('');
+  const [isSavingAnnouncement, setIsSavingAnnouncement] = useState(false);
+  const [announcementMessage, setAnnouncementMessage] = useState('');
 
   useEffect(() => {
     // Check authentication and role
@@ -86,6 +90,7 @@ export default function AdminDashboard() {
           } else {
             fetchRestaurants();
             fetchSchedules();
+            fetchAnnouncement();
           }
         }
       })
@@ -118,7 +123,50 @@ export default function AdminDashboard() {
       .catch(err => console.error('無法載入排程:', err));
   };
 
+  const fetchAnnouncement = () => {
+    fetch('/api/announcement')
+      .then(res => res.json())
+      .then(data => {
+        if (typeof data.announcement === 'string') {
+          setAnnouncement(data.announcement);
+        }
+        if (typeof data.orderGuide === 'string') {
+          setOrderGuide(data.orderGuide);
+        }
+      })
+      .catch(err => console.error('Failed to load announcement:', err));
+  };
+
+  const handleSaveAnnouncement = async () => {
+    setIsSavingAnnouncement(true);
+    setAnnouncementMessage('');
+
+    try {
+      const res = await fetch('/api/announcement', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ announcement, orderGuide })
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || '公告儲存失敗');
+      }
+
+      setAnnouncement(data.announcement);
+      setOrderGuide(data.orderGuide);
+      setAnnouncementMessage('公告已更新。');
+      setTimeout(() => setAnnouncementMessage(''), 3000);
+    } catch (err) {
+      setAnnouncementMessage(err.message);
+    } finally {
+      setIsSavingAnnouncement(false);
+    }
+  };
+
   const activeSchedule = schedules.find(s => s.date === selectedDate);
+  const todayDate = formatDate(new Date());
+  const todaySchedule = schedules.find(s => s.date === todayDate);
   const weeklyDates = getWeeklyDates();
 
   // Update schedule selection inputs
@@ -238,6 +286,18 @@ export default function AdminDashboard() {
   const totalQuantity = itemSummaries.reduce((sum, item) => sum + item.qty, 0);
   const totalOrderAmount = itemSummaries.reduce((sum, item) => sum + item.price * item.qty, 0);
 
+  const todayOrders = todaySchedule?.orders?.filter(order => order.status !== 'cancelled') || [];
+  const todayTotalAmount = todayOrders.reduce((sum, order) => sum + order.totalAmount, 0);
+  const todayItemSummary = todayOrders.reduce((summary, order) => {
+    order.orderItems.forEach(item => {
+      const name = item.menuItem?.name || '未命名品項';
+      if (!summary[name]) summary[name] = { name, qty: 0, price: item.unitPrice };
+      summary[name].qty += item.quantity;
+    });
+    return summary;
+  }, {});
+  const todayItems = Object.values(todayItemSummary);
+
   if (!user) {
     return (
       <div className="flex-1 flex justify-center items-center bg-[#F9F8F5]">
@@ -275,6 +335,119 @@ export default function AdminDashboard() {
             </button>
           </div>
         </div>
+
+        {/* Admin Home Overview */}
+        <section className="grid grid-cols-1 xl:grid-cols-5 gap-6">
+          <div className="xl:col-span-3 bg-white border border-[#EAE8E4] rounded-xl shadow-sm p-6 space-y-5">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 border-b border-[#EAE8E4] pb-4">
+              <div>
+                <p className="text-xs font-bold text-[#888888] tracking-widest uppercase">今日總覽</p>
+                <h3 className="text-lg font-bold text-[#333333] mt-1">本日餐廳與訂餐結果</h3>
+              </div>
+              <div className="text-sm font-bold text-[#EA5B3C]">{todayDate}</div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="bg-[#F9F8F5] border border-[#EAE8E4] rounded-lg p-4">
+                <p className="text-xs text-[#888888] font-bold mb-1">本日餐廳</p>
+                <p className="text-base font-bold text-[#333333] truncate">
+                  {todaySchedule?.restaurant?.name || '未排定'}
+                </p>
+              </div>
+              <div className="bg-[#F9F8F5] border border-[#EAE8E4] rounded-lg p-4">
+                <p className="text-xs text-[#888888] font-bold mb-1">今日訂購者</p>
+                <p className="text-base font-bold text-[#333333]">{todayOrders.length} 人</p>
+              </div>
+              <div className="bg-[#F9F8F5] border border-[#EAE8E4] rounded-lg p-4">
+                <p className="text-xs text-[#888888] font-bold mb-1">訂單金額</p>
+                <p className="text-base font-bold text-[#EA5B3C]">NT$ {todayTotalAmount}</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+              <div className="space-y-3">
+                <h4 className="text-sm font-bold text-[#333333] flex items-center gap-2">
+                  <i className="ti ti-list-check text-[#EA5B3C]"></i> 品項總計
+                </h4>
+                <div className="max-h-[240px] overflow-y-auto pr-1 space-y-2 kaizen-scrollbar">
+                  {todayItems.length > 0 ? todayItems.map(item => (
+                    <div key={item.name} className="flex items-center justify-between gap-3 rounded-lg border border-[#EAE8E4] px-3 py-2 text-xs">
+                      <span className="font-bold text-[#333333] truncate">{item.name}</span>
+                      <span className="shrink-0 text-[#888888]">x {item.qty}</span>
+                    </div>
+                  )) : (
+                    <div className="text-xs text-[#888888] bg-[#F9F8F5] border border-[#EAE8E4] rounded-lg px-3 py-8 text-center">
+                      今日尚無訂餐內容。
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <h4 className="text-sm font-bold text-[#333333] flex items-center gap-2">
+                  <i className="ti ti-users text-[#EA5B3C]"></i> 今日訂購者訂餐內容
+                </h4>
+                <div className="max-h-[240px] overflow-y-auto pr-1 space-y-3 kaizen-scrollbar">
+                  {todayOrders.length > 0 ? todayOrders.map(order => (
+                    <div key={order.id} className="rounded-lg border border-[#EAE8E4] p-3 text-xs space-y-2">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="font-bold text-[#333333] truncate">{order.user?.name || '未命名成員'}</span>
+                        <span className="font-bold text-[#EA5B3C] shrink-0">NT$ {order.totalAmount}</span>
+                      </div>
+                      <div className="text-[#888888] leading-relaxed">
+                        {order.orderItems.map(item => (
+                          <div key={item.id} className="flex justify-between gap-3">
+                            <span className="truncate">{item.menuItem?.name || '未命名品項'}</span>
+                            <span className="shrink-0">x {item.quantity}</span>
+                          </div>
+                        ))}
+                      </div>
+                      {order.note && <p className="text-[#888888] border-t border-[#EAE8E4] pt-2">備註：{order.note}</p>}
+                    </div>
+                  )) : (
+                    <div className="text-xs text-[#888888] bg-[#F9F8F5] border border-[#EAE8E4] rounded-lg px-3 py-8 text-center">
+                      今日尚無訂購者。
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="xl:col-span-2 bg-white border border-[#EAE8E4] rounded-xl shadow-sm p-6 space-y-4">
+            <div className="border-b border-[#EAE8E4] pb-4">
+              <p className="text-xs font-bold text-[#888888] tracking-widest uppercase">訂購者首頁管理</p>
+              <h3 className="text-lg font-bold text-[#333333] mt-1">公告欄編輯</h3>
+            </div>
+            <textarea
+              value={announcement}
+              onChange={(e) => setAnnouncement(e.target.value)}
+              rows={6}
+              className="w-full resize-none text-sm leading-6 px-4 py-3 border border-[#EAE8E4] rounded-lg focus:outline-none focus:border-[#EA5B3C] bg-[#F9F8F5]"
+              placeholder="請輸入公告欄內容"
+            />
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-[#888888] tracking-widest uppercase">每日訂單流程說明</label>
+              <textarea
+                value={orderGuide}
+                onChange={(e) => setOrderGuide(e.target.value)}
+                rows={5}
+                className="w-full resize-none text-sm leading-6 px-4 py-3 border border-[#EAE8E4] rounded-lg focus:outline-none focus:border-[#EA5B3C] bg-[#F9F8F5]"
+                placeholder="請輸入訂購者首頁的每日訂單流程說明"
+              />
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-xs text-[#888888] min-h-[1rem]">{announcementMessage}</span>
+              <button
+                onClick={handleSaveAnnouncement}
+                disabled={isSavingAnnouncement || announcement.trim().length === 0 || orderGuide.trim().length === 0}
+                className="shrink-0 text-xs font-bold bg-[#EA5B3C] text-white px-4 py-2 rounded-lg hover:bg-[#333333] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isSavingAnnouncement ? '儲存中...' : '儲存首頁內容'}
+              </button>
+            </div>
+          </div>
+        </section>
 
         {/* Date Navigator Grid */}
         <section className="space-y-6">

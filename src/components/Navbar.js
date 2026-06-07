@@ -38,11 +38,17 @@ export default function Navbar({ user }) {
           <nav className="hidden md:flex gap-6 items-center">
             {isAdmin && !isOrderingView ? (
               <>
-                <button 
-                  onClick={() => router.push('/admin')} 
+                <button
+                  onClick={() => router.push('/admin#order-stats-announcement')}
                   className="text-sm font-bold text-[#333333] hover:text-[#EA5B3C] transition-colors"
                 >
-                  排程管理
+                  訂單統計與公告
+                </button>
+                <button
+                  onClick={() => router.push('/admin/schedule')}
+                  className="text-sm font-bold text-[#333333] hover:text-[#EA5B3C] transition-colors"
+                >
+                  週菜單排程
                 </button>
                 <button 
                   onClick={() => router.push('/admin/restaurants')} 

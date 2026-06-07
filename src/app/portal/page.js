@@ -64,7 +64,9 @@ export default function PortalPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [orderError, setOrderError] = useState('');
   const [orderSuccess, setOrderSuccess] = useState('');
+  const [announcementTitle, setAnnouncementTitle] = useState('');
   const [announcement, setAnnouncement] = useState('');
+  const [orderGuideTitle, setOrderGuideTitle] = useState('');
   const [orderGuide, setOrderGuide] = useState('');
   
   // Current system date/time check
@@ -139,8 +141,14 @@ export default function PortalPage() {
     fetch('/api/announcement')
       .then(res => res.json())
       .then(data => {
+        if (typeof data.announcementTitle === 'string') {
+          setAnnouncementTitle(data.announcementTitle);
+        }
         if (typeof data.announcement === 'string') {
           setAnnouncement(data.announcement);
+        }
+        if (typeof data.orderGuideTitle === 'string') {
+          setOrderGuideTitle(data.orderGuideTitle);
         }
         if (typeof data.orderGuide === 'string') {
           setOrderGuide(data.orderGuide);
@@ -159,6 +167,9 @@ export default function PortalPage() {
 
   // Find schedule details for selected date
   const activeSchedule = schedules.find(s => s.date === selectedDate);
+  const todayDate = currentDateTime.dateStr || formatDate(new Date());
+  const todaySchedule = schedules.find(s => s.date === todayDate);
+  const todayOrder = todaySchedule?.userOrder || null;
   const weeklyDates = getWeeklyDates();
   
   // Setup order input when selected schedule changes
@@ -352,33 +363,73 @@ export default function PortalPage() {
               )}
             </div>
 
-            {/* Quick Tutorial */}
-            <div className="md:col-span-2 space-y-3 md:pl-6 border-t md:border-t-0 md:border-l border-[#EAE8E4] pt-6 md:pt-0">
-              <h3 className="font-bold text-base text-[#333333] flex items-center gap-2">
-                <i className="ti ti-bulb text-lg text-[#FFDB27]"></i> 每日訂單流程說明
-              </h3>
-              <ul className="text-xs text-[#888888] space-y-2 list-disc list-inside">
-                <li>每週五開放下週（週一 ～ 週五）所有供餐日的菜單訂購。</li>
-                <li>每天 <b>09:40</b> 截止當日訂單，截止前可自由點餐、改單或退單。</li>
-                <li>餐點送達後，管理員將於系統內確認，屆時會自動從您的錢包扣款。</li>
-              </ul>
+            {/* Today Order */}
+            <div className="md:col-span-2 space-y-4 md:pl-6 border-t md:border-t-0 md:border-l border-[#EAE8E4] pt-6 md:pt-0">
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="font-bold text-base text-[#333333] flex items-center gap-2">
+                  <i className="ti ti-shopping-bag text-lg text-[#EA5B3C]"></i> 今日訂購餐點
+                </h3>
+                <span className="text-xs font-bold text-[#888888]">{todayDate}</span>
+              </div>
+
+              {todayOrder ? (
+                <div className="space-y-3">
+                  <div className="space-y-2 max-h-[160px] overflow-y-auto pr-1 kaizen-scrollbar">
+                    {todayOrder.items.map(item => (
+                      <div key={item.id} className="flex items-center justify-between gap-3 rounded-lg border border-[#EAE8E4] bg-[#F9F8F5] px-3 py-2 text-xs">
+                        <span className="font-bold text-[#333333] truncate">{item.name}</span>
+                        <span className="text-[#888888] shrink-0">x {item.quantity}</span>
+                        <span className="font-bold text-[#EA5B3C] shrink-0">NT$ {item.unitPrice * item.quantity}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex items-center justify-between border-t border-[#EAE8E4] pt-3 text-sm font-bold">
+                    <span className="text-[#333333]">今日訂單金額</span>
+                    <span className="text-[#EA5B3C]">NT$ {todayOrder.totalAmount}</span>
+                  </div>
+                  {todayOrder.note && (
+                    <p className="text-xs text-[#888888] leading-5">備註：{todayOrder.note}</p>
+                  )}
+                </div>
+              ) : (
+                <div className="rounded-lg border border-[#EAE8E4] bg-[#F9F8F5] px-4 py-8 text-center text-xs text-[#888888]">
+                  今日尚未訂購餐點。
+                </div>
+              )}
             </div>
           </div>
         </section>
 
-        {/* Announcement Board */}
+        {/* Announcement and Guide Board */}
         <section className="bg-white rounded-xl border border-[#EAE8E4] p-6 shadow-sm">
-          <div className="flex items-start gap-4">
-            <div className="w-10 h-10 rounded-full bg-[#FFF3EF] text-[#EA5B3C] flex items-center justify-center shrink-0">
-              <i className="ti ti-speakerphone text-xl"></i>
-            </div>
-            <div className="min-w-0 flex-1 space-y-3">
-              <div>
-                <p className="text-xs font-bold text-[#888888] tracking-widest uppercase">公告欄</p>
-                <h2 className="text-lg font-bold text-[#333333] mt-1">午餐訂購規則</h2>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="flex items-start gap-4">
+              <div className="w-10 h-10 rounded-full bg-[#FFF3EF] text-[#EA5B3C] flex items-center justify-center shrink-0">
+                <i className="ti ti-speakerphone text-xl"></i>
               </div>
-              <div className="text-sm text-[#555555] leading-7 whitespace-pre-wrap">
-                {announcement || '目前尚無公告。'}
+              <div className="min-w-0 flex-1 space-y-3">
+                <div>
+                  <p className="text-xs font-bold text-[#888888] tracking-widest uppercase">公告欄</p>
+                  <h2 className="text-lg font-bold text-[#333333] mt-1">{announcementTitle || '午餐訂購規則'}</h2>
+                </div>
+                <div className="text-sm text-[#555555] leading-7 whitespace-pre-wrap">
+                  {announcement || '目前尚無公告。'}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-start gap-4 lg:border-l lg:border-[#EAE8E4] lg:pl-6">
+              <div className="w-10 h-10 rounded-full bg-[#FFFBEA] text-[#C99A00] flex items-center justify-center shrink-0">
+                <i className="ti ti-bulb text-xl"></i>
+              </div>
+              <div className="min-w-0 flex-1 space-y-3">
+                <div>
+                  <p className="text-xs font-bold text-[#888888] tracking-widest uppercase">流程說明</p>
+                  <h2 className="text-lg font-bold text-[#333333] mt-1">{orderGuideTitle || '每日訂單流程說明'}</h2>
+                </div>
+                <div className="text-sm text-[#555555] leading-7 whitespace-pre-wrap">
+                  {orderGuide || '目前尚無每日訂單流程說明。'}
+                </div>
               </div>
             </div>
           </div>

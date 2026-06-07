@@ -2,8 +2,13 @@ import { NextResponse } from 'next/server';
 import prisma from '@/lib/db';
 import { getCurrentUser } from '@/lib/auth';
 
+const ANNOUNCEMENT_TITLE_KEY = 'portal_announcement_title';
 const ANNOUNCEMENT_KEY = 'portal_announcement';
+const ORDER_GUIDE_TITLE_KEY = 'portal_order_guide_title';
 const ORDER_GUIDE_KEY = 'portal_order_guide';
+
+const DEFAULT_ANNOUNCEMENT_TITLE = '午餐訂購規則';
+const DEFAULT_ORDER_GUIDE_TITLE = '每日訂單流程說明';
 
 const DEFAULT_ANNOUNCEMENT = `午餐訂購規則
 1. 請於每日截止時間前完成訂餐。
@@ -21,17 +26,26 @@ export async function GET(request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    const settingKeys = [
+      ANNOUNCEMENT_TITLE_KEY,
+      ANNOUNCEMENT_KEY,
+      ORDER_GUIDE_TITLE_KEY,
+      ORDER_GUIDE_KEY
+    ];
+
     const settings = await prisma.siteSetting.findMany({
       where: {
         key: {
-          in: [ANNOUNCEMENT_KEY, ORDER_GUIDE_KEY]
+          in: settingKeys
         }
       }
     });
     const settingMap = Object.fromEntries(settings.map(setting => [setting.key, setting.value]));
 
     return NextResponse.json({
+      announcementTitle: settingMap[ANNOUNCEMENT_TITLE_KEY] || DEFAULT_ANNOUNCEMENT_TITLE,
       announcement: settingMap[ANNOUNCEMENT_KEY] || DEFAULT_ANNOUNCEMENT,
+      orderGuideTitle: settingMap[ORDER_GUIDE_TITLE_KEY] || DEFAULT_ORDER_GUIDE_TITLE,
       orderGuide: settingMap[ORDER_GUIDE_KEY] || DEFAULT_ORDER_GUIDE
     });
   } catch (error) {
@@ -47,24 +61,46 @@ export async function PUT(request) {
     }
 
     const body = await request.json();
+    const announcementTitle = typeof body.announcementTitle === 'string'
+      ? body.announcementTitle.trim()
+      : '';
     const announcement = typeof body.announcement === 'string'
       ? body.announcement.trim()
+      : '';
+    const orderGuideTitle = typeof body.orderGuideTitle === 'string'
+      ? body.orderGuideTitle.trim()
       : '';
     const orderGuide = typeof body.orderGuide === 'string'
       ? body.orderGuide.trim()
       : '';
 
-    if (!announcement || !orderGuide) {
-      return NextResponse.json({ error: 'Announcement and order guide are required' }, { status: 400 });
+    if (!announcementTitle || !announcement || !orderGuideTitle || !orderGuide) {
+      return NextResponse.json({ error: 'All portal home fields are required' }, { status: 400 });
     }
 
-    const [announcementSetting, orderGuideSetting] = await prisma.$transaction([
+    const [announcementTitleSetting, announcementSetting, orderGuideTitleSetting, orderGuideSetting] = await prisma.$transaction([
+      prisma.siteSetting.upsert({
+        where: { key: ANNOUNCEMENT_TITLE_KEY },
+        update: { value: announcementTitle },
+        create: {
+          key: ANNOUNCEMENT_TITLE_KEY,
+          value: announcementTitle
+        }
+      }),
       prisma.siteSetting.upsert({
         where: { key: ANNOUNCEMENT_KEY },
         update: { value: announcement },
         create: {
           key: ANNOUNCEMENT_KEY,
           value: announcement
+        }
+      }),
+      prisma.siteSetting.upsert({
+        where: { key: ORDER_GUIDE_TITLE_KEY },
+        update: { value: orderGuideTitle },
+        create: {
+          key: ORDER_GUIDE_TITLE_KEY,
+          value: orderGuideTitle
         }
       }),
       prisma.siteSetting.upsert({
@@ -78,7 +114,9 @@ export async function PUT(request) {
     ]);
 
     return NextResponse.json({
+      announcementTitle: announcementTitleSetting.value,
       announcement: announcementSetting.value,
+      orderGuideTitle: orderGuideTitleSetting.value,
       orderGuide: orderGuideSetting.value
     });
   } catch (error) {

@@ -1,4 +1,5 @@
 import './globals.css';
+import BackToTopButton from '@/components/BackToTopButton';
 
 export const metadata = {
   title: '午餐訂購系統 — Lunch Kaizen',
@@ -16,6 +17,7 @@ export default function RootLayout({ children }) {
       </head>
       <body className="bg-kaizen-bg text-kaizen-dark min-h-screen flex flex-col">
         {children}
+        <BackToTopButton />
       </body>
     </html>
   );

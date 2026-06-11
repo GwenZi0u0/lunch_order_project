@@ -131,7 +131,7 @@ export async function POST(request) {
     }
 
     const body = await request.json();
-    const { date, restaurantId, orderDeadline, isOpen = true } = body;
+    const { date, restaurantId, orderDeadline, isOpen = true, clearOrdersOnRestaurantChange = false } = body;
     const scheduleIsOpen = Boolean(isOpen);
     const normalizedRestaurantId = scheduleIsOpen ? restaurantId : null;
 
@@ -139,23 +139,55 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Date and Restaurant ID are required' }, { status: 400 });
     }
 
-    const schedule = await prisma.weeklySchedule.upsert({
-      where: { date },
-      update: {
-        restaurantId: normalizedRestaurantId,
-        orderDeadline: orderDeadline || '09:40',
-        isOpen: scheduleIsOpen
-      },
-      create: {
-        date,
-        restaurantId: normalizedRestaurantId,
-        orderDeadline: orderDeadline || '09:40',
-        isOpen: scheduleIsOpen
+    const schedule = await prisma.$transaction(async (tx) => {
+      const existingSchedule = await tx.weeklySchedule.findUnique({
+        where: { date },
+        include: {
+          orders: {
+            where: {
+              status: { not: 'cancelled' }
+            },
+            select: { id: true }
+          }
+        }
+      });
+
+      const restaurantChanged = existingSchedule
+        && existingSchedule.restaurantId !== normalizedRestaurantId;
+      const hasActiveOrders = (existingSchedule?.orders?.length || 0) > 0;
+
+      if (restaurantChanged && hasActiveOrders && !clearOrdersOnRestaurantChange) {
+        throw new Error('Restaurant change requires clearing existing orders');
       }
+
+      if (restaurantChanged && hasActiveOrders && clearOrdersOnRestaurantChange) {
+        await tx.order.deleteMany({
+          where: {
+            scheduleId: existingSchedule.id,
+            status: { not: 'cancelled' }
+          }
+        });
+      }
+
+      return tx.weeklySchedule.upsert({
+        where: { date },
+        update: {
+          restaurantId: normalizedRestaurantId,
+          orderDeadline: orderDeadline || '09:40',
+          isOpen: scheduleIsOpen
+        },
+        create: {
+          date,
+          restaurantId: normalizedRestaurantId,
+          orderDeadline: orderDeadline || '09:40',
+          isOpen: scheduleIsOpen
+        }
+      });
     });
 
     return NextResponse.json(schedule);
   } catch (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    const status = error.message === 'Restaurant change requires clearing existing orders' ? 409 : 500;
+    return NextResponse.json({ error: error.message }, { status });
   }
 }

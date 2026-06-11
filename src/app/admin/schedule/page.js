@@ -228,6 +228,16 @@ export default function AdminDashboard() {
       return;
     }
 
+    const nextRestaurantId = isHoliday ? null : selectedRestaurantId;
+    const activeOrderCount = activeSchedule?.orders?.filter(order => order.status !== 'cancelled').length || 0;
+    const isRestaurantChanging = Boolean(activeSchedule)
+      && activeSchedule.restaurantId !== nextRestaurantId;
+    const shouldClearOrders = isRestaurantChanging && activeOrderCount > 0;
+
+    if (shouldClearOrders && !confirm('\u6b64\u65e5\u671f\u5df2\u6709\u8a02\u8cfc\u8005\u8a02\u9910\uff0c\u78ba\u8a8d\u8b8a\u66f4\u9910\u5ef3\u55ce\uff1f\u78ba\u8a8d\u5f8c\u5c07\u6e05\u9664\u7576\u65e5\u6240\u6709\u5df2\u8a02\u8cfc\u9910\u9ede\uff0c\u4e26\u8acb\u8a02\u8cfc\u8005\u91cd\u65b0\u8a02\u9910\u3002')) {
+      return;
+    }
+
     setIsUpdatingSchedule(true);
     setMessage({ text: '', type: '' });
 
@@ -237,9 +247,10 @@ export default function AdminDashboard() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           date: selectedDate,
-          restaurantId: isHoliday ? null : selectedRestaurantId,
+          restaurantId: nextRestaurantId,
           orderDeadline,
-          isOpen: !isHoliday
+          isOpen: !isHoliday,
+          clearOrdersOnRestaurantChange: shouldClearOrders
         })
       });
 

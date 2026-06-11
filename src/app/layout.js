@@ -1,5 +1,6 @@
 import './globals.css';
 import BackToTopButton from '@/components/BackToTopButton';
+import NotificationCenter from '@/components/NotificationCenter';
 
 export const metadata = {
   title: '午餐訂購系統 — TSA Lunch',
@@ -17,6 +18,7 @@ export default function RootLayout({ children }) {
       </head>
       <body className="bg-kaizen-bg text-kaizen-dark min-h-screen flex flex-col">
         {children}
+        <NotificationCenter />
         <BackToTopButton />
       </body>
     </html>

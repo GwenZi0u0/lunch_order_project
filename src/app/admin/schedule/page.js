@@ -85,6 +85,8 @@ export default function AdminDashboard() {
   const [orderGuide, setOrderGuide] = useState('');
   const [isSavingAnnouncement, setIsSavingAnnouncement] = useState(false);
   const [announcementMessage, setAnnouncementMessage] = useState('');
+  const [manualNotification, setManualNotification] = useState('請記得完成午餐訂購。');
+  const [isSendingNotification, setIsSendingNotification] = useState(false);
 
   useEffect(() => {
     // Check authentication and role
@@ -403,6 +405,39 @@ export default function AdminDashboard() {
     }
   };
 
+  const handleSendManualNotification = async () => {
+    const content = manualNotification.trim();
+    if (!content) {
+      setMessage({ text: '請輸入通知內容。', type: 'error' });
+      return;
+    }
+
+    setIsSendingNotification(true);
+    setMessage({ text: '', type: '' });
+
+    try {
+      const res = await fetch('/api/notifications', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: 'TSA Lunch 午餐通知',
+          message: content
+        })
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || '通知發送失敗。');
+      }
+
+      setMessage({ text: '通知已送出。已啟用通知且正在使用網站的成員會收到 Windows 通知。', type: 'success' });
+    } catch (err) {
+      setMessage({ text: err.message, type: 'error' });
+    } finally {
+      setIsSendingNotification(false);
+    }
+  };
+
   // Compile daily items ordered statistics
   const getOrderedItemsSummary = () => {
     if (!activeSchedule || !activeSchedule.orders) return [];
@@ -657,6 +692,31 @@ export default function AdminDashboard() {
                   )}
                 </div>
               )}
+
+              <div className="border-t border-[#EAE8E4] pt-4 space-y-3">
+                <h4 className="text-xs font-bold text-[#888888] tracking-widest uppercase flex items-center gap-1.5">
+                  <i className="ti ti-bell"></i>
+                  Windows 通知
+                </h4>
+                <textarea
+                  value={manualNotification}
+                  onChange={(e) => setManualNotification(e.target.value)}
+                  rows={3}
+                  className="w-full resize-none text-xs leading-5 px-3 py-2 border border-[#EAE8E4] rounded-lg focus:outline-none focus:border-[#EA5B3C] bg-white"
+                  placeholder="輸入要提醒所有人的通知內容"
+                />
+                <button
+                  type="button"
+                  onClick={handleSendManualNotification}
+                  disabled={isSendingNotification || !manualNotification.trim()}
+                  className="w-full py-3 text-xs font-bold bg-[#333333] text-white rounded-xl shadow-sm hover:bg-[#EA5B3C] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isSendingNotification ? '發送中...' : '手動通知所有人'}
+                </button>
+                <p className="text-[11px] text-[#888888] leading-5">
+                  成員需先點選右下角「啟用通知」，並保持網站開啟，才會收到 Windows 右下角通知。
+                </p>
+              </div>
             </div>
           </div>
 

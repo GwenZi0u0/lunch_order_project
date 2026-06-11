@@ -62,7 +62,7 @@ export default function LoginPage() {
         {/* Logo and Header */}
         <div className="text-center mb-10 animate-fade-in">
           <div className="inline-flex items-center gap-3 font-bold text-3xl tracking-widest text-[#333333] mb-4">
-            LUNCH KAIZEN <span className="bg-[#EA5B3C] text-white text-base px-3 py-1 rounded font-normal tracking-normal">改善</span>
+            TSA Lunch
           </div>
           <p className="text-sm font-bold tracking-[0.2em] text-[#888888] uppercase mb-2">LUNCH ORDER SYSTEM</p>
           <div className="inline-block bg-[#FFDB27] text-[#333333] font-bold text-sm px-6 py-2 rounded-xl shadow-sm">

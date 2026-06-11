@@ -31,7 +31,7 @@ export default function Navbar({ user }) {
           onClick={() => router.push('/')}
           className="font-bold text-xl tracking-wider text-[#333333] cursor-pointer flex items-center gap-2"
         >
-          Lunch Kaizen <span className="bg-[#EA5B3C] text-white text-xs px-2 py-0.5 rounded font-normal">改善</span>
+          TSA Lunch
         </div>
 
         {user && (

@@ -2,7 +2,7 @@ import './globals.css';
 import BackToTopButton from '@/components/BackToTopButton';
 
 export const metadata = {
-  title: '午餐訂購系統 — Lunch Kaizen',
+  title: '午餐訂購系統 — TSA Lunch',
   description: '現場をもっと自由に、面白く ─ 讓訂餐更自由、更便利、更有趣！',
 };
 

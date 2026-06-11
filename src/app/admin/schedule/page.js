@@ -325,27 +325,6 @@ export default function AdminDashboard() {
 
       <main className="flex-1 max-w-[1200px] w-full mx-auto px-6 py-10 space-y-8">
         
-        {/* Header Title */}
-        <div className="flex justify-between items-center border-b border-[#EAE8E4] pb-4">
-          <h2 className="text-xl font-bold text-[#333333] flex items-center gap-2">
-            <i className="ti ti-calendar-week text-2xl text-[#EA5B3C]"></i> 週菜單排程
-          </h2>
-          <div className="flex gap-2">
-            <button
-              onClick={() => router.push('/admin/restaurants')}
-              className="text-xs font-bold bg-[#333333] text-white px-4 py-2 rounded-lg hover:bg-[#EA5B3C] transition-colors"
-            >
-              餐廳菜單管理
-            </button>
-            <button
-              onClick={() => router.push('/admin/wallets')}
-              className="text-xs font-bold border border-[#EAE8E4] px-4 py-2 bg-white rounded-lg hover:border-[#EA5B3C] hover:text-[#EA5B3C] transition-all"
-            >
-              成員錢包儲值
-            </button>
-          </div>
-        </div>
-
         <section id="weekly-schedule" className="scroll-mt-24 space-y-6">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 border-b border-[#EAE8E4] pb-4">
             <div>

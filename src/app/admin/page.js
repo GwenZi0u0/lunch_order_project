@@ -69,6 +69,8 @@ export default function AdminDashboard() {
   const [message, setMessage] = useState({ text: '', type: '' });
   const [announcements, setAnnouncements] = useState([]);
   const [savingAnnouncementId, setSavingAnnouncementId] = useState('');
+  const [editingAnnouncementId, setEditingAnnouncementId] = useState('');
+  const [announcementDrafts, setAnnouncementDrafts] = useState({});
   const [announcementMessage, setAnnouncementMessage] = useState('');
 
   useEffect(() => {
@@ -159,44 +161,119 @@ export default function AdminDashboard() {
     }
   };
 
+  const getAnnouncementDraft = (item) => (
+    announcementDrafts[item.id] || {
+      title: item.title || '',
+      content: item.content || '',
+      pinned: Boolean(item.pinned)
+    }
+  );
+
+  const isAnnouncementDirty = (item) => {
+    const draft = getAnnouncementDraft(item);
+    return draft.title !== (item.title || '')
+      || draft.content !== (item.content || '')
+      || Boolean(draft.pinned) !== Boolean(item.pinned);
+  };
+
   const handleAddAnnouncement = () => {
     const now = new Date().toISOString();
+    const id = `local-${Date.now()}`;
+    const draft = { title: '', content: '', pinned: false };
+
     setAnnouncements(prev => [
       {
-        id: `local-${Date.now()}`,
-        title: '',
-        content: '',
-        pinned: false,
+        id,
+        ...draft,
         updatedAt: now
       },
       ...prev
     ]);
+    setAnnouncementDrafts(prev => ({ ...prev, [id]: draft }));
+    setEditingAnnouncementId(id);
   };
 
-  const handleAnnouncementChange = (id, field, value) => {
-    setAnnouncements(prev => prev.map(item => (
-      item.id === id ? { ...item, [field]: value } : item
-    )));
+  const handleStartEditAnnouncement = (item) => {
+    setAnnouncementDrafts(prev => ({
+      ...prev,
+      [item.id]: {
+        title: item.title || '',
+        content: item.content || '',
+        pinned: Boolean(item.pinned)
+      }
+    }));
+    setEditingAnnouncementId(item.id);
+  };
+
+  const handleAnnouncementDraftChange = (id, field, value) => {
+    setAnnouncementDrafts(prev => ({
+      ...prev,
+      [id]: {
+        ...(prev[id] || { title: '', content: '', pinned: false }),
+        [field]: value
+      }
+    }));
+  };
+
+  const clearAnnouncementDraft = (id) => {
+    setAnnouncementDrafts(prev => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+  };
+
+  const handleCancelAnnouncementEdit = (item) => {
+    if (isAnnouncementDirty(item) && !confirm('資料有變更，確認要放棄此次變更嗎？')) {
+      return;
+    }
+
+    clearAnnouncementDraft(item.id);
+    setEditingAnnouncementId('');
   };
 
   const handleSaveAnnouncementItem = (id) => {
+    const target = announcements.find(item => item.id === id);
+    if (!target || !isAnnouncementDirty(target)) return;
+
+    const draft = getAnnouncementDraft(target);
     const nextAnnouncements = announcements.map(item => (
-      item.id === id ? { ...item, updatedAt: new Date().toISOString() } : item
+      item.id === id
+        ? {
+          ...item,
+          title: draft.title,
+          content: draft.content,
+          pinned: Boolean(draft.pinned),
+          updatedAt: new Date().toISOString()
+        }
+        : item
     ));
+
     persistAnnouncements(nextAnnouncements, id, '公告已儲存。');
+    clearAnnouncementDraft(id);
+    setEditingAnnouncementId('');
   };
 
-  const handleTogglePinnedAnnouncement = (id) => {
+  const handleToggleAnnouncementPinned = (id) => {
     const nextAnnouncements = announcements.map(item => (
-      item.id === id ? { ...item, pinned: !item.pinned, updatedAt: new Date().toISOString() } : item
+      item.id === id
+        ? {
+          ...item,
+          pinned: !item.pinned,
+          updatedAt: new Date().toISOString()
+        }
+        : item
     ));
-    persistAnnouncements(nextAnnouncements, id, '公告釘選狀態已更新。');
+
+    persistAnnouncements(nextAnnouncements, id, '公告已儲存。');
   };
 
   const handleDeleteAnnouncement = (id) => {
     if (!confirm('確認要刪除此公告嗎？')) return;
     const nextAnnouncements = announcements.filter(item => item.id !== id);
     persistAnnouncements(nextAnnouncements, id, '公告已刪除。');
+    clearAnnouncementDraft(id);
+    if (editingAnnouncementId === id) setEditingAnnouncementId('');
   };
 
   const activeSchedule = schedules.find(s => s.date === selectedDate);
@@ -465,68 +542,122 @@ export default function AdminDashboard() {
             )}
 
             <div className="space-y-4">
-              {announcements.length > 0 ? announcements.map((item, index) => (
-                <div key={item.id} className="border border-[#EAE8E4] rounded-xl bg-[#F9F8F5] p-4 space-y-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="text-xs font-bold text-[#888888] tracking-widest uppercase">
-                      {item.pinned ? '釘選公告' : `公告 ${index + 1}`}
-                    </span>
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => handleTogglePinnedAnnouncement(item.id)}
-                        disabled={savingAnnouncementId === item.id}
-                        className={`inline-flex items-center justify-center w-9 h-9 rounded-full border transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
-                          item.pinned
-                            ? 'border-[#EA5B3C] bg-[#FFF3EF] text-[#EA5B3C] hover:bg-[#FFE7DE]'
-                            : 'border-[#EAE8E4] bg-white text-[#888888] hover:border-[#EA5B3C] hover:text-[#EA5B3C]'
-                        }`}
-                        title={item.pinned ? '取消釘選' : '釘選公告'}
-                        aria-label={item.pinned ? '取消釘選' : '釘選公告'}
-                      >
-                        <i className="ti ti-pin text-base"></i>
-                      </button>
-                      <button
-                        onClick={() => handleSaveAnnouncementItem(item.id)}
-                        disabled={savingAnnouncementId === item.id}
-                        className="inline-flex items-center justify-center w-9 h-9 rounded-full border border-green-200 bg-green-50 text-green-700 hover:bg-green-100 hover:border-green-300 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                        title="儲存公告"
-                        aria-label="儲存公告"
-                      >
-                        <i className={savingAnnouncementId === item.id ? 'ti ti-loader animate-spin text-base' : 'ti ti-check text-base'}></i>
-                      </button>
-                      <button
-                        onClick={() => handleDeleteAnnouncement(item.id)}
-                        disabled={savingAnnouncementId === item.id}
-                        className="inline-flex items-center justify-center w-9 h-9 rounded-full border border-red-200 bg-white text-red-600 hover:bg-red-50 hover:border-red-300 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                        title="刪除公告"
-                        aria-label="刪除公告"
-                      >
-                        <i className="ti ti-trash text-base"></i>
-                      </button>
-                    </div>
-                  </div>
+              {announcements.length > 0 ? announcements.map((item, index) => {
+                const draft = getAnnouncementDraft(item);
+                const isEditing = editingAnnouncementId === item.id;
+                const isDirty = isAnnouncementDirty(item);
 
-                  <input
-                    type="text"
-                    value={item.title}
-                    onChange={(e) => handleAnnouncementChange(item.id, 'title', e.target.value)}
-                    className="w-full text-sm px-4 py-3 border border-[#EAE8E4] rounded-lg focus:outline-none focus:border-[#EA5B3C] bg-white font-bold"
-                    placeholder="請輸入公告標題"
-                  />
-                  <textarea
-                    value={item.content}
-                    onChange={(e) => handleAnnouncementChange(item.id, 'content', e.target.value)}
-                    rows={6}
-                    className="w-full resize-none text-sm leading-6 px-4 py-3 border border-[#EAE8E4] rounded-lg focus:outline-none focus:border-[#EA5B3C] bg-white"
-                    placeholder="請輸入公告內容"
-                  />
-                  {item.updatedAt && (
-                    <p className="text-[11px] text-[#888888] text-right">
-                      最後更新：{new Date(item.updatedAt).toLocaleString()}
-                    </p>
-                  )}
-                </div>
-              )) : (
+                return (
+                  <div key={item.id} className="border border-[#EAE8E4] rounded-xl bg-[#F9F8F5] p-4 space-y-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <span className="text-xs font-bold text-[#888888] tracking-widest uppercase pt-2">
+                        {item.pinned ? '釘選公告' : `公告 ${index + 1}`}
+                      </span>
+                      {isEditing ? (
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => handleSaveAnnouncementItem(item.id)}
+                            disabled={savingAnnouncementId === item.id || !isDirty}
+                            className={`inline-flex items-center justify-center w-9 h-9 rounded-full border transition-all disabled:cursor-not-allowed ${
+                              isDirty
+                                ? 'border-green-200 bg-green-50 text-green-700 hover:bg-green-100 hover:border-green-300'
+                                : 'border-[#EAE8E4] bg-white text-[#D6D1CA] opacity-60'
+                            }`}
+                            title="儲存公告"
+                            aria-label="儲存公告"
+                          >
+                            <i className={savingAnnouncementId === item.id ? 'ti ti-loader animate-spin text-base' : 'ti ti-check text-base'}></i>
+                          </button>
+                          <button
+                            onClick={() => handleCancelAnnouncementEdit(item)}
+                            disabled={savingAnnouncementId === item.id}
+                            className="inline-flex items-center justify-center w-9 h-9 rounded-full border border-[#EAE8E4] bg-white text-[#888888] hover:border-[#333333] hover:text-[#333333] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                            title="取消編輯"
+                            aria-label="取消編輯"
+                          >
+                            <i className="ti ti-x text-base"></i>
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => handleToggleAnnouncementPinned(item.id)}
+                            disabled={savingAnnouncementId === item.id}
+                            className={`inline-flex items-center justify-center w-9 h-9 rounded-full border transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
+                              item.pinned
+                                ? 'border-[#EA5B3C] bg-[#FFF3EF] text-[#EA5B3C] hover:bg-[#FFE7DE]'
+                                : 'border-[#EAE8E4] bg-white text-[#888888] hover:border-[#EA5B3C] hover:text-[#EA5B3C]'
+                            }`}
+                            title={item.pinned ? '取消釘選' : '釘選公告'}
+                            aria-label={item.pinned ? '取消釘選' : '釘選公告'}
+                          >
+                            <i className="ti ti-pin text-base"></i>
+                          </button>
+                          <button
+                            onClick={() => handleStartEditAnnouncement(item)}
+                            disabled={savingAnnouncementId === item.id}
+                            className="inline-flex items-center justify-center w-9 h-9 rounded-full border border-[#EAE8E4] bg-white text-[#888888] hover:border-[#EA5B3C] hover:text-[#EA5B3C] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                            title="編輯公告"
+                            aria-label="編輯公告"
+                          >
+                            <i className="ti ti-pencil text-base"></i>
+                          </button>
+                          <button
+                            onClick={() => handleDeleteAnnouncement(item.id)}
+                            disabled={savingAnnouncementId === item.id}
+                            className="inline-flex items-center justify-center w-9 h-9 rounded-full border border-red-200 bg-white text-red-600 hover:bg-red-50 hover:border-red-300 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                            title="刪除公告"
+                            aria-label="刪除公告"
+                          >
+                            <i className="ti ti-trash text-base"></i>
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    {isEditing ? (
+                      <>
+                        <input
+                          type="text"
+                          value={draft.title}
+                          onChange={(e) => handleAnnouncementDraftChange(item.id, 'title', e.target.value)}
+                          className="w-full text-sm px-4 py-3 border border-[#EAE8E4] rounded-lg focus:outline-none focus:border-[#EA5B3C] bg-white font-bold"
+                          placeholder="請輸入公告標題"
+                        />
+                        <textarea
+                          value={draft.content}
+                          onChange={(e) => handleAnnouncementDraftChange(item.id, 'content', e.target.value)}
+                          rows={6}
+                          className="w-full resize-none text-sm leading-6 px-4 py-3 border border-[#EAE8E4] rounded-lg focus:outline-none focus:border-[#EA5B3C] bg-white"
+                          placeholder="請輸入公告內容"
+                        />
+                      </>
+                    ) : (
+                      <article className="space-y-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <h4 className="text-base font-bold text-[#333333] break-words">
+                            {item.title || '未命名公告'}
+                          </h4>
+                          {item.pinned && (
+                            <span className="shrink-0 inline-flex items-center gap-1 rounded-full border border-[#EA5B3C]/20 bg-[#FFF3EF] px-2 py-1 text-[11px] font-bold text-[#EA5B3C]">
+                              <i className="ti ti-pin text-xs"></i> ??
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-sm text-[#555555] leading-7 whitespace-pre-wrap break-words">
+                          {item.content || '此公告尚無內容。'}
+                        </div>
+                      </article>
+                    )}
+
+                    {item.updatedAt && (
+                      <p className="text-[11px] text-[#888888] text-right">
+                        最後更新：{new Date(item.updatedAt).toLocaleString()}
+                      </p>
+                    )}
+                  </div>
+                );
+              }) : (
                 <div className="text-center py-10 text-xs text-[#888888] border border-dashed border-[#D6D1CA] rounded-xl bg-[#F9F8F5]">
                   目前尚無公告，請點擊「新增公告」建立第一則公告。
                 </div>

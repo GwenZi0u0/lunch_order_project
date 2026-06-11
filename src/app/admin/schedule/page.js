@@ -681,10 +681,9 @@ export default function AdminDashboard() {
             </div>
             <div className="flex flex-col sm:flex-row gap-2 w-full lg:w-auto">
               <input
-                type="text"
+                type="date"
                 value={historyDate}
                 onChange={(e) => setHistoryDate(e.target.value)}
-                placeholder={'2026-06-08 \u6216 6/8'}
                 className="text-xs px-3 py-2 border border-[#EAE8E4] rounded-lg focus:outline-none focus:border-[#EA5B3C] bg-white font-medium"
               />
               <button

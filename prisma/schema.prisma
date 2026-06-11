@@ -44,8 +44,8 @@ model MenuItem {
 model WeeklySchedule {
   id            String     @id @default(uuid())
   date          String // YYYY-MM-DD format
-  restaurantId  String
-  restaurant    Restaurant @relation(fields: [restaurantId], references: [id])
+  restaurantId  String?
+  restaurant    Restaurant? @relation(fields: [restaurantId], references: [id])
   orderDeadline String     @default("09:40") // HH:MM format
   isOpen        Boolean    @default(true)
   deliveredAt   DateTime?

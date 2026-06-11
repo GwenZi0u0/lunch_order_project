@@ -131,23 +131,26 @@ export async function POST(request) {
     }
 
     const body = await request.json();
-    const { date, restaurantId, orderDeadline } = body;
+    const { date, restaurantId, orderDeadline, isOpen = true } = body;
+    const scheduleIsOpen = Boolean(isOpen);
+    const normalizedRestaurantId = scheduleIsOpen ? restaurantId : null;
 
-    if (!date || !restaurantId) {
+    if (!date || (scheduleIsOpen && !normalizedRestaurantId)) {
       return NextResponse.json({ error: 'Date and Restaurant ID are required' }, { status: 400 });
     }
 
     const schedule = await prisma.weeklySchedule.upsert({
       where: { date },
       update: {
-        restaurantId,
+        restaurantId: normalizedRestaurantId,
         orderDeadline: orderDeadline || '09:40',
+        isOpen: scheduleIsOpen
       },
       create: {
         date,
-        restaurantId,
+        restaurantId: normalizedRestaurantId,
         orderDeadline: orderDeadline || '09:40',
-        isOpen: true
+        isOpen: scheduleIsOpen
       }
     });
 

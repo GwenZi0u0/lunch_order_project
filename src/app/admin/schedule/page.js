@@ -20,41 +20,50 @@ function getWeeklyDates() {
   const dates = [];
   const now = new Date();
   const day = now.getDay();
+  const weekdayLabels = ['\u9031\u4e00', '\u9031\u4e8c', '\u9031\u4e09', '\u9031\u56db', '\u9031\u4e94', '\u9031\u516d', '\u9031\u65e5'];
   
   // Get Monday of current week
   const monday = new Date(now);
   monday.setDate(now.getDate() - (day === 0 ? 6 : day - 1));
   
-  // Current week Mon-Fri
-  for (let i = 0; i < 5; i++) {
+  // Current week Mon-Sun
+  for (let i = 0; i < 7; i++) {
     const d = new Date(monday);
     d.setDate(monday.getDate() + i);
     dates.push({
       dateStr: formatDate(d),
-      label: `本週 ${['一', '二', '三', '四', '五'][i]}`,
+      label: `\u672c\u9031${weekdayLabels[i]}`,
+      isWeekend: i >= 5,
       isNextWeek: false
     });
   }
   
-  // Next week Mon-Fri
+  // Next week Mon-Sun
   const nextMonday = new Date(monday);
   nextMonday.setDate(monday.getDate() + 7);
-  for (let i = 0; i < 5; i++) {
+  for (let i = 0; i < 7; i++) {
     const d = new Date(nextMonday);
     d.setDate(nextMonday.getDate() + i);
     dates.push({
       dateStr: formatDate(d),
-      label: `下週 ${['一', '二', '三', '四', '五'][i]}`,
+      label: `\u4e0b\u9031${weekdayLabels[i]}`,
+      isWeekend: i >= 5,
       isNextWeek: true
     });
   }
   return dates;
 }
 
+function isWeekendDate(dateStr) {
+  const day = new Date(`${dateStr}T00:00:00`).getDay();
+  return day === 0 || day === 6;
+}
+
 export default function AdminDashboard() {
   const router = useRouter();
   const [user, setUser] = useState(null);
   const [restaurants, setRestaurants] = useState([]);
+  const [members, setMembers] = useState([]);
   const [schedules, setSchedules] = useState([]);
   const [selectedDate, setSelectedDate] = useState('');
   const [activeWeekTab, setActiveWeekTab] = useState('current'); // 'current' or 'next'
@@ -62,7 +71,10 @@ export default function AdminDashboard() {
   // Scheduling state
   const [selectedRestaurantId, setSelectedRestaurantId] = useState('');
   const [orderDeadline, setOrderDeadline] = useState('09:40');
+  const [isHoliday, setIsHoliday] = useState(false);
   const [isUpdatingSchedule, setIsUpdatingSchedule] = useState(false);
+  const [orderEditor, setOrderEditor] = useState(null);
+  const [isSavingOrder, setIsSavingOrder] = useState(false);
   
   // Billing action state
   const [isProcessingDelivery, setIsProcessingDelivery] = useState(false);
@@ -91,6 +103,7 @@ export default function AdminDashboard() {
             router.push('/portal');
           } else {
             fetchRestaurants();
+            fetchMembers();
             fetchSchedules();
             fetchAnnouncement();
           }
@@ -112,6 +125,17 @@ export default function AdminDashboard() {
         }
       })
       .catch(err => console.error('無法載入餐廳:', err));
+  };
+
+  const fetchMembers = () => {
+    fetch('/api/wallets?action=list_users')
+      .then(res => res.json())
+      .then(data => {
+        if (Array.isArray(data)) {
+          setMembers(data);
+        }
+      })
+      .catch(err => console.error('Failed to load members:', err));
   };
 
   const fetchSchedules = () => {
@@ -178,21 +202,26 @@ export default function AdminDashboard() {
   const todayDate = formatDate(new Date());
   const todaySchedule = schedules.find(s => s.date === todayDate);
   const weeklyDates = getWeeklyDates();
+  const selectedDateIsHoliday = activeSchedule ? !activeSchedule.isOpen : isHoliday;
+  const activeMenuItems = activeSchedule?.restaurant?.menuItems || [];
 
   // Update schedule selection inputs
   useEffect(() => {
     if (activeSchedule) {
-      setSelectedRestaurantId(activeSchedule.restaurantId);
+      setSelectedRestaurantId(activeSchedule.restaurantId || '');
       setOrderDeadline(activeSchedule.orderDeadline || '09:40');
+      setIsHoliday(!activeSchedule.isOpen);
     } else {
       setSelectedRestaurantId('');
       setOrderDeadline('09:40');
+      setIsHoliday(isWeekendDate(selectedDate));
     }
     setMessage({ text: '', type: '' });
+    setOrderEditor(null);
   }, [selectedDate, activeSchedule]);
 
   const handleSaveSchedule = async () => {
-    if (!selectedRestaurantId) {
+    if (!isHoliday && !selectedRestaurantId) {
       setMessage({ text: '請選擇一個餐廳！', type: 'error' });
       return;
     }
@@ -206,8 +235,9 @@ export default function AdminDashboard() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           date: selectedDate,
-          restaurantId: selectedRestaurantId,
-          orderDeadline
+          restaurantId: isHoliday ? null : selectedRestaurantId,
+          orderDeadline,
+          isOpen: !isHoliday
         })
       });
 
@@ -263,6 +293,113 @@ export default function AdminDashboard() {
       setMessage({ text: err.message, type: 'error' });
     } finally {
       setIsProcessingDelivery(false);
+    }
+  };
+
+  const startNewOrder = () => {
+    setOrderEditor({
+      orderId: null,
+      userId: '',
+      note: '',
+      quantities: {}
+    });
+  };
+
+  const startEditOrder = (order) => {
+    const quantities = {};
+    order.orderItems.forEach(item => {
+      quantities[item.menuItemId] = item.quantity;
+    });
+
+    setOrderEditor({
+      orderId: order.id,
+      userId: order.userId,
+      note: order.note || '',
+      quantities
+    });
+  };
+
+  const updateOrderItemQuantity = (menuItemId, value) => {
+    const quantity = Math.max(0, parseInt(value, 10) || 0);
+    setOrderEditor(prev => ({
+      ...prev,
+      quantities: {
+        ...prev.quantities,
+        [menuItemId]: quantity
+      }
+    }));
+  };
+
+  const handleSaveAdminOrder = async () => {
+    if (!activeSchedule || !orderEditor) return;
+
+    const items = Object.entries(orderEditor.quantities)
+      .filter(([, quantity]) => quantity > 0)
+      .map(([menuItemId, quantity]) => ({ menuItemId, quantity }));
+
+    if (!orderEditor.userId) {
+      setMessage({ text: '請選擇成員。', type: 'error' });
+      return;
+    }
+
+    if (items.length === 0) {
+      setMessage({ text: '請至少選擇一個品項數量。', type: 'error' });
+      return;
+    }
+
+    setIsSavingOrder(true);
+    setMessage({ text: '', type: '' });
+
+    try {
+      const res = await fetch('/api/orders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          scheduleId: activeSchedule.id,
+          targetUserId: orderEditor.userId,
+          items,
+          note: orderEditor.note
+        })
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || '訂單儲存失敗。');
+      }
+
+      setMessage({ text: '訂單已儲存。', type: 'success' });
+      setOrderEditor(null);
+      fetchSchedules();
+    } catch (err) {
+      setMessage({ text: err.message, type: 'error' });
+    } finally {
+      setIsSavingOrder(false);
+    }
+  };
+
+  const handleCancelAdminOrder = async (orderId) => {
+    if (!confirm('確認要取消此筆訂單嗎？')) return;
+
+    setIsSavingOrder(true);
+    setMessage({ text: '', type: '' });
+
+    try {
+      const res = await fetch(`/api/orders?orderId=${orderId}`, {
+        method: 'DELETE'
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || '訂單取消失敗。');
+      }
+
+      setMessage({ text: '訂單已取消。', type: 'success' });
+      setOrderEditor(null);
+      fetchSchedules();
+    } catch (err) {
+      setMessage({ text: err.message, type: 'error' });
+    } finally {
+      setIsSavingOrder(false);
     }
   };
 
@@ -364,13 +501,14 @@ export default function AdminDashboard() {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-7 gap-3">
             {weeklyDates
               .filter(d => (activeWeekTab === 'current' ? !d.isNextWeek : d.isNextWeek))
               .map(d => {
                 const sched = schedules.find(s => s.date === d.dateStr);
                 const isSelected = selectedDate === d.dateStr;
                 const totalOrdersCount = sched?.orders ? sched.orders.filter(o => o.status !== 'cancelled').length : 0;
+                const isHolidayCard = sched ? !sched.isOpen : d.isWeekend;
                 
                 return (
                   <button
@@ -384,14 +522,19 @@ export default function AdminDashboard() {
                   >
                     <div className="text-xs text-[#888888] mb-1 font-bold">{d.label}</div>
                     <div className="text-sm font-bold text-[#333333] truncate">
-                      {sched ? sched.restaurant.name : '（未排定）'}
+                      {isHolidayCard ? '\u4f11\u5047' : (sched?.restaurant?.name || '\u672a\u6392\u5b9a')}
                     </div>
-                    {sched?.deliveredAt && (
+                    {isHolidayCard && (
+                      <span className="absolute top-2 right-2 bg-[#F2EFEA] text-[#888888] text-[8px] font-bold px-1 rounded border border-[#EAE8E4]">
+                        {'\u5047\u671f'}
+                      </span>
+                    )}
+                    {!isHolidayCard && sched?.deliveredAt && (
                       <span className="absolute top-2 right-2 bg-green-100 text-green-700 text-[8px] font-bold px-1 rounded border border-green-300">
                         已扣款
                       </span>
                     )}
-                    {totalOrdersCount > 0 && !sched?.deliveredAt && (
+                    {!isHolidayCard && totalOrdersCount > 0 && !sched?.deliveredAt && (
                       <span className="absolute top-2 right-2 bg-orange-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded animate-pulse">
                         {totalOrdersCount} 份
                       </span>
@@ -434,12 +577,31 @@ export default function AdminDashboard() {
                   />
                 </div>
 
+                <button
+                  type="button"
+                  onClick={() => setIsHoliday(prev => !prev)}
+                  className={`w-full flex items-center justify-between px-3 py-3 rounded-lg border text-xs font-bold transition-all ${
+                    isHoliday
+                      ? 'border-[#EA5B3C] bg-[#FFF3EF] text-[#EA5B3C]'
+                      : 'border-[#EAE8E4] bg-white text-[#333333] hover:border-[#D6D1CA]'
+                  }`}
+                >
+                  <span className="flex items-center gap-2">
+                    <i className={isHoliday ? 'ti ti-toggle-right text-lg' : 'ti ti-toggle-left text-lg'}></i>
+                    {'\u5047\u671f'}
+                  </span>
+                  <span className="text-[10px] text-[#888888]">
+                    {isHoliday ? '\u4e0d\u958b\u653e\u8a02\u9910' : '\u958b\u653e\u6392\u9910'}
+                  </span>
+                </button>
+
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-[#888888]">指定當日餐廳</label>
                   <select
                     value={selectedRestaurantId}
                     onChange={(e) => setSelectedRestaurantId(e.target.value)}
-                    className="w-full text-xs px-3 py-2 border border-[#EAE8E4] rounded-lg focus:outline-none focus:border-[#EA5B3C] bg-white font-medium"
+                    disabled={isHoliday}
+                    className="w-full text-xs px-3 py-2 border border-[#EAE8E4] rounded-lg focus:outline-none focus:border-[#EA5B3C] bg-white font-medium disabled:bg-[#F9F8F5] disabled:text-[#B8B2AA] disabled:cursor-not-allowed"
                   >
                     <option value="">-- 請選擇餐廳 --</option>
                     {restaurants.map(rest => (
@@ -460,7 +622,7 @@ export default function AdminDashboard() {
 
                 <button
                   onClick={handleSaveSchedule}
-                  disabled={isUpdatingSchedule || !selectedRestaurantId}
+                  disabled={isUpdatingSchedule || (!isHoliday && !selectedRestaurantId)}
                   className="w-full py-3 text-xs font-bold bg-[#EA5B3C] text-white rounded-xl shadow-sm hover:bg-[#333333] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {isUpdatingSchedule ? '正在儲存...' : '儲存排程設定'}
@@ -507,7 +669,11 @@ export default function AdminDashboard() {
                 <div>
                   <span className="text-xs font-bold text-[#888888] tracking-widest uppercase block mb-1">當日統計資訊 ({selectedDate})</span>
                   <h3 className="text-xl font-bold text-[#333333]">
-                    {activeSchedule ? `${activeSchedule.restaurant.name} 訂餐彙整` : '（當日尚未安排餐廳）'}
+                    {activeSchedule
+                      ? selectedDateIsHoliday
+                        ? '\u5047\u671f\u4e0d\u958b\u653e\u8a02\u9910'
+                        : `${activeSchedule.restaurant?.name || '\u672a\u6392\u5b9a'} \u8a02\u9910\u7d50\u679c`
+                      : '\u5c1a\u672a\u5efa\u7acb\u6392\u7a0b'}
                   </h3>
                 </div>
 
@@ -554,24 +720,108 @@ export default function AdminDashboard() {
 
                   {/* Individual User Orders Spreadsheet */}
                   <div className="space-y-4 pt-4 border-t border-[#EAE8E4]">
-                    <h4 className="font-bold text-sm text-[#333333] border-l-4 border-l-[#EA5B3C] pl-2.5">
-                      成員訂單明細與備註
-                    </h4>
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                      <h4 className="font-bold text-sm text-[#333333] border-l-4 border-l-[#EA5B3C] pl-2.5">
+                        {'\u6210\u54e1\u8a02\u55ae\u660e\u7d30\u8207\u5099\u8a3b'}
+                      </h4>
+                      <button
+                        type="button"
+                        onClick={startNewOrder}
+                        disabled={selectedDateIsHoliday || !activeSchedule.restaurant || Boolean(activeSchedule.deliveredAt)}
+                        className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-[#EA5B3C] bg-[#FFF3EF] text-[#EA5B3C] text-xs font-bold hover:bg-[#FFE7DE] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        <i className="ti ti-plus"></i>
+                        {'\u52a0\u55ae'}
+                      </button>
+                    </div>
+
+                    {orderEditor && (
+                      <div className="rounded-xl border border-[#EAE8E4] bg-[#F9F8F5] p-4 space-y-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          <div className="space-y-1.5">
+                            <label className="text-xs font-bold text-[#888888]">{'\u6210\u54e1'}</label>
+                            <select
+                              value={orderEditor.userId}
+                              onChange={(e) => setOrderEditor(prev => ({ ...prev, userId: e.target.value }))}
+                              disabled={Boolean(orderEditor.orderId)}
+                              className="w-full text-xs px-3 py-2 border border-[#EAE8E4] rounded-lg focus:outline-none focus:border-[#EA5B3C] bg-white font-medium disabled:bg-[#F2EFEA] disabled:text-[#888888]"
+                            >
+                              <option value="">{'\u8acb\u9078\u64c7\u6210\u54e1'}</option>
+                              {members.map(member => (
+                                <option key={member.id} value={member.id}>{member.name}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="space-y-1.5">
+                            <label className="text-xs font-bold text-[#888888]">{'\u5099\u8a3b'}</label>
+                            <input
+                              type="text"
+                              value={orderEditor.note}
+                              onChange={(e) => setOrderEditor(prev => ({ ...prev, note: e.target.value }))}
+                              className="w-full text-xs px-3 py-2 border border-[#EAE8E4] rounded-lg focus:outline-none focus:border-[#EA5B3C] bg-white font-medium"
+                              placeholder={'\u53ef\u586b\u5beb\u52a0\u98ef\u3001\u4e0d\u8981\u9999\u83dc\u7b49'}
+                            />
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-72 overflow-y-auto pr-1 custom-scrollbar">
+                          {activeMenuItems.map(item => (
+                            <div key={item.id} className="flex items-center justify-between gap-3 rounded-lg border border-[#EAE8E4] bg-white px-3 py-2">
+                              <div className="min-w-0">
+                                <div className="text-xs font-bold text-[#333333] truncate">{item.name}</div>
+                                <div className="text-[11px] text-[#888888]">NT$ {item.price}</div>
+                              </div>
+                              <input
+                                type="number"
+                                min="0"
+                                value={orderEditor.quantities[item.id] || 0}
+                                onChange={(e) => updateOrderItemQuantity(item.id, e.target.value)}
+                                className="w-20 text-xs px-2 py-1.5 border border-[#EAE8E4] rounded-lg text-right focus:outline-none focus:border-[#EA5B3C]"
+                              />
+                            </div>
+                          ))}
+                        </div>
+
+                        <div className="flex justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setOrderEditor(null)}
+                            disabled={isSavingOrder}
+                            className="inline-flex items-center justify-center w-9 h-9 rounded-full border border-[#EAE8E4] bg-white text-[#888888] hover:border-[#333333] hover:text-[#333333] transition-all disabled:opacity-50"
+                            aria-label={'\u53d6\u6d88\u7de8\u8f2f\u8a02\u55ae'}
+                            title={'\u53d6\u6d88\u7de8\u8f2f\u8a02\u55ae'}
+                          >
+                            <i className="ti ti-x text-base"></i>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleSaveAdminOrder}
+                            disabled={isSavingOrder}
+                            className="inline-flex items-center justify-center w-9 h-9 rounded-full border border-green-200 bg-green-50 text-green-700 hover:bg-green-100 hover:border-green-300 transition-all disabled:opacity-50"
+                            aria-label={'\u5132\u5b58\u8a02\u55ae'}
+                            title={'\u5132\u5b58\u8a02\u55ae'}
+                          >
+                            <i className={isSavingOrder ? 'ti ti-loader animate-spin text-base' : 'ti ti-check text-base'}></i>
+                          </button>
+                        </div>
+                      </div>
+                    )}
 
                     {activeSchedule.orders && activeSchedule.orders.filter(o => o.status !== 'cancelled').length === 0 ? (
                       <div className="text-center py-8 text-xs text-[#888888]">
-                        尚無成員明細。
+                        {'\u76ee\u524d\u6c92\u6709\u6210\u54e1\u8a02\u55ae\u3002'}
                       </div>
                     ) : (
                       <div className="overflow-x-auto border border-[#EAE8E4] rounded-xl bg-white">
                         <table className="w-full text-left border-collapse text-xs">
                           <thead>
                             <tr className="bg-[#F9F8F5] text-[#888888] font-bold border-b border-[#EAE8E4]">
-                              <th className="p-3">姓名</th>
-                              <th className="p-3">點購餐點與數量</th>
-                              <th className="p-3 text-right">小計</th>
-                              <th className="p-3">成員客製備註</th>
-                              <th className="p-3">狀態</th>
+                              <th className="p-3">{'\u59d3\u540d'}</th>
+                              <th className="p-3">{'\u9910\u9ede\u8207\u6578\u91cf'}</th>
+                              <th className="p-3 text-right">{'\u91d1\u984d'}</th>
+                              <th className="p-3">{'\u5099\u8a3b'}</th>
+                              <th className="p-3">{'\u72c0\u614b'}</th>
+                              <th className="p-3 text-right">{'\u64cd\u4f5c'}</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-[#EAE8E4] text-[#333333]">
@@ -591,7 +841,7 @@ export default function AdminDashboard() {
                                     NT$ {order.totalAmount}
                                   </td>
                                   <td className="p-3 text-[#888888] italic">
-                                    {order.note ? order.note : '—'}
+                                    {order.note ? order.note : '-'}
                                   </td>
                                   <td className="p-3">
                                     <span className={`inline-block px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${
@@ -599,8 +849,32 @@ export default function AdminDashboard() {
                                         ? 'bg-green-100 text-green-700 border border-green-200'
                                         : 'bg-orange-100 text-orange-700 border border-orange-200'
                                     }`}>
-                                      {order.status === 'delivered' ? '已扣款' : '已訂購'}
+                                      {order.status === 'delivered' ? '\u5df2\u6263\u6b3e' : '\u5df2\u8a02\u8cfc'}
                                     </span>
+                                  </td>
+                                  <td className="p-3">
+                                    <div className="flex justify-end gap-2">
+                                      <button
+                                        type="button"
+                                        onClick={() => startEditOrder(order)}
+                                        disabled={Boolean(activeSchedule.deliveredAt)}
+                                        className="inline-flex items-center justify-center w-8 h-8 rounded-full border border-[#EAE8E4] bg-white text-[#888888] hover:border-[#EA5B3C] hover:text-[#EA5B3C] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                                        aria-label={'\u7de8\u8f2f\u8a02\u55ae'}
+                                        title={'\u7de8\u8f2f\u8a02\u55ae'}
+                                      >
+                                        <i className="ti ti-pencil text-sm"></i>
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleCancelAdminOrder(order.id)}
+                                        disabled={Boolean(activeSchedule.deliveredAt) || isSavingOrder}
+                                        className="inline-flex items-center justify-center w-8 h-8 rounded-full border border-red-200 bg-white text-red-600 hover:bg-red-50 hover:border-red-300 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                                        aria-label={'\u53d6\u6d88\u8a02\u55ae'}
+                                        title={'\u53d6\u6d88\u8a02\u55ae'}
+                                      >
+                                        <i className="ti ti-trash text-sm"></i>
+                                      </button>
+                                    </div>
                                   </td>
                                 </tr>
                               ))}

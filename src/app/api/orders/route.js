@@ -109,10 +109,22 @@ export async function POST(request) {
     }
 
     const body = await request.json();
-    const { scheduleId, items, note } = body; // items: [{ menuItemId, quantity }]
+    const { scheduleId, items, note, targetUserId } = body; // items: [{ menuItemId, quantity }]
+    const isAdminOverride = user.role === 'admin' && targetUserId;
+    const orderUserId = isAdminOverride ? targetUserId : user.userId;
 
     if (!scheduleId || !items || !Array.isArray(items) || items.length === 0) {
       return NextResponse.json({ error: 'Invalid order input' }, { status: 400 });
+    }
+
+    if (isAdminOverride) {
+      const targetUser = await prisma.user.findUnique({
+        where: { id: targetUserId }
+      });
+
+      if (!targetUser) {
+        return NextResponse.json({ error: 'Target user not found' }, { status: 404 });
+      }
     }
 
     // Retrieve schedule
@@ -124,11 +136,19 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Schedule not found' }, { status: 404 });
     }
 
+    if (!schedule.isOpen || !schedule.restaurantId) {
+      return NextResponse.json({ error: 'This date is marked as a holiday or has no restaurant scheduled' }, { status: 400 });
+    }
+
+    if (schedule.deliveredAt) {
+      return NextResponse.json({ error: 'This schedule has already been delivered and billed' }, { status: 400 });
+    }
+
     // Enforcement of deadline (09:40)
     const currentDT = getCurrentDateTime();
-    if (isScheduleClosed(schedule, currentDT)) {
-      return NextResponse.json({ 
-        error: `訂餐已截止。截止時間為供餐當日 ${schedule.orderDeadline} 前。` 
+    if (!isAdminOverride && isScheduleClosed(schedule, currentDT)) {
+      return NextResponse.json({
+        error: `Ordering is closed. Deadline is ${schedule.orderDeadline}.`
       }, { status: 400 });
     }
 
@@ -162,7 +182,7 @@ export async function POST(request) {
       // Find existing order for this schedule and user
       const existingOrder = await tx.order.findFirst({
         where: {
-          userId: user.userId,
+          userId: orderUserId,
           scheduleId: scheduleId,
           status: { not: 'cancelled' }
         }
@@ -178,7 +198,7 @@ export async function POST(request) {
       // Create new order
       const newOrder = await tx.order.create({
         data: {
-          userId: user.userId,
+          userId: orderUserId,
           scheduleId,
           totalAmount,
           note,
@@ -229,11 +249,15 @@ export async function DELETE(request) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
+    if (order.schedule.deliveredAt) {
+      return NextResponse.json({ error: 'This schedule has already been delivered and billed' }, { status: 400 });
+    }
+
     // Enforcement of deadline (09:40)
     const currentDT = getCurrentDateTime();
-    if (isScheduleClosed(order.schedule, currentDT)) {
-      return NextResponse.json({ 
-        error: `取消訂餐已截止。截止時間為供餐當日 ${order.schedule.orderDeadline} 前。` 
+    if (user.role !== 'admin' && isScheduleClosed(order.schedule, currentDT)) {
+      return NextResponse.json({
+        error: `Order cancellation is closed. Deadline is ${order.schedule.orderDeadline}.`
       }, { status: 400 });
     }
 

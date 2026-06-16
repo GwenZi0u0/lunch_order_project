@@ -155,6 +155,7 @@ export default function PortalPage() {
 
   // Find schedule details for selected date
   const activeSchedule = schedules.find(s => s.date === selectedDate);
+  const activeRestaurant = activeSchedule?.restaurant || null;
   const todayDate = currentDateTime.dateStr || formatDate(new Date());
   const todaySchedule = schedules.find(s => s.date === todayDate);
   const todayOrder = todaySchedule?.userOrder || null;
@@ -202,8 +203,8 @@ export default function PortalPage() {
   };
 
   const calculateTotal = () => {
-    if (!activeSchedule || !activeSchedule.restaurant) return 0;
-    return activeSchedule.restaurant.menuItems.reduce((sum, item) => {
+    if (!activeRestaurant) return 0;
+    return activeRestaurant.menuItems.reduce((sum, item) => {
       const qty = orderQuantities[item.id] || 0;
       return sum + item.price * qty;
     }, 0);
@@ -480,7 +481,7 @@ export default function PortalPage() {
                   >
                     <div className="text-xs text-[#888888] mb-1 font-bold">{d.label}</div>
                     <div className="text-sm font-bold text-[#333333] truncate">
-                      {sched ? sched.restaurant.name : '（未排定）'}
+                      {sched?.restaurant ? sched.restaurant.name : '（未排定）'}
                     </div>
                     {/* Status Badge */}
                     {hasOrdered && (
@@ -500,15 +501,15 @@ export default function PortalPage() {
           {/* Menu Selection (Col-span 2) */}
           <div className="lg:col-span-2 space-y-6">
             <div className="c-box">
-              {activeSchedule ? (
+              {activeRestaurant ? (
                 <div className="space-y-8">
                   {/* Restaurant Details */}
                   <div className="border-b border-[#EAE8E4] pb-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                     <div>
-                      <h3 className="text-2xl font-bold text-[#333333]">{activeSchedule.restaurant.name}</h3>
-                      {activeSchedule.restaurant.phone && (
+                      <h3 className="text-2xl font-bold text-[#333333]">{activeRestaurant.name}</h3>
+                      {activeRestaurant.phone && (
                         <p className="text-xs text-[#888888] mt-1">
-                          <i className="ti ti-phone"></i> 聯絡電話: {activeSchedule.restaurant.phone}
+                          <i className="ti ti-phone"></i> 聯絡電話: {activeRestaurant.phone}
                         </p>
                       )}
                     </div>
@@ -537,7 +538,7 @@ export default function PortalPage() {
 
                     {/* Group menu items by category */}
                     {['主食', '配菜', '飲料湯品'].map(cat => {
-                      const items = activeSchedule.restaurant.menuItems.filter(mi => mi.category === cat || (!['主食', '配菜', '飲料湯品'].includes(mi.category) && cat === '主食'));
+                      const items = activeRestaurant.menuItems.filter(mi => mi.category === cat || (!['主食', '配菜', '飲料湯品'].includes(mi.category) && cat === '主食'));
                       if (items.length === 0) return null;
                       
                       return (
@@ -585,9 +586,9 @@ export default function PortalPage() {
                     })}
                   </div>
                   
-                  {activeSchedule.restaurant.note && (
+                  {activeRestaurant.note && (
                     <div className="p-4 bg-[#F9F8F5] rounded-xl text-xs text-[#888888] leading-normal border border-[#EAE8E4]">
-                      <strong>備註：</strong>{activeSchedule.restaurant.note}
+                      <strong>備註：</strong>{activeRestaurant.note}
                     </div>
                   )}
                 </div>
@@ -621,10 +622,10 @@ export default function PortalPage() {
               )}
 
               {/* Selected items receipt */}
-              {activeSchedule && activeSchedule.restaurant ? (
+              {activeRestaurant ? (
                 <>
                   <div className="space-y-4 max-h-[220px] overflow-y-auto pr-1">
-                    {activeSchedule.restaurant.menuItems.map(item => {
+                    {activeRestaurant.menuItems.map(item => {
                       const qty = orderQuantities[item.id] || 0;
                       if (qty === 0) return null;
                       return (

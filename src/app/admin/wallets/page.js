@@ -416,7 +416,7 @@ export default function WalletsManagementPage() {
                             </td>
                             <td className="p-3 text-right font-bold text-sm">
                               <span className={balanceColor}>
-                                {balance > 0 ? '＋' : balance < 0 ? '－' : ''}NT$ {Math.abs(balance)}
+                                <span className="hidden sm:inline">{balance > 0 ? '＋' : balance < 0 ? '－' : ''}</span>NT$ {Math.abs(balance)}
                               </span>
                               {warningBadge}
                             </td>
@@ -759,7 +759,7 @@ export default function WalletsManagementPage() {
                           </span>
                         </td>
                         <td className={`py-3 font-bold ${tx.amount >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                          {tx.amount >= 0 ? '＋' : '－'}NT$ {Math.abs(tx.amount)}
+                          <span className="hidden sm:inline">{tx.amount >= 0 ? '＋' : '－'}</span>NT$ {Math.abs(tx.amount)}
                         </td>
                         <td className="py-3 text-[#555555]">
                           {tx.source || (tx.type === 'charge' ? '訂單扣款' : '-')}

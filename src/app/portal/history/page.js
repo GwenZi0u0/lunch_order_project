@@ -144,7 +144,7 @@ export default function HistoryPage() {
         {/* Page Header */}
         <div className="flex justify-between items-center border-b border-[#EAE8E4] pb-4">
           <h2 className="text-xl font-bold text-[#333333] flex items-center gap-2">
-            <i className="ti ti-history text-2xl text-[#EA5B3C]"></i> 個人歷史訂單與扣款紀錄
+            <i className="ti ti-history text-2xl text-[#EA5B3C]"></i> 消費日誌
           </h2>
           <button
             onClick={() => router.push('/portal')}
@@ -158,7 +158,7 @@ export default function HistoryPage() {
         <div className="c-box">
           <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4 mb-6">
             <h3 className="font-bold text-[#333333] text-base border-l-4 border-l-[#EA5B3C] pl-2.5">
-              儲值金變動與消費日誌
+              個人歷史訂單與扣款紀錄
             </h3>
 
             <div className="space-y-1.5 relative w-full md:w-[240px]">

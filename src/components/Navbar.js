@@ -66,6 +66,12 @@ export default function Navbar({ user }) {
             ) : (
               <>
                 <button 
+                  onClick={() => router.push('/portal/announcements')} 
+                  className="text-sm font-bold text-[#333333] hover:text-[#EA5B3C] transition-colors"
+                >
+                  公告欄
+                </button>
+                <button 
                   onClick={() => router.push('/portal')} 
                   className="text-sm font-bold text-[#333333] hover:text-[#EA5B3C] transition-colors"
                 >
@@ -75,7 +81,7 @@ export default function Navbar({ user }) {
                   onClick={() => router.push('/portal/history')} 
                   className="text-sm font-bold text-[#333333] hover:text-[#EA5B3C] transition-colors"
                 >
-                  歷史訂單
+                  消費日誌
                 </button>
               </>
             )}

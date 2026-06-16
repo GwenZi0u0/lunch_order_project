@@ -51,11 +51,15 @@ export default function Navbar({ user }) {
 
   const modeSwitch = isAdmin
     ? {
-        label: isOrderingView ? '管理者後台' : '訂購者介面',
+        label: isOrderingView ? '切換至管理者後台' : '切換至訂購者介面',
         href: isOrderingView ? '/admin' : '/portal',
-        icon: isOrderingView ? 'ti ti-settings' : 'ti ti-tools-kitchen-2',
+        icon: 'ti ti-switch-horizontal',
       }
     : null;
+
+  const roleLabel = isAdmin
+    ? isOrderingView ? '管理者 / 訂購者檢視' : '管理者'
+    : '訂購者';
 
   return (
     <header className="sticky top-0 z-50 bg-[#F9F8F5]/90 backdrop-blur-md border-b border-[#EAE8E4] px-4 sm:px-6 py-4 transition-all duration-300">
@@ -95,7 +99,7 @@ export default function Navbar({ user }) {
                 className="hidden sm:flex items-center gap-1.5 text-xs font-bold border border-[#EAE8E4] px-3 py-2 bg-white rounded-full hover:border-[#EA5B3C] hover:text-[#EA5B3C] transition-all"
               >
                 <i className={modeSwitch.icon}></i>
-                {modeSwitch.label}
+                {isOrderingView ? '管理者後台' : '訂購者介面'}
               </button>
             )}
 
@@ -114,7 +118,7 @@ export default function Navbar({ user }) {
               <div className="flex flex-col text-left min-w-0">
                 <span className="text-xs font-bold text-[#333333] line-clamp-1 max-w-[120px]">{user.name}</span>
                 <span className="text-[10px] text-[#888888] font-bold uppercase tracking-wider">
-                  {isAdmin ? (isOrderingView ? '管理者 / 訂購者檢視' : '管理者') : '訂購者'}
+                  {roleLabel}
                 </span>
               </div>
             </div>
@@ -154,19 +158,28 @@ export default function Navbar({ user }) {
               <img
                 src={user.avatarUrl}
                 alt={user.name}
-                className="w-9 h-9 rounded-full object-cover border border-[#D6D1CA]"
+                className="w-9 h-9 rounded-full object-cover border border-[#D6D1CA] shrink-0"
               />
             ) : (
-              <div className="w-9 h-9 rounded-full bg-[#EA5B3C] text-white flex items-center justify-center text-sm font-bold">
+              <div className="w-9 h-9 rounded-full bg-[#EA5B3C] text-white flex items-center justify-center text-sm font-bold shrink-0">
                 {user.name.charAt(0)}
               </div>
             )}
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <div className="text-sm font-bold text-[#333333] truncate">{user.name}</div>
-              <div className="text-[11px] text-[#888888] font-bold">
-                {isAdmin ? (isOrderingView ? '管理者 / 訂購者檢視' : '管理者') : '訂購者'}
-              </div>
+              <div className="text-[11px] text-[#888888] font-bold">{roleLabel}</div>
             </div>
+            {modeSwitch && (
+              <button
+                type="button"
+                onClick={() => navigateTo(modeSwitch.href)}
+                title={modeSwitch.label}
+                aria-label={modeSwitch.label}
+                className="ml-auto w-10 h-10 rounded-full border border-[#EAE8E4] bg-white text-[#333333] hover:border-[#EA5B3C] hover:text-[#EA5B3C] transition-all flex items-center justify-center shrink-0"
+              >
+                <i className={`${modeSwitch.icon} text-xl`}></i>
+              </button>
+            )}
           </div>
 
           <nav className="p-2">
@@ -184,16 +197,6 @@ export default function Navbar({ user }) {
                 <span>{item.label}</span>
               </button>
             ))}
-
-            {modeSwitch && (
-              <button
-                onClick={() => navigateTo(modeSwitch.href)}
-                className="w-full h-11 px-3 rounded-lg flex items-center gap-3 text-sm font-bold text-[#333333] hover:bg-[#F9F8F5] transition-all"
-              >
-                <i className={`${modeSwitch.icon} text-lg`}></i>
-                <span>{modeSwitch.label}</span>
-              </button>
-            )}
 
             <button
               onClick={handleLogout}

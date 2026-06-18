@@ -495,27 +495,27 @@ export default function AdminDashboard() {
                 </h4>
                 <div className="max-h-[240px] overflow-y-auto pr-1 space-y-3 kaizen-scrollbar">
                   {todayOrders.length > 0 ? todayOrders.map(order => (
-                    <div key={order.id} className="rounded-lg border border-[#EAE8E4] p-3 text-xs space-y-2">
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="font-bold text-[#333333] truncate">{order.user?.name || '未命名成員'}</span>
-                        <div className="flex items-center gap-2 shrink-0">
-                          {order.orderNumberDisplay && (
-                            <span className="rounded-full border border-[#EA5B3C]/20 bg-[#FFF3EF] px-2 py-0.5 text-[10px] font-bold text-[#EA5B3C]">
-                              {'\u7de8\u865f'} {order.orderNumberDisplay}
-                            </span>
-                          )}
-                          <span className="font-bold text-[#EA5B3C]">NT$ {order.totalAmount}</span>
+                    <div key={order.id} className="flex gap-3 rounded-lg border border-[#EAE8E4] p-3 text-xs">
+                      <div className="flex w-12 shrink-0 items-start justify-center">
+                        <span className="inline-flex min-w-9 items-center justify-center rounded-full border border-[#EA5B3C]/20 bg-[#FFF3EF] px-2 py-1 text-[11px] font-bold text-[#EA5B3C]">
+                          {order.orderNumberDisplay || '-'}
+                        </span>
+                      </div>
+                      <div className="min-w-0 flex-1 space-y-2">
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="font-bold text-[#333333] truncate">{order.user?.name || '未命名成員'}</span>
+                          <span className="font-bold text-[#EA5B3C] shrink-0">NT$ {order.totalAmount}</span>
                         </div>
+                        <div className="text-[#888888] leading-relaxed">
+                          {order.orderItems.map(item => (
+                            <div key={item.id} className="flex justify-between gap-3">
+                              <span className="truncate">{item.menuItem?.name || '未命名品項'}</span>
+                              <span className="shrink-0">x {item.quantity}</span>
+                            </div>
+                          ))}
+                        </div>
+                        {order.note && <p className="text-[#888888] border-t border-[#EAE8E4] pt-2">備註：{order.note}</p>}
                       </div>
-                      <div className="text-[#888888] leading-relaxed">
-                        {order.orderItems.map(item => (
-                          <div key={item.id} className="flex justify-between gap-3">
-                            <span className="truncate">{item.menuItem?.name || '未命名品項'}</span>
-                            <span className="shrink-0">x {item.quantity}</span>
-                          </div>
-                        ))}
-                      </div>
-                      {order.note && <p className="text-[#888888] border-t border-[#EAE8E4] pt-2">備註：{order.note}</p>}
                     </div>
                   )) : (
                     <div className="text-xs text-[#888888] bg-[#F9F8F5] border border-[#EAE8E4] rounded-lg px-3 py-8 text-center">

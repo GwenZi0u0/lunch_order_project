@@ -71,12 +71,11 @@ export async function POST(request) {
         });
       }
 
-      // Mark the schedule as delivered and closed
+      // Mark the schedule as delivered. Keep isOpen unchanged so delivery is not treated as a holiday.
       await tx.weeklySchedule.update({
         where: { id: scheduleId },
         data: {
-          deliveredAt: now,
-          isOpen: false
+          deliveredAt: now
         }
       });
     });

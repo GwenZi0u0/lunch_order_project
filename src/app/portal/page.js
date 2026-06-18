@@ -64,7 +64,6 @@ export default function PortalPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [orderError, setOrderError] = useState('');
   const [orderSuccess, setOrderSuccess] = useState('');
-  const [announcements, setAnnouncements] = useState([]);
   
   // Current system date/time check
   const [currentDateTime, setCurrentDateTime] = useState({ dateStr: '', timeStr: '' });
@@ -105,7 +104,6 @@ export default function PortalPage() {
     }
 
     fetchSchedules();
-    fetchAnnouncement();
 
     return () => clearInterval(timer);
   }, []);
@@ -132,17 +130,6 @@ export default function PortalPage() {
         }
       })
       .catch(err => console.error('無法載入排程:', err));
-  };
-
-  const fetchAnnouncement = () => {
-    fetch('/api/announcement')
-      .then(res => res.json())
-      .then(data => {
-        if (Array.isArray(data.announcements)) {
-          setAnnouncements(data.announcements);
-        }
-      })
-      .catch(err => console.error('Failed to load announcement:', err));
   };
 
   const refreshUser = () => {
@@ -389,7 +376,7 @@ export default function PortalPage() {
           </div>
         </section>
 
-        {/* Announcement Board */}
+        {/* Announcement Board moved to /portal/announcements.
         <section className="bg-white rounded-xl border border-[#EAE8E4] p-6 shadow-sm">
           <div className="flex items-start gap-4">
             <div className="w-10 h-10 rounded-full bg-[#FFF3EF] text-[#EA5B3C] flex items-center justify-center shrink-0">
@@ -431,6 +418,8 @@ export default function PortalPage() {
             </div>
           </div>
         </section>
+
+        */}
 
         {/* Date Selector Tabs */}
         <section className="space-y-6">

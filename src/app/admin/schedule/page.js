@@ -237,7 +237,7 @@ export default function AdminDashboard() {
   const todayDate = formatDate(new Date());
   const todaySchedule = schedules.find(s => s.date === todayDate);
   const weeklyDates = getWeeklyDates();
-  const selectedDateIsHoliday = activeSchedule ? !activeSchedule.isOpen : isHoliday;
+  const selectedDateIsHoliday = activeSchedule ? !activeSchedule.isOpen && !activeSchedule.deliveredAt : isHoliday;
   const activeMenuItems = activeSchedule?.restaurant?.menuItems || [];
 
   // Update schedule selection inputs
@@ -245,7 +245,7 @@ export default function AdminDashboard() {
     if (activeSchedule) {
       setSelectedRestaurantId(activeSchedule.restaurantId || '');
       setOrderDeadline(activeSchedule.orderDeadline || '09:40');
-      setIsHoliday(!activeSchedule.isOpen);
+      setIsHoliday(!activeSchedule.isOpen && !activeSchedule.deliveredAt);
     } else {
       setSelectedRestaurantId('');
       setOrderDeadline('09:40');
@@ -633,7 +633,7 @@ export default function AdminDashboard() {
                 const sched = schedules.find(s => s.date === d.dateStr);
                 const isSelected = selectedDate === d.dateStr;
                 const totalOrdersCount = sched?.orders ? sched.orders.filter(o => o.status !== 'cancelled').length : 0;
-                const isHolidayCard = sched ? !sched.isOpen : d.isWeekend;
+                const isHolidayCard = sched ? !sched.isOpen && !sched.deliveredAt : d.isWeekend;
                 
                 return (
                   <button
@@ -714,7 +714,7 @@ export default function AdminDashboard() {
                 <div className="p-4 rounded-xl bg-[#F9F8F5] border border-[#EAE8E4]">
                   <div className="text-[11px] text-[#888888] font-bold mb-1">餐廳</div>
                   <div className="text-sm font-bold text-[#333333]">
-                    {historySchedule.isOpen ? historySchedule.restaurant?.name || '未排定' : '假期'}
+                    {historySchedule.isOpen || historySchedule.deliveredAt ? historySchedule.restaurant?.name || '未排定' : '假期'}
                   </div>
                 </div>
                 <div className="p-4 rounded-xl bg-[#F9F8F5] border border-[#EAE8E4]">

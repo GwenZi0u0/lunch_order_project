@@ -51,6 +51,7 @@ export default function WalletsManagementPage() {
   const [ledgerEndDate, setLedgerEndDate] = useState('');
   const [isLedgerCalendarOpen, setIsLedgerCalendarOpen] = useState(false);
   const [ledgerCalendarMonth, setLedgerCalendarMonth] = useState(() => new Date());
+  const [activeEmailUserId, setActiveEmailUserId] = useState('');
   
   // Deposit Modal State
   const [selectedUser, setSelectedUser] = useState(null); // User object to deposit to
@@ -129,6 +130,7 @@ export default function WalletsManagementPage() {
   };
 
   const handleLedgerUserChange = (userId) => {
+    setActiveEmailUserId('');
     setSelectedLedgerUserId(userId);
     fetchTransactions({ userId });
   };
@@ -370,20 +372,28 @@ export default function WalletsManagementPage() {
                             onClick={() => handleLedgerUserChange(u.id)}
                             className={`hover:bg-[#F9F8F5]/30 cursor-pointer ${selectedLedgerUserId === u.id ? 'bg-orange-50/50' : ''}`}
                           >
-                            <td className="py-3 pl-6 pr-3 font-bold flex items-center gap-2">
+                            <td className="py-3 pl-6 pr-3 font-bold">
                               <span className="relative inline-flex group">
-                                {u.avatarUrl ? (
-                                  <img src={u.avatarUrl} alt="" className="w-5 h-5 rounded-full object-cover" />
-                                ) : (
-                                  <span className="w-5 h-5 rounded-full bg-[#F9F8F5] border border-[#EAE8E4] text-[9px] text-[#888888] flex items-center justify-center">
-                                    {u.name?.slice(0, 1)}
-                                  </span>
-                                )}
-                                <span className="pointer-events-none absolute left-full top-1/2 z-[999] ml-2 -translate-y-1/2 whitespace-nowrap rounded-lg border border-[#EAE8E4] bg-white px-2.5 py-1.5 text-[10px] font-bold text-[#555555] opacity-0 shadow-[0_8px_20px_rgba(0,0,0,0.08)] transition-opacity group-hover:opacity-100">
+                                <button
+                                  type="button"
+                                  onPointerDown={(e) => e.stopPropagation()}
+                                  onMouseDown={(e) => e.stopPropagation()}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setActiveEmailUserId(prev => prev === u.id ? '' : u.id);
+                                  }}
+                                  className="font-bold text-[#333333] hover:text-[#EA5B3C] focus:outline-none focus:text-[#EA5B3C]"
+                                >
+                                  {u.name}
+                                </button>
+                                <span
+                                  className={`pointer-events-none absolute left-0 top-full z-[999] mt-2 whitespace-nowrap rounded-lg border border-[#EAE8E4] bg-white px-2.5 py-1.5 text-[10px] font-bold text-[#555555] shadow-[0_8px_20px_rgba(0,0,0,0.08)] transition-opacity sm:left-full sm:top-1/2 sm:ml-2 sm:mt-0 sm:-translate-y-1/2 ${
+                                    activeEmailUserId === u.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                                  }`}
+                                >
                                   {u.email}
                                 </span>
                               </span>
-                              {u.name}
                             </td>
                             <td className="p-3">
                               <select
@@ -406,7 +416,7 @@ export default function WalletsManagementPage() {
                             </td>
                             <td className="p-3 text-right font-bold text-sm">
                               <span className={balanceColor}>
-                                {balance > 0 ? '＋' : balance < 0 ? '－' : ''}NT$ {Math.abs(balance)}
+                                <span className="hidden sm:inline">{balance > 0 ? '＋' : balance < 0 ? '－' : ''}</span>NT$ {Math.abs(balance)}
                               </span>
                               {warningBadge}
                             </td>
@@ -418,9 +428,11 @@ export default function WalletsManagementPage() {
                                     e.stopPropagation();
                                     openWalletAction(u, 'topup');
                                   }}
-                                  className="text-[10px] font-bold border border-[#EAE8E4] px-2.5 py-1 rounded bg-white hover:border-[#EA5B3C] hover:text-[#EA5B3C] transition-all"
+                                  title="儲值"
+                                  aria-label={`為 ${u.name} 儲值`}
+                                  className="h-8 w-8 sm:h-auto sm:w-auto text-[10px] font-bold border border-[#EAE8E4] px-0 sm:px-2.5 py-1 rounded bg-white hover:border-[#EA5B3C] hover:text-[#EA5B3C] transition-all inline-flex items-center justify-center"
                                 >
-                                  <i className="ti ti-plus mr-0.5"></i>儲值
+                                  <i className="ti ti-plus sm:mr-0.5"></i><span className="hidden sm:inline">儲值</span>
                                 </button>
                                 <button
                                   type="button"
@@ -428,9 +440,11 @@ export default function WalletsManagementPage() {
                                     e.stopPropagation();
                                     openWalletAction(u, 'adjustment');
                                   }}
-                                  className="text-[10px] font-bold border border-[#EAE8E4] px-2.5 py-1 rounded bg-white hover:border-[#EA5B3C] hover:text-[#EA5B3C] transition-all"
+                                  title="異動"
+                                  aria-label={`為 ${u.name} 異動`}
+                                  className="h-8 w-8 sm:h-auto sm:w-auto text-[10px] font-bold border border-[#EAE8E4] px-0 sm:px-2.5 py-1 rounded bg-white hover:border-[#EA5B3C] hover:text-[#EA5B3C] transition-all inline-flex items-center justify-center"
                                 >
-                                  <i className="ti ti-adjustments-dollar mr-0.5"></i>異動
+                                  <i className="ti ti-adjustments-dollar sm:mr-0.5"></i><span className="hidden sm:inline">異動</span>
                                 </button>
                               </div>
                             </td>
@@ -745,7 +759,7 @@ export default function WalletsManagementPage() {
                           </span>
                         </td>
                         <td className={`py-3 font-bold ${tx.amount >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                          {tx.amount >= 0 ? '＋' : '－'}NT$ {Math.abs(tx.amount)}
+                          <span className="hidden sm:inline">{tx.amount >= 0 ? '＋' : '－'}</span>NT$ {Math.abs(tx.amount)}
                         </td>
                         <td className="py-3 text-[#555555]">
                           {tx.source || (tx.type === 'charge' ? '訂單扣款' : '-')}

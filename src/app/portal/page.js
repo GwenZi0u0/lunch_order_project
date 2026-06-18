@@ -285,30 +285,25 @@ export default function PortalPage() {
       return {
         cardBorder: 'border-l-4 border-l-green-600 border-[#EAE8E4]',
         valueColor: 'text-green-600',
-        label: '餘額充足',
-        symbol: '＋',
-        showWarning: false
+        label: '餘額充足'
       };
     } else if (user.balance === 0) {
       return {
         cardBorder: 'border-l-4 border-l-[#333333] border-[#EAE8E4]',
         valueColor: 'text-[#333333]',
-        label: '餘額歸零',
-        symbol: '',
-        showWarning: false
+        label: '餘額歸零'
       };
     } else {
       return {
         cardBorder: 'border-l-4 border-l-red-600 border-[#EAE8E4] bg-red-[0.005]',
         valueColor: 'text-red-600',
-        label: '帳戶欠款',
-        symbol: '－',
-        showWarning: true
+        label: '帳戶欠款'
       };
     }
   };
 
   const wallet = getWalletStyles();
+  const walletAmount = `${user.balance < 0 ? '－' : ''}NT$ ${Math.abs(user.balance)}`;
 
   return (
     <>
@@ -323,15 +318,8 @@ export default function PortalPage() {
             <div className={`p-5 bg-[#F9F8F5] rounded-xl border ${wallet.cardBorder} flex flex-col justify-between h-full`}>
               <span className="text-xs font-bold text-[#888888] tracking-widest uppercase mb-2">{wallet.label}</span>
               <div className={`text-3xl font-bold ${wallet.valueColor} mb-2`}>
-                {wallet.symbol}NT$ {Math.abs(user.balance)}
+                {walletAmount}
               </div>
-              {wallet.showWarning ? (
-                <div className="text-red-600 font-bold text-xs flex items-center gap-1.5 animate-pulse">
-                  <i className="ti ti-alert-circle text-base"></i> 請記得向管理員繳款
-                </div>
-              ) : (
-                <p className="text-xs text-[#888888] leading-tight">後付儲值制：餘額為負數仍可正常點餐，請適時補繳儲值金。</p>
-              )}
             </div>
 
             {/* Today Order */}

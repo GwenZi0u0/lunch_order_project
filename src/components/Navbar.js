@@ -9,6 +9,7 @@ export default function Navbar({ user }) {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const isAdmin = user?.role === 'admin';
   const isOrderingView = pathname?.startsWith('/portal');
+  const displayName = user?.name?.replace(/\s*\((餘額充足|餘額歸零|帳戶欠款)\)\s*$/, '') || '';
 
   useEffect(() => {
     setIsMenuOpen(false);
@@ -107,16 +108,16 @@ export default function Navbar({ user }) {
               {user.avatarUrl ? (
                 <img
                   src={user.avatarUrl}
-                  alt={user.name}
+                  alt={displayName}
                   className="w-6 h-6 rounded-full object-cover border border-[#D6D1CA] shrink-0"
                 />
               ) : (
                 <div className="w-6 h-6 rounded-full bg-[#EA5B3C] text-white flex items-center justify-center text-xs font-bold shrink-0">
-                  {user.name.charAt(0)}
+                  {displayName.charAt(0)}
                 </div>
               )}
               <div className="flex flex-col text-left min-w-0">
-                <span className="text-xs font-bold text-[#333333] line-clamp-1 max-w-[120px]">{user.name}</span>
+                <span className="text-xs font-bold text-[#333333] line-clamp-1 max-w-[120px]">{displayName}</span>
                 <span className="text-[10px] text-[#888888] font-bold uppercase tracking-wider">
                   {roleLabel}
                 </span>
@@ -157,16 +158,16 @@ export default function Navbar({ user }) {
             {user.avatarUrl ? (
               <img
                 src={user.avatarUrl}
-                alt={user.name}
+                alt={displayName}
                 className="w-9 h-9 rounded-full object-cover border border-[#D6D1CA] shrink-0"
               />
             ) : (
               <div className="w-9 h-9 rounded-full bg-[#EA5B3C] text-white flex items-center justify-center text-sm font-bold shrink-0">
-                {user.name.charAt(0)}
+                {displayName.charAt(0)}
               </div>
             )}
             <div className="min-w-0 flex-1">
-              <div className="text-sm font-bold text-[#333333] truncate">{user.name}</div>
+              <div className="text-sm font-bold text-[#333333] truncate">{displayName}</div>
               <div className="text-[11px] text-[#888888] font-bold">{roleLabel}</div>
             </div>
             {modeSwitch && (

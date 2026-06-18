@@ -311,48 +311,59 @@ export default function PortalPage() {
 
       <main className="flex-1 max-w-[1200px] w-full mx-auto px-6 py-10 space-y-10">
         
-        {/* Today Order */}
+        {/* Wallet Banner */}
         <section className="bg-white rounded-xl border border-[#EAE8E4] p-6 shadow-sm">
-          <div className="space-y-4">
-            <div className="flex items-center justify-between gap-3">
-              <h3 className="font-bold text-base text-[#333333] flex items-center gap-2">
-                <i className="ti ti-shopping-bag text-lg text-[#EA5B3C]"></i> 今日訂購餐點
-              </h3>
-              <span className="text-xs font-bold text-[#888888]">{todayDate}</span>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-center">
+            {/* Wallet Info */}
+            <div className={`p-5 bg-[#F9F8F5] rounded-xl border ${wallet.cardBorder} flex flex-col justify-between h-full`}>
+              <span className="text-xs font-bold text-[#888888] tracking-widest uppercase mb-2">{wallet.label}</span>
+              <div className={`text-3xl font-bold ${wallet.valueColor} mb-2`}>
+                {walletAmount}
+              </div>
             </div>
 
-            {todayOrder ? (
-              <div className="space-y-3">
-                {todayOrder.orderNumberDisplay && (
-                  <div className="flex items-center justify-between rounded-lg border border-[#EAE8E4] bg-[#F9F8F5] px-3 py-2 text-xs">
-                    <span className="font-bold text-[#888888]">{'\u4eca\u65e5\u8a02\u55ae\u7de8\u865f'}</span>
-                    <span className="rounded-full border border-[#EA5B3C]/20 bg-[#FFF3EF] px-2 py-1 text-[11px] font-bold text-[#EA5B3C]">
-                      {todayOrder.orderNumberDisplay}
-                    </span>
-                  </div>
-                )}
-                <div className="space-y-2 max-h-[160px] overflow-y-auto pr-1 kaizen-scrollbar">
-                  {todayOrder.items.map(item => (
-                    <div key={item.id} className="flex items-center justify-between gap-3 rounded-lg border border-[#EAE8E4] bg-[#F9F8F5] px-3 py-2 text-xs">
-                      <span className="font-bold text-[#333333] truncate">{item.name}</span>
-                      <span className="text-[#888888] shrink-0">x {item.quantity}</span>
-                      <span className="font-bold text-[#EA5B3C] shrink-0">NT$ {item.unitPrice * item.quantity}</span>
+            {/* Today Order */}
+            <div className="md:col-span-2 space-y-4 md:pl-6 border-t md:border-t-0 md:border-l border-[#EAE8E4] pt-6 md:pt-0">
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="font-bold text-base text-[#333333] flex items-center gap-2">
+                  <i className="ti ti-shopping-bag text-lg text-[#EA5B3C]"></i> 今日訂購餐點
+                </h3>
+                <span className="text-xs font-bold text-[#888888]">{todayDate}</span>
+              </div>
+
+              {todayOrder ? (
+                <div className="space-y-3">
+                  {todayOrder.orderNumberDisplay && (
+                    <div className="flex items-center justify-between rounded-lg border border-[#EAE8E4] bg-[#F9F8F5] px-3 py-2 text-xs">
+                      <span className="font-bold text-[#888888]">{'\u4eca\u65e5\u8a02\u55ae\u7de8\u865f'}</span>
+                      <span className="rounded-full border border-[#EA5B3C]/20 bg-[#FFF3EF] px-2 py-1 text-[11px] font-bold text-[#EA5B3C]">
+                        {todayOrder.orderNumberDisplay}
+                      </span>
                     </div>
-                  ))}
+                  )}
+                  <div className="space-y-2 max-h-[160px] overflow-y-auto pr-1 kaizen-scrollbar">
+                    {todayOrder.items.map(item => (
+                      <div key={item.id} className="flex items-center justify-between gap-3 rounded-lg border border-[#EAE8E4] bg-[#F9F8F5] px-3 py-2 text-xs">
+                        <span className="font-bold text-[#333333] truncate">{item.name}</span>
+                        <span className="text-[#888888] shrink-0">x {item.quantity}</span>
+                        <span className="font-bold text-[#EA5B3C] shrink-0">NT$ {item.unitPrice * item.quantity}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex items-center justify-between border-t border-[#EAE8E4] pt-3 text-sm font-bold">
+                    <span className="text-[#333333]">今日訂單金額</span>
+                    <span className="text-[#EA5B3C]">NT$ {todayOrder.totalAmount}</span>
+                  </div>
+                  {todayOrder.note && (
+                    <p className="text-xs text-[#888888] leading-5">備註：{todayOrder.note}</p>
+                  )}
                 </div>
-                <div className="flex items-center justify-between border-t border-[#EAE8E4] pt-3 text-sm font-bold">
-                  <span className="text-[#333333]">今日訂單金額</span>
-                  <span className="text-[#EA5B3C]">NT$ {todayOrder.totalAmount}</span>
+              ) : (
+                <div className="rounded-lg border border-[#EAE8E4] bg-[#F9F8F5] px-4 py-8 text-center text-xs text-[#888888]">
+                  今日尚未訂購餐點。
                 </div>
-                {todayOrder.note && (
-                  <p className="text-xs text-[#888888] leading-5">備註：{todayOrder.note}</p>
-                )}
-              </div>
-            ) : (
-              <div className="rounded-lg border border-[#EAE8E4] bg-[#F9F8F5] px-4 py-8 text-center text-xs text-[#888888]">
-                今日尚未訂購餐點。
-              </div>
-            )}
+              )}
+            </div>
           </div>
         </section>
 
@@ -401,8 +412,6 @@ export default function PortalPage() {
 
         */}
 
-        {false && (
-        <>
         {/* Date Selector Tabs */}
         <section className="space-y-6">
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -695,8 +704,6 @@ export default function PortalPage() {
           </div>
 
         </section>
-        </>
-        )}
 
       </main>
     </>

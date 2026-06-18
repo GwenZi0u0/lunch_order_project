@@ -45,8 +45,9 @@ export default function Navbar({ user }) {
         { label: '儲值管理', href: '/admin/wallets', icon: 'ti ti-wallet' },
       ]
     : [
+        { label: '訂購者首頁', href: '/portal', icon: 'ti ti-home' },
         { label: '公告欄', href: '/portal/announcements', icon: 'ti ti-speakerphone' },
-        { label: '午餐訂購', href: '/portal', icon: 'ti ti-tools-kitchen-2' },
+        { label: '午餐訂購', href: '/portal/order', icon: 'ti ti-tools-kitchen-2' },
         { label: '消費日誌', href: '/portal/history', icon: 'ti ti-history' },
       ];
 

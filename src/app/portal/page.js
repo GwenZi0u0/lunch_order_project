@@ -20,31 +20,34 @@ function getWeeklyDates() {
   const dates = [];
   const now = new Date();
   const day = now.getDay();
+  const weekdayLabels = ['\u9031\u4e00', '\u9031\u4e8c', '\u9031\u4e09', '\u9031\u56db', '\u9031\u4e94', '\u9031\u516d', '\u9031\u65e5'];
   
   // Get Monday of current week
   const monday = new Date(now);
   monday.setDate(now.getDate() - (day === 0 ? 6 : day - 1));
   
-  // Current week Mon-Fri
-  for (let i = 0; i < 5; i++) {
+  // Current week Mon-Sun
+  for (let i = 0; i < 7; i++) {
     const d = new Date(monday);
     d.setDate(monday.getDate() + i);
     dates.push({
       dateStr: formatDate(d),
-      label: `本週 ${['一', '二', '三', '四', '五'][i]}`,
+      label: `\u672c\u9031${weekdayLabels[i]}`,
+      isWeekend: i >= 5,
       isNextWeek: false
     });
   }
   
-  // Next week Mon-Fri
+  // Next week Mon-Sun
   const nextMonday = new Date(monday);
   nextMonday.setDate(monday.getDate() + 7);
-  for (let i = 0; i < 5; i++) {
+  for (let i = 0; i < 7; i++) {
     const d = new Date(nextMonday);
     d.setDate(nextMonday.getDate() + i);
     dates.push({
       dateStr: formatDate(d),
-      label: `下週 ${['一', '二', '三', '四', '五'][i]}`,
+      label: `\u4e0b\u9031${weekdayLabels[i]}`,
+      isWeekend: i >= 5,
       isNextWeek: true
     });
   }
@@ -92,16 +95,8 @@ export default function PortalPage() {
     // Default selection
     const today = new Date();
     const todayStr = formatDate(today);
-    // Find if today is a weekday (1-5), else select next Monday
-    const weekday = today.getDay();
-    if (weekday >= 1 && weekday <= 5) {
-      setSelectedDate(todayStr);
-      setActiveWeekTab('current');
-    } else {
-      const dates = getWeeklyDates();
-      setSelectedDate(dates[5].dateStr); // Next Monday
-      setActiveWeekTab('next');
-    }
+    setSelectedDate(todayStr);
+    setActiveWeekTab('current');
 
     fetchSchedules();
 
@@ -456,14 +451,15 @@ export default function PortalPage() {
             </div>
           </div>
 
-          {/* Monday-Friday Daily Buttons */}
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+          {/* Monday-Sunday Daily Buttons */}
+          <div className="grid grid-cols-2 md:grid-cols-7 gap-3">
             {weeklyDates
               .filter(d => (activeWeekTab === 'current' ? !d.isNextWeek : d.isNextWeek))
               .map(d => {
                 const sched = schedules.find(s => s.date === d.dateStr);
                 const hasOrdered = sched?.userOrder;
                 const isSelected = selectedDate === d.dateStr;
+                const isHolidayCard = sched ? !sched.isOpen && !sched.deliveredAt : d.isWeekend;
                 
                 return (
                   <button
@@ -477,10 +473,15 @@ export default function PortalPage() {
                   >
                     <div className="text-xs text-[#888888] mb-1 font-bold">{d.label}</div>
                     <div className="text-sm font-bold text-[#333333] truncate">
-                      {sched?.restaurant ? sched.restaurant.name : '（未排定）'}
+                      {isHolidayCard ? '\u4f11\u5047' : (sched?.restaurant ? sched.restaurant.name : '（未排定）')}
                     </div>
                     {/* Status Badge */}
-                    {hasOrdered && (
+                    {isHolidayCard && (
+                      <span className="absolute top-2 right-2 bg-[#F2EFEA] text-[#888888] text-[8px] font-bold px-1 rounded border border-[#EAE8E4]">
+                        {'\u5047\u671f'}
+                      </span>
+                    )}
+                    {!isHolidayCard && hasOrdered && (
                       <span className="absolute top-2 right-2 bg-green-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded">
                         已訂
                       </span>

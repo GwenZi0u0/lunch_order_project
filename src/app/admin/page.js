@@ -498,7 +498,14 @@ export default function AdminDashboard() {
                     <div key={order.id} className="rounded-lg border border-[#EAE8E4] p-3 text-xs space-y-2">
                       <div className="flex items-center justify-between gap-3">
                         <span className="font-bold text-[#333333] truncate">{order.user?.name || '未命名成員'}</span>
-                        <span className="font-bold text-[#EA5B3C] shrink-0">NT$ {order.totalAmount}</span>
+                        <div className="flex items-center gap-2 shrink-0">
+                          {order.orderNumberDisplay && (
+                            <span className="rounded-full border border-[#EA5B3C]/20 bg-[#FFF3EF] px-2 py-0.5 text-[10px] font-bold text-[#EA5B3C]">
+                              {'\u7de8\u865f'} {order.orderNumberDisplay}
+                            </span>
+                          )}
+                          <span className="font-bold text-[#EA5B3C]">NT$ {order.totalAmount}</span>
+                        </div>
                       </div>
                       <div className="text-[#888888] leading-relaxed">
                         {order.orderItems.map(item => (

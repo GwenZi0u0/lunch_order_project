@@ -345,7 +345,14 @@ export default function PortalPage() {
                 <h3 className="font-bold text-base text-[#333333] flex items-center gap-2">
                   <i className="ti ti-shopping-bag text-lg text-[#EA5B3C]"></i> 今日訂購餐點
                 </h3>
-                <span className="text-xs font-bold text-[#888888]">{todayDate}</span>
+                <div className="flex items-center gap-2">
+                  {todayOrder?.orderNumberDisplay && (
+                    <span className="rounded-full border border-[#EA5B3C]/20 bg-[#FFF3EF] px-2 py-1 text-[11px] font-bold text-[#EA5B3C]">
+                      {'\u7de8\u865f'} {todayOrder.orderNumberDisplay}
+                    </span>
+                  )}
+                  <span className="text-xs font-bold text-[#888888]">{todayDate}</span>
+                </div>
               </div>
 
               {todayOrder ? (
@@ -650,6 +657,12 @@ export default function PortalPage() {
                     {/* Order Status details */}
                     {activeSchedule.userOrder && (
                       <div className="bg-[#F9F8F5] border border-[#EAE8E4] p-3 rounded-lg flex flex-col gap-1 text-[11px]">
+                        {activeSchedule.userOrder.orderNumberDisplay && (
+                          <div className="flex justify-between">
+                            <span className="text-[#888888]">{'\u8a02\u55ae\u7de8\u865f'}</span>
+                            <span className="font-bold text-[#EA5B3C]">{activeSchedule.userOrder.orderNumberDisplay}</span>
+                          </div>
+                        )}
                         <div className="flex justify-between">
                           <span className="text-[#888888]">訂單狀態:</span>
                           <span className="font-bold text-green-600">已成立 ({activeSchedule.userOrder.status})</span>

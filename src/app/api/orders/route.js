@@ -38,6 +38,30 @@ function isScheduleClosed(schedule, currentDateTime) {
   return false; // Future date is open
 }
 
+function formatOrderNumberDisplay(orderNumber) {
+  if (!orderNumber) return null;
+  const serial = parseInt(orderNumber.slice(-3), 10);
+  if (Number.isNaN(serial)) return orderNumber.slice(-2);
+  return String(serial).padStart(2, '0');
+}
+
+async function allocateOrderNumber(tx, scheduleDate) {
+  const sequence = await tx.orderSequence.upsert({
+    where: { date: scheduleDate },
+    update: {
+      lastNumber: {
+        increment: 1
+      }
+    },
+    create: {
+      date: scheduleDate,
+      lastNumber: 1
+    }
+  });
+
+  return `${scheduleDate.replaceAll('-', '')}${String(sequence.lastNumber).padStart(3, '0')}`;
+}
+
 export async function GET(request) {
   try {
     const user = await getCurrentUser(request);
@@ -52,6 +76,7 @@ export async function GET(request) {
       // Admins can fetch all orders for a schedule
       const query = {
         where: { status: { not: 'cancelled' } },
+        orderBy: { orderNumber: 'asc' },
         include: {
           user: {
             select: { id: true, name: true, email: true, balance: true }
@@ -69,11 +94,17 @@ export async function GET(request) {
       }
 
       const orders = await prisma.order.findMany(query);
-      return NextResponse.json(orders);
+      return NextResponse.json(orders.map(order => ({
+        ...order,
+        orderNumberDisplay: formatOrderNumberDisplay(order.orderNumber)
+      })));
     } else {
       // Normal users can only fetch their own orders
       const query = {
-        where: { userId: user.userId },
+        where: {
+          userId: user.userId,
+          status: { not: 'cancelled' }
+        },
         include: {
           orderItems: {
             include: {
@@ -86,7 +117,10 @@ export async function GET(request) {
             }
           }
         },
-        orderBy: { schedule: { date: 'desc' } }
+        orderBy: [
+          { schedule: { date: 'desc' } },
+          { orderNumber: 'asc' }
+        ]
       };
 
       if (scheduleId) {
@@ -94,7 +128,10 @@ export async function GET(request) {
       }
 
       const orders = await prisma.order.findMany(query);
-      return NextResponse.json(orders);
+      return NextResponse.json(orders.map(order => ({
+        ...order,
+        orderNumberDisplay: formatOrderNumberDisplay(order.orderNumber)
+      })));
     }
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
@@ -177,7 +214,7 @@ export async function POST(request) {
       };
     });
 
-    // Execute order creation in a transaction to replace old order
+    // Execute order creation/update in a transaction. Existing orders keep their number.
     const order = await prisma.$transaction(async (tx) => {
       // Find existing order for this schedule and user
       const existingOrder = await tx.order.findFirst({
@@ -189,15 +226,36 @@ export async function POST(request) {
       });
 
       if (existingOrder) {
-        // Soft delete or hard delete old order and items. Hard delete is cleaner here.
-        await tx.order.delete({
-          where: { id: existingOrder.id }
+        const orderNumber = existingOrder.orderNumber || await allocateOrderNumber(tx, schedule.date);
+
+        await tx.orderItem.deleteMany({
+          where: { orderId: existingOrder.id }
+        });
+
+        return tx.order.update({
+          where: { id: existingOrder.id },
+          data: {
+            orderNumber,
+            totalAmount,
+            note,
+            status: 'pending',
+            chargedAt: null,
+            orderItems: {
+              create: orderItemsData
+            }
+          },
+          include: {
+            orderItems: true
+          }
         });
       }
+
+      const orderNumber = await allocateOrderNumber(tx, schedule.date);
 
       // Create new order
       const newOrder = await tx.order.create({
         data: {
+          orderNumber,
           userId: orderUserId,
           scheduleId,
           totalAmount,
@@ -215,7 +273,13 @@ export async function POST(request) {
       return newOrder;
     });
 
-    return NextResponse.json({ success: true, order });
+    return NextResponse.json({
+      success: true,
+      order: {
+        ...order,
+        orderNumberDisplay: formatOrderNumberDisplay(order.orderNumber)
+      }
+    });
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
@@ -261,9 +325,12 @@ export async function DELETE(request) {
       }, { status: 400 });
     }
 
-    // Delete order
-    await prisma.order.delete({
-      where: { id: orderId }
+    // Soft-cancel orders so their order numbers remain burned and auditable.
+    await prisma.order.update({
+      where: { id: orderId },
+      data: {
+        status: 'cancelled'
+      }
     });
 
     return NextResponse.json({ success: true, message: 'Order cancelled successfully' });

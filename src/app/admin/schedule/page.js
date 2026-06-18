@@ -1091,6 +1091,7 @@ export default function AdminDashboard() {
                         <table className="w-full text-left border-collapse text-xs">
                           <thead>
                             <tr className="bg-[#F9F8F5] text-[#888888] font-bold border-b border-[#EAE8E4]">
+                              <th className="p-3">{'\u7de8\u865f'}</th>
                               <th className="p-3">{'\u59d3\u540d'}</th>
                               <th className="p-3">{'\u9910\u9ede\u8207\u6578\u91cf'}</th>
                               <th className="p-3 text-right">{'\u91d1\u984d'}</th>
@@ -1104,6 +1105,11 @@ export default function AdminDashboard() {
                               .filter(o => o.status !== 'cancelled')
                               .map(order => (
                                 <tr key={order.id} className="hover:bg-[#F9F8F5]/30">
+                                  <td className="p-3">
+                                    <span className="inline-flex min-w-8 items-center justify-center rounded-full border border-[#EA5B3C]/20 bg-[#FFF3EF] px-2 py-0.5 text-[10px] font-bold text-[#EA5B3C]">
+                                      {order.orderNumberDisplay || '-'}
+                                    </span>
+                                  </td>
                                   <td className="p-3 font-bold">{order.user.name}</td>
                                   <td className="p-3 leading-normal">
                                     {order.orderItems.map(oi => (

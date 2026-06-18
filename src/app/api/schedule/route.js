@@ -15,6 +15,13 @@ function formatDate(date) {
   return [year, month, day].join('-');
 }
 
+function formatOrderNumberDisplay(orderNumber) {
+  if (!orderNumber) return null;
+  const serial = parseInt(orderNumber.slice(-3), 10);
+  if (Number.isNaN(serial)) return orderNumber.slice(-2);
+  return String(serial).padStart(2, '0');
+}
+
 export async function GET(request) {
   try {
     const user = await getCurrentUser(request);
@@ -54,6 +61,9 @@ export async function GET(request) {
           }
         },
         orders: {
+          orderBy: {
+            orderNumber: 'asc'
+          },
           include: {
             user: {
               select: { id: true, name: true, email: true }
@@ -86,6 +96,8 @@ export async function GET(request) {
         restaurant: sched.restaurant,
         userOrder: userOrder ? {
           id: userOrder.id,
+          orderNumber: userOrder.orderNumber,
+          orderNumberDisplay: formatOrderNumberDisplay(userOrder.orderNumber),
           totalAmount: userOrder.totalAmount,
           note: userOrder.note,
           status: userOrder.status,
@@ -105,6 +117,8 @@ export async function GET(request) {
         orders: user.role === 'admin'
           ? sched.orders.map(order => ({
             id: order.id,
+            orderNumber: order.orderNumber,
+            orderNumberDisplay: formatOrderNumberDisplay(order.orderNumber),
             userId: order.userId,
             user: order.user,
             totalAmount: order.totalAmount,
@@ -161,10 +175,13 @@ export async function POST(request) {
       }
 
       if (restaurantChanged && hasActiveOrders && clearOrdersOnRestaurantChange) {
-        await tx.order.deleteMany({
+        await tx.order.updateMany({
           where: {
             scheduleId: existingSchedule.id,
             status: { not: 'cancelled' }
+          },
+          data: {
+            status: 'cancelled'
           }
         });
       }

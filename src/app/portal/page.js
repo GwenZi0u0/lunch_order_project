@@ -328,18 +328,19 @@ export default function PortalPage() {
                 <h3 className="font-bold text-base text-[#333333] flex items-center gap-2">
                   <i className="ti ti-shopping-bag text-lg text-[#EA5B3C]"></i> 今日訂購餐點
                 </h3>
-                <div className="flex items-center gap-2">
-                  {todayOrder?.orderNumberDisplay && (
-                    <span className="rounded-full border border-[#EA5B3C]/20 bg-[#FFF3EF] px-2 py-1 text-[11px] font-bold text-[#EA5B3C]">
-                      {'\u7de8\u865f'} {todayOrder.orderNumberDisplay}
-                    </span>
-                  )}
-                  <span className="text-xs font-bold text-[#888888]">{todayDate}</span>
-                </div>
+                <span className="text-xs font-bold text-[#888888]">{todayDate}</span>
               </div>
 
               {todayOrder ? (
                 <div className="space-y-3">
+                  {todayOrder.orderNumberDisplay && (
+                    <div className="flex items-center justify-between rounded-lg border border-[#EAE8E4] bg-[#F9F8F5] px-3 py-2 text-xs">
+                      <span className="font-bold text-[#888888]">{'\u4eca\u65e5\u8a02\u55ae\u7de8\u865f'}</span>
+                      <span className="rounded-full border border-[#EA5B3C]/20 bg-[#FFF3EF] px-2 py-1 text-[11px] font-bold text-[#EA5B3C]">
+                        {todayOrder.orderNumberDisplay}
+                      </span>
+                    </div>
+                  )}
                   <div className="space-y-2 max-h-[160px] overflow-y-auto pr-1 kaizen-scrollbar">
                     {todayOrder.items.map(item => (
                       <div key={item.id} className="flex items-center justify-between gap-3 rounded-lg border border-[#EAE8E4] bg-[#F9F8F5] px-3 py-2 text-xs">

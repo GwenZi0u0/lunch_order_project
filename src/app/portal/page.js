@@ -389,13 +389,14 @@ export default function PortalPage() {
 
         {/* Announcement Board */}
         <section className="bg-white rounded-xl border border-[#EAE8E4] p-6 shadow-sm">
-          <div className="flex items-start gap-4">
-            <div className="w-10 h-10 rounded-full bg-[#FFF3EF] text-[#EA5B3C] flex items-center justify-center shrink-0">
-              <i className="ti ti-speakerphone text-xl"></i>
-            </div>
-            <div className="min-w-0 flex-1 space-y-5">
+          <div className="space-y-5">
+            <div className="flex items-center gap-4">
+              <div className="w-10 h-10 rounded-full bg-[#FFF3EF] text-[#EA5B3C] flex items-center justify-center shrink-0">
+                <i className="ti ti-speakerphone text-xl"></i>
+              </div>
               <h2 className="text-lg font-bold text-[#333333]">公告欄</h2>
-
+            </div>
+            <div className="min-w-0 space-y-5">
               {announcements.length > 0 ? (
                 <div className="space-y-4">
                   {announcements.map(item => (

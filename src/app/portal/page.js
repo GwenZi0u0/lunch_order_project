@@ -322,7 +322,7 @@ export default function PortalPage() {
     <>
       <Navbar user={user} />
 
-      <main className="flex-1 max-w-[1200px] w-full mx-auto px-6 py-10 space-y-10">
+      <main className="flex-1 max-w-[1200px] w-full mx-auto px-6 py-8 md:py-10 space-y-6 md:space-y-8">
         
         {/* Wallet Banner */}
         <section className="bg-white rounded-xl border border-[#EAE8E4] p-6 shadow-sm">
@@ -387,8 +387,46 @@ export default function PortalPage() {
           </div>
         </section>
 
+        {/* Shortcut Actions */}
+        <section className="bg-white rounded-xl border border-[#EAE8E4] p-4 md:p-6 shadow-sm">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-3">
+            <button
+              type="button"
+              onClick={() => router.push('/portal/order')}
+              className="min-h-14 md:min-h-16 rounded-xl border border-[#EAE8E4] bg-[#F9F8F5] px-3 py-2 md:py-3 text-sm font-bold text-[#333333] hover:border-[#EA5B3C] hover:text-[#EA5B3C] transition-all flex flex-col items-center justify-center gap-1"
+            >
+              <i className="ti ti-tools-kitchen-2 text-xl text-[#EA5B3C]"></i>
+              今日午餐訂購
+            </button>
+            <button
+              type="button"
+              onClick={() => router.push('/portal/order?week=next')}
+              className="min-h-14 md:min-h-16 rounded-xl border border-[#EAE8E4] bg-[#F9F8F5] px-3 py-2 md:py-3 text-sm font-bold text-[#333333] hover:border-[#EA5B3C] hover:text-[#EA5B3C] transition-all flex flex-col items-center justify-center gap-1"
+            >
+              <i className="ti ti-calendar-plus text-xl text-[#EA5B3C]"></i>
+              下周午餐訂購
+            </button>
+            <button
+              type="button"
+              onClick={() => document.getElementById('announcements')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+              className="min-h-14 md:min-h-16 rounded-xl border border-[#EAE8E4] bg-[#F9F8F5] px-3 py-2 md:py-3 text-sm font-bold text-[#333333] hover:border-[#EA5B3C] hover:text-[#EA5B3C] transition-all flex flex-col items-center justify-center gap-1"
+            >
+              <i className="ti ti-speakerphone text-xl text-[#EA5B3C]"></i>
+              公告欄
+            </button>
+            <button
+              type="button"
+              onClick={() => router.push('/portal/history')}
+              className="min-h-14 md:min-h-16 rounded-xl border border-[#EAE8E4] bg-[#F9F8F5] px-3 py-2 md:py-3 text-sm font-bold text-[#333333] hover:border-[#EA5B3C] hover:text-[#EA5B3C] transition-all flex flex-col items-center justify-center gap-1"
+            >
+              <i className="ti ti-history text-xl text-[#EA5B3C]"></i>
+              消費日誌
+            </button>
+          </div>
+        </section>
+
         {/* Announcement Board */}
-        <section className="bg-white rounded-xl border border-[#EAE8E4] p-6 shadow-sm">
+        <section id="announcements" className="scroll-mt-24 bg-white rounded-xl border border-[#EAE8E4] p-6 shadow-sm">
           <div className="space-y-5">
             <div className="flex items-center gap-4">
               <div className="w-10 h-10 rounded-full bg-[#FFF3EF] text-[#EA5B3C] flex items-center justify-center shrink-0">

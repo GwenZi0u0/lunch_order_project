@@ -93,10 +93,17 @@ export default function PortalPage() {
     updateTime();
     
     // Default selection
-    const today = new Date();
-    const todayStr = formatDate(today);
-    setSelectedDate(todayStr);
-    setActiveWeekTab('current');
+    const weekTarget = new URLSearchParams(window.location.search).get('week');
+    const dates = getWeeklyDates();
+    if (weekTarget === 'next') {
+      setSelectedDate(dates.find(d => d.isNextWeek)?.dateStr || formatDate(new Date()));
+      setActiveWeekTab('next');
+    } else {
+      const today = new Date();
+      const todayStr = formatDate(today);
+      setSelectedDate(todayStr);
+      setActiveWeekTab('current');
+    }
 
     fetchSchedules();
 
@@ -489,7 +496,7 @@ export default function PortalPage() {
                           <i className="ti ti-check text-[10px]"></i>
                         </span>
                         <span className="hidden md:inline absolute top-2 right-2 bg-green-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded">
-                          已訂購
+                          已訂
                         </span>
                       </>
                     )}

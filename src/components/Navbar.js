@@ -9,6 +9,9 @@ export default function Navbar({ user }) {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const isAdmin = user?.role === 'admin';
   const isOrderingView = pathname?.startsWith('/portal');
+  const logoHref = user
+    ? isAdmin && !isOrderingView ? '/admin' : '/portal'
+    : '/';
   const displayName = user?.name?.replace(/\s*\((餘額充足|餘額歸零|帳戶欠款)\)\s*$/, '') || '';
 
   useEffect(() => {
@@ -67,7 +70,7 @@ export default function Navbar({ user }) {
       <div className="flex justify-between items-center gap-3">
         <div className="flex items-center gap-6 min-w-0">
           <div
-            onClick={() => navigateTo('/')}
+            onClick={() => navigateTo(logoHref)}
             className="font-bold text-xl tracking-wider text-[#333333] cursor-pointer flex items-center gap-2 whitespace-nowrap"
           >
             TSA Lunch

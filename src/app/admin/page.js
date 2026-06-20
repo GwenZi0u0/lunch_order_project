@@ -176,7 +176,60 @@ export default function AdminDashboard() {
       || Boolean(draft.pinned) !== Boolean(item.pinned);
   };
 
+  const isLocalAnnouncement = (item) => item.id.startsWith('local-');
+
+  const isAnnouncementDraftBlank = (draft) => (
+    !draft.title.trim() && !draft.content.trim()
+  );
+
+  const discardAnnouncementEdit = (item, { silentBlank = false } = {}) => {
+    const draft = getAnnouncementDraft(item);
+    const isBlankLocalDraft = isLocalAnnouncement(item) && isAnnouncementDraftBlank(draft);
+    const shouldConfirm = isAnnouncementDirty(item) && !(silentBlank && isBlankLocalDraft);
+
+    if (shouldConfirm && !confirm('公告尚未儲存，確認要放棄此次修改嗎？')) {
+      return false;
+    }
+
+    clearAnnouncementDraft(item.id);
+    if (isLocalAnnouncement(item)) {
+      setAnnouncements(prev => prev.filter(announcement => announcement.id !== item.id));
+    }
+    setEditingAnnouncementId('');
+    return true;
+  };
+
+  const confirmDiscardActiveAnnouncementEdit = () => {
+    if (!editingAnnouncementId) return true;
+    const activeItem = announcements.find(item => item.id === editingAnnouncementId);
+    if (!activeItem) {
+      setEditingAnnouncementId('');
+      return true;
+    }
+    return discardAnnouncementEdit(activeItem, { silentBlank: true });
+  };
+
+  const getAnnouncementsAfterConfirmDiscardActiveEdit = () => {
+    if (!editingAnnouncementId) return announcements;
+    const activeItem = announcements.find(item => item.id === editingAnnouncementId);
+
+    if (!activeItem) {
+      setEditingAnnouncementId('');
+      return announcements;
+    }
+
+    if (!discardAnnouncementEdit(activeItem, { silentBlank: true })) {
+      return null;
+    }
+
+    return isLocalAnnouncement(activeItem)
+      ? announcements.filter(item => item.id !== activeItem.id)
+      : announcements;
+  };
+
   const handleAddAnnouncement = () => {
+    if (!confirmDiscardActiveAnnouncementEdit()) return;
+
     const now = new Date().toISOString();
     const id = `local-${Date.now()}`;
     const draft = { title: '', content: '', pinned: false };
@@ -194,6 +247,8 @@ export default function AdminDashboard() {
   };
 
   const handleStartEditAnnouncement = (item) => {
+    if (editingAnnouncementId !== item.id && !confirmDiscardActiveAnnouncementEdit()) return;
+
     setAnnouncementDrafts(prev => ({
       ...prev,
       [item.id]: {
@@ -224,12 +279,7 @@ export default function AdminDashboard() {
   };
 
   const handleCancelAnnouncementEdit = (item) => {
-    if (isAnnouncementDirty(item) && !confirm('資料有變更，確認要放棄此次變更嗎？')) {
-      return;
-    }
-
-    clearAnnouncementDraft(item.id);
-    setEditingAnnouncementId('');
+    discardAnnouncementEdit(item, { silentBlank: true });
   };
 
   const handleSaveAnnouncementItem = (id) => {
@@ -237,6 +287,13 @@ export default function AdminDashboard() {
     if (!target || !isAnnouncementDirty(target)) return;
 
     const draft = getAnnouncementDraft(target);
+    if (isAnnouncementDraftBlank(draft)) {
+      if (isLocalAnnouncement(target)) {
+        discardAnnouncementEdit(target, { silentBlank: true });
+      }
+      return;
+    }
+
     const nextAnnouncements = announcements.map(item => (
       item.id === id
         ? {
@@ -255,7 +312,10 @@ export default function AdminDashboard() {
   };
 
   const handleToggleAnnouncementPinned = (id) => {
-    const nextAnnouncements = announcements.map(item => (
+    const sourceAnnouncements = getAnnouncementsAfterConfirmDiscardActiveEdit();
+    if (!sourceAnnouncements) return;
+
+    const nextAnnouncements = sourceAnnouncements.map(item => (
       item.id === id
         ? {
           ...item,
@@ -269,8 +329,14 @@ export default function AdminDashboard() {
   };
 
   const handleDeleteAnnouncement = (id) => {
+    const sourceAnnouncements = editingAnnouncementId && editingAnnouncementId !== id
+      ? getAnnouncementsAfterConfirmDiscardActiveEdit()
+      : announcements;
+
+    if (!sourceAnnouncements) return;
+
     if (!confirm('確認要刪除此公告嗎？')) return;
-    const nextAnnouncements = announcements.filter(item => item.id !== id);
+    const nextAnnouncements = sourceAnnouncements.filter(item => item.id !== id);
     persistAnnouncements(nextAnnouncements, id, '公告已刪除。');
     clearAnnouncementDraft(id);
     if (editingAnnouncementId === id) setEditingAnnouncementId('');
@@ -528,16 +594,18 @@ export default function AdminDashboard() {
           </div>
 
           <div id="announcement-editor" className="scroll-mt-24 bg-white border border-[#EAE8E4] rounded-xl shadow-sm p-6 space-y-5">
-            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 border-b border-[#EAE8E4] pb-4">
+            <div className="flex flex-row items-end justify-between gap-3 border-b border-[#EAE8E4] pb-4">
               <div>
                 <p className="text-xs font-bold text-[#888888] tracking-widest uppercase">訂購者首頁管理</p>
                 <h3 className="text-lg font-bold text-[#333333] mt-1">公告欄編輯</h3>
               </div>
               <button
                 onClick={handleAddAnnouncement}
-                className="inline-flex items-center gap-1.5 text-xs font-bold bg-[#EA5B3C] text-white px-4 py-2 rounded-lg hover:bg-[#333333] transition-colors"
+                className="shrink-0 inline-flex items-center justify-center gap-1.5 text-xs font-bold bg-[#EA5B3C] text-white px-3 py-2 md:px-4 rounded-lg hover:bg-[#333333] transition-colors"
               >
-                <i className="ti ti-plus text-sm"></i> 新增公告
+                <span className="md:hidden text-sm leading-none">+</span>
+                <i className="ti ti-plus text-sm hidden md:inline"></i>
+                <span className="hidden md:inline">新增公告</span>
               </button>
             </div>
 

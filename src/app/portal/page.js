@@ -58,6 +58,7 @@ export default function PortalPage() {
   const router = useRouter();
   const [user, setUser] = useState(null);
   const [schedules, setSchedules] = useState([]);
+  const [announcements, setAnnouncements] = useState([]);
   const [selectedDate, setSelectedDate] = useState('');
   const [activeWeekTab, setActiveWeekTab] = useState('current'); // 'current' or 'next'
   
@@ -99,6 +100,7 @@ export default function PortalPage() {
     setActiveWeekTab('current');
 
     fetchSchedules();
+    fetchAnnouncements();
 
     return () => clearInterval(timer);
   }, []);
@@ -125,6 +127,17 @@ export default function PortalPage() {
         }
       })
       .catch(err => console.error('無法載入排程:', err));
+  };
+
+  const fetchAnnouncements = () => {
+    fetch('/api/announcement')
+      .then(res => res.json())
+      .then(data => {
+        if (Array.isArray(data?.announcements)) {
+          setAnnouncements(data.announcements);
+        }
+      })
+      .catch(err => console.error('Failed to load announcements:', err));
   };
 
   const refreshUser = () => {
@@ -309,11 +322,21 @@ export default function PortalPage() {
     <>
       <Navbar user={user} />
 
-      <main className="flex-1 max-w-[1200px] w-full mx-auto px-6 py-10 space-y-10">
+      <main className="flex-1 max-w-[1200px] w-full mx-auto px-6 py-8 md:py-10 space-y-6 md:space-y-8">
         
-        {/* Today Order */}
+        {/* Wallet Banner */}
         <section className="bg-white rounded-xl border border-[#EAE8E4] p-6 shadow-sm">
-          <div className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-center">
+            {/* Wallet Info */}
+            <div className={`p-5 bg-[#F9F8F5] rounded-xl border ${wallet.cardBorder} flex flex-col justify-between h-full`}>
+              <span className="text-xs font-bold text-[#888888] tracking-widest uppercase mb-2">{wallet.label}</span>
+              <div className={`text-3xl font-bold ${wallet.valueColor} mb-2`}>
+                {walletAmount}
+              </div>
+            </div>
+
+            {/* Today Order */}
+            <div className="md:col-span-2 space-y-4 md:pl-6 border-t md:border-t-0 md:border-l border-[#EAE8E4] pt-6 md:pt-0">
             <div className="flex items-center justify-between gap-3">
               <h3 className="font-bold text-base text-[#333333] flex items-center gap-2">
                 <i className="ti ti-shopping-bag text-lg text-[#EA5B3C]"></i> 今日訂購餐點
@@ -322,30 +345,37 @@ export default function PortalPage() {
             </div>
 
             {todayOrder ? (
-              <div className="space-y-3">
-                {todayOrder.orderNumberDisplay && (
-                  <div className="flex items-center justify-between rounded-lg border border-[#EAE8E4] bg-[#F9F8F5] px-3 py-2 text-xs">
-                    <span className="font-bold text-[#888888]">{'\u4eca\u65e5\u8a02\u55ae\u7de8\u865f'}</span>
-                    <span className="rounded-full border border-[#EA5B3C]/20 bg-[#FFF3EF] px-2 py-1 text-[11px] font-bold text-[#EA5B3C]">
-                      {todayOrder.orderNumberDisplay}
+              <div className="rounded-lg border border-[#EAE8E4] bg-[#F9F8F5] overflow-hidden">
+                <div className="bg-white px-4 py-3">
+                  <div className="space-y-1">
+                    <span className="block text-[11px] font-bold tracking-widest text-[#888888]">
+                      {'\u4eca\u65e5\u8a02\u55ae\u7de8\u865f'}
+                    </span>
+                    <span className="inline-flex min-w-12 items-center justify-center rounded-full border border-[#EA5B3C]/20 bg-[#FFF3EF] px-3 py-1.5 text-sm font-bold text-[#EA5B3C]">
+                      {todayOrder.orderNumberDisplay || '-'}
                     </span>
                   </div>
-                )}
-                <div className="space-y-2 max-h-[160px] overflow-y-auto pr-1 kaizen-scrollbar">
+                </div>
+
+                <div className="max-h-[180px] overflow-y-auto bg-white px-4 py-3 kaizen-scrollbar">
                   {todayOrder.items.map(item => (
-                    <div key={item.id} className="flex items-center justify-between gap-3 rounded-lg border border-[#EAE8E4] bg-[#F9F8F5] px-3 py-2 text-xs">
+                    <div key={item.id} className="grid grid-cols-[1fr_auto_auto] items-center gap-3 border-b border-[#EAE8E4] py-2 text-xs last:border-b-0">
                       <span className="font-bold text-[#333333] truncate">{item.name}</span>
-                      <span className="text-[#888888] shrink-0">x {item.quantity}</span>
+                      <span className="rounded-full bg-[#F9F8F5] px-2 py-0.5 font-bold text-[#888888] shrink-0">x {item.quantity}</span>
                       <span className="font-bold text-[#EA5B3C] shrink-0">NT$ {item.unitPrice * item.quantity}</span>
                     </div>
                   ))}
                 </div>
-                <div className="flex items-center justify-between border-t border-[#EAE8E4] pt-3 text-sm font-bold">
-                  <span className="text-[#333333]">今日訂單金額</span>
-                  <span className="text-[#EA5B3C]">NT$ {todayOrder.totalAmount}</span>
+
+                <div className="flex items-center justify-between border-t border-[#EAE8E4] bg-[#F9F8F5] px-4 py-3">
+                  <span className="text-[11px] font-bold tracking-widest text-[#888888]">今日訂單金額</span>
+                  <span className="text-xl font-bold text-[#EA5B3C]">NT$ {todayOrder.totalAmount}</span>
                 </div>
+
                 {todayOrder.note && (
-                  <p className="text-xs text-[#888888] leading-5">備註：{todayOrder.note}</p>
+                  <p className="border-t border-[#EAE8E4] bg-white px-4 py-3 text-xs leading-5 text-[#888888]">
+                    備註：{todayOrder.note}
+                  </p>
                 )}
               </div>
             ) : (
@@ -353,18 +383,58 @@ export default function PortalPage() {
                 今日尚未訂購餐點。
               </div>
             )}
+            </div>
           </div>
         </section>
 
-        {/* Announcement Board moved to /portal/announcements.
-        <section className="bg-white rounded-xl border border-[#EAE8E4] p-6 shadow-sm">
-          <div className="flex items-start gap-4">
-            <div className="w-10 h-10 rounded-full bg-[#FFF3EF] text-[#EA5B3C] flex items-center justify-center shrink-0">
-              <i className="ti ti-speakerphone text-xl"></i>
-            </div>
-            <div className="min-w-0 flex-1 space-y-5">
-              <h2 className="text-lg font-bold text-[#333333]">公告欄</h2>
+        {/* Shortcut Actions */}
+        <section className="bg-white rounded-xl border border-[#EAE8E4] p-4 md:p-6 shadow-sm">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-3">
+            <button
+              type="button"
+              onClick={() => router.push('/portal/order')}
+              className="min-h-14 md:min-h-16 rounded-xl border border-[#EAE8E4] bg-[#F9F8F5] px-3 py-2 md:py-3 text-sm font-bold text-[#333333] hover:border-[#EA5B3C] hover:text-[#EA5B3C] transition-all flex flex-col items-center justify-center gap-1"
+            >
+              <i className="ti ti-tools-kitchen-2 text-xl text-[#EA5B3C]"></i>
+              今日午餐訂購
+            </button>
+            <button
+              type="button"
+              onClick={() => router.push('/portal/order?week=next')}
+              className="min-h-14 md:min-h-16 rounded-xl border border-[#EAE8E4] bg-[#F9F8F5] px-3 py-2 md:py-3 text-sm font-bold text-[#333333] hover:border-[#EA5B3C] hover:text-[#EA5B3C] transition-all flex flex-col items-center justify-center gap-1"
+            >
+              <i className="ti ti-calendar-plus text-xl text-[#EA5B3C]"></i>
+              下周午餐訂購
+            </button>
+            <button
+              type="button"
+              onClick={() => document.getElementById('announcements')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+              className="min-h-14 md:min-h-16 rounded-xl border border-[#EAE8E4] bg-[#F9F8F5] px-3 py-2 md:py-3 text-sm font-bold text-[#333333] hover:border-[#EA5B3C] hover:text-[#EA5B3C] transition-all flex flex-col items-center justify-center gap-1"
+            >
+              <i className="ti ti-speakerphone text-xl text-[#EA5B3C]"></i>
+              公告欄
+            </button>
+            <button
+              type="button"
+              onClick={() => router.push('/portal/history')}
+              className="min-h-14 md:min-h-16 rounded-xl border border-[#EAE8E4] bg-[#F9F8F5] px-3 py-2 md:py-3 text-sm font-bold text-[#333333] hover:border-[#EA5B3C] hover:text-[#EA5B3C] transition-all flex flex-col items-center justify-center gap-1"
+            >
+              <i className="ti ti-history text-xl text-[#EA5B3C]"></i>
+              消費日誌
+            </button>
+          </div>
+        </section>
 
+        {/* Announcement Board */}
+        <section id="announcements" className="scroll-mt-24 bg-white rounded-xl border border-[#EAE8E4] p-6 shadow-sm">
+          <div className="space-y-5">
+            <div className="flex items-center gap-4">
+              <div className="w-10 h-10 rounded-full bg-[#FFF3EF] text-[#EA5B3C] flex items-center justify-center shrink-0">
+                <i className="ti ti-speakerphone text-xl"></i>
+              </div>
+              <h2 className="text-lg font-bold text-[#333333]">公告欄</h2>
+            </div>
+            <div className="min-w-0 space-y-5">
               {announcements.length > 0 ? (
                 <div className="space-y-4">
                   {announcements.map(item => (
@@ -398,8 +468,6 @@ export default function PortalPage() {
             </div>
           </div>
         </section>
-
-        */}
 
         {false && (
         <>

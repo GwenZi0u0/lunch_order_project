@@ -58,6 +58,7 @@ export default function PortalPage() {
   const router = useRouter();
   const [user, setUser] = useState(null);
   const [schedules, setSchedules] = useState([]);
+  const [announcements, setAnnouncements] = useState([]);
   const [selectedDate, setSelectedDate] = useState('');
   const [activeWeekTab, setActiveWeekTab] = useState('current'); // 'current' or 'next'
   
@@ -99,6 +100,7 @@ export default function PortalPage() {
     setActiveWeekTab('current');
 
     fetchSchedules();
+    fetchAnnouncements();
 
     return () => clearInterval(timer);
   }, []);
@@ -125,6 +127,17 @@ export default function PortalPage() {
         }
       })
       .catch(err => console.error('無法載入排程:', err));
+  };
+
+  const fetchAnnouncements = () => {
+    fetch('/api/announcement')
+      .then(res => res.json())
+      .then(data => {
+        if (Array.isArray(data?.announcements)) {
+          setAnnouncements(data.announcements);
+        }
+      })
+      .catch(err => console.error('Failed to load announcements:', err));
   };
 
   const refreshUser = () => {
@@ -311,9 +324,19 @@ export default function PortalPage() {
 
       <main className="flex-1 max-w-[1200px] w-full mx-auto px-6 py-10 space-y-10">
         
-        {/* Today Order */}
+        {/* Wallet Banner */}
         <section className="bg-white rounded-xl border border-[#EAE8E4] p-6 shadow-sm">
-          <div className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-center">
+            {/* Wallet Info */}
+            <div className={`p-5 bg-[#F9F8F5] rounded-xl border ${wallet.cardBorder} flex flex-col justify-between h-full`}>
+              <span className="text-xs font-bold text-[#888888] tracking-widest uppercase mb-2">{wallet.label}</span>
+              <div className={`text-3xl font-bold ${wallet.valueColor} mb-2`}>
+                {walletAmount}
+              </div>
+            </div>
+
+            {/* Today Order */}
+            <div className="md:col-span-2 space-y-4 md:pl-6 border-t md:border-t-0 md:border-l border-[#EAE8E4] pt-6 md:pt-0">
             <div className="flex items-center justify-between gap-3">
               <h3 className="font-bold text-base text-[#333333] flex items-center gap-2">
                 <i className="ti ti-shopping-bag text-lg text-[#EA5B3C]"></i> 今日訂購餐點
@@ -360,10 +383,11 @@ export default function PortalPage() {
                 今日尚未訂購餐點。
               </div>
             )}
+            </div>
           </div>
         </section>
 
-        {/* Announcement Board moved to /portal/announcements.
+        {/* Announcement Board */}
         <section className="bg-white rounded-xl border border-[#EAE8E4] p-6 shadow-sm">
           <div className="flex items-start gap-4">
             <div className="w-10 h-10 rounded-full bg-[#FFF3EF] text-[#EA5B3C] flex items-center justify-center shrink-0">
@@ -405,8 +429,6 @@ export default function PortalPage() {
             </div>
           </div>
         </section>
-
-        */}
 
         {false && (
         <>

@@ -135,6 +135,31 @@ export default function HistoryPage() {
     );
   }
 
+  const getWalletStyles = () => {
+    if (user.balance > 0) {
+      return {
+        cardBorder: 'border-l-4 border-l-green-600 border-[#EAE8E4]',
+        valueColor: 'text-green-600',
+        label: '餘額充足'
+      };
+    } else if (user.balance === 0) {
+      return {
+        cardBorder: 'border-l-4 border-l-[#333333] border-[#EAE8E4]',
+        valueColor: 'text-[#333333]',
+        label: '餘額歸零'
+      };
+    }
+
+    return {
+      cardBorder: 'border-l-4 border-l-red-600 border-[#EAE8E4] bg-red-[0.005]',
+      valueColor: 'text-red-600',
+      label: '帳戶欠款'
+    };
+  };
+
+  const wallet = getWalletStyles();
+  const walletAmount = `${user.balance < 0 ? '－' : ''}NT$ ${Math.abs(user.balance)}`;
+
   return (
     <>
       <Navbar user={user} />
@@ -153,6 +178,15 @@ export default function HistoryPage() {
             返回訂餐首頁
           </button>
         </div>
+
+        <section className="bg-white rounded-xl border border-[#EAE8E4] p-6 shadow-sm">
+          <div className={`p-5 bg-[#F9F8F5] rounded-xl border ${wallet.cardBorder}`}>
+            <span className="text-xs font-bold text-[#888888] tracking-widest uppercase mb-2 block">{wallet.label}</span>
+            <div className={`text-3xl font-bold ${wallet.valueColor}`}>
+              {walletAmount}
+            </div>
+          </div>
+        </section>
 
         {/* Ledger Transactions Grid */}
         <div className="c-box">

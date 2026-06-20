@@ -142,6 +142,9 @@ export default function PortalPage() {
   const todaySchedule = schedules.find(s => s.date === todayDate);
   const todayOrder = todaySchedule?.userOrder || null;
   const weeklyDates = getWeeklyDates();
+  const selectedOrderDateLabel = (weeklyDates.find(d => d.dateStr === selectedDate)?.label || selectedDate)
+    .replace('本週週', '本週')
+    .replace('下週週', '下週');
   
   // Setup order input when selected schedule changes
   useEffect(() => {
@@ -448,7 +451,7 @@ export default function PortalPage() {
           </div>
 
           {/* Monday-Sunday Daily Buttons */}
-          <div className="grid grid-cols-2 md:grid-cols-7 gap-3">
+          <div className="grid grid-cols-7 gap-1 md:gap-3">
             {weeklyDates
               .filter(d => (activeWeekTab === 'current' ? !d.isNextWeek : d.isNextWeek))
               .map(d => {
@@ -461,26 +464,34 @@ export default function PortalPage() {
                   <button
                     key={d.dateStr}
                     onClick={() => setSelectedDate(d.dateStr)}
-                    className={`p-4 rounded-xl border text-left transition-all relative ${
+                    className={`min-h-12 p-2 md:min-h-0 md:p-4 rounded-lg md:rounded-xl border text-center md:text-left transition-all relative ${
                       isSelected
                         ? 'border-[#EA5B3C] bg-white ring-1 ring-[#EA5B3C]'
                         : 'border-[#EAE8E4] bg-white hover:border-[#D6D1CA]'
                     }`}
                   >
-                    <div className="text-xs text-[#888888] mb-1 font-bold">{d.label}</div>
-                    <div className="text-sm font-bold text-[#333333] truncate">
+                    <div className="text-[11px] md:text-xs text-[#888888] md:mb-1 font-bold leading-tight">
+                      <span className="md:hidden">{d.label.replace(/^本週|^下週/, '')}</span>
+                      <span className="hidden md:inline">{d.label}</span>
+                    </div>
+                    <div className="hidden md:block text-sm font-bold text-[#333333] truncate">
                       {isHolidayCard ? '\u4f11\u5047' : (sched?.restaurant ? sched.restaurant.name : '（未排定）')}
                     </div>
                     {/* Status Badge */}
                     {isHolidayCard && (
-                      <span className="absolute top-2 right-2 bg-[#F2EFEA] text-[#888888] text-[8px] font-bold px-1 rounded border border-[#EAE8E4]">
+                      <span className="hidden md:inline absolute top-2 right-2 bg-[#F2EFEA] text-[#888888] text-[8px] font-bold px-1 rounded border border-[#EAE8E4]">
                         {'\u5047\u671f'}
                       </span>
                     )}
                     {!isHolidayCard && hasOrdered && (
-                      <span className="absolute top-2 right-2 bg-green-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded">
-                        已訂
-                      </span>
+                      <>
+                        <span className="absolute -top-1 right-1 z-10 inline-flex h-4 w-4 items-center justify-center rounded-full bg-green-500 text-white shadow-sm ring-2 ring-white md:hidden">
+                          <i className="ti ti-check text-[10px]"></i>
+                        </span>
+                        <span className="hidden md:inline absolute top-2 right-2 bg-green-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded">
+                          已訂購
+                        </span>
+                      </>
                     )}
                   </button>
                 );
@@ -492,7 +503,7 @@ export default function PortalPage() {
         <section className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           
           {/* Menu Selection (Col-span 2) */}
-          <div className="lg:col-span-2 space-y-6">
+          <div className="order-2 lg:order-1 lg:col-span-2 space-y-6">
             <div className="c-box">
               {activeRestaurant ? (
                 <div className="space-y-8">
@@ -596,8 +607,8 @@ export default function PortalPage() {
           </div>
 
           {/* Order Checkout Summary (Col-span 1) */}
-          <div className="space-y-6">
-            <div className="bg-white border border-[#EAE8E4] rounded-xl shadow-sm p-6 space-y-6 sticky top-24">
+          <div className="order-1 lg:order-2 space-y-6">
+            <div className="bg-white border border-[#EAE8E4] rounded-xl shadow-sm p-6 space-y-6 lg:sticky lg:top-24">
               <h3 className="font-bold text-base text-[#333333] border-b border-[#EAE8E4] pb-3">
                 您的訂購清單
               </h3>
@@ -617,6 +628,12 @@ export default function PortalPage() {
               {/* Selected items receipt */}
               {activeRestaurant ? (
                 <>
+                  {calculateTotal() > 0 && (
+                    <div className="text-xs font-bold text-[#888888]">
+                      {selectedOrderDateLabel}餐點內容
+                    </div>
+                  )}
+
                   <div className="space-y-4 max-h-[220px] overflow-y-auto pr-1">
                     {activeRestaurant.menuItems.map(item => {
                       const qty = orderQuantities[item.id] || 0;

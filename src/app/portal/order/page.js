@@ -32,7 +32,7 @@ function getWeeklyDates() {
     d.setDate(monday.getDate() + i);
     dates.push({
       dateStr: formatDate(d),
-      label: `\u672c\u9031${weekdayLabels[i]}`,
+      label: weekdayLabels[i],
       isWeekend: i >= 5,
       isNextWeek: false
     });
@@ -46,12 +46,19 @@ function getWeeklyDates() {
     d.setDate(nextMonday.getDate() + i);
     dates.push({
       dateStr: formatDate(d),
-      label: `\u4e0b\u9031${weekdayLabels[i]}`,
+      label: weekdayLabels[i],
       isWeekend: i >= 5,
       isNextWeek: true
     });
   }
   return dates;
+}
+
+function getDefaultDateForWeek(weekTab) {
+  const dates = getWeeklyDates();
+  return weekTab === 'next'
+    ? dates.find(d => d.isNextWeek)?.dateStr || formatDate(new Date())
+    : formatDate(new Date());
 }
 
 export default function PortalPage() {
@@ -94,14 +101,11 @@ export default function PortalPage() {
     
     // Default selection
     const weekTarget = new URLSearchParams(window.location.search).get('week');
-    const dates = getWeeklyDates();
     if (weekTarget === 'next') {
-      setSelectedDate(dates.find(d => d.isNextWeek)?.dateStr || formatDate(new Date()));
+      setSelectedDate(getDefaultDateForWeek('next'));
       setActiveWeekTab('next');
     } else {
-      const today = new Date();
-      const todayStr = formatDate(today);
-      setSelectedDate(todayStr);
+      setSelectedDate(getDefaultDateForWeek('current'));
       setActiveWeekTab('current');
     }
 
@@ -149,9 +153,12 @@ export default function PortalPage() {
   const todaySchedule = schedules.find(s => s.date === todayDate);
   const todayOrder = todaySchedule?.userOrder || null;
   const weeklyDates = getWeeklyDates();
-  const selectedOrderDateLabel = (weeklyDates.find(d => d.dateStr === selectedDate)?.label || selectedDate)
-    .replace('本週週', '本週')
-    .replace('下週週', '下週');
+  const selectedOrderDateLabel = weeklyDates.find(d => d.dateStr === selectedDate)?.label || selectedDate;
+
+  const handleWeekTabChange = (weekTab) => {
+    setActiveWeekTab(weekTab);
+    setSelectedDate(getDefaultDateForWeek(weekTab));
+  };
   
   // Setup order input when selected schedule changes
   useEffect(() => {
@@ -439,7 +446,7 @@ export default function PortalPage() {
             {/* Week Tab Switcher */}
             <div className="inline-flex bg-[#F9F8F5] border border-[#EAE8E4] p-1 rounded-xl">
               <button
-                onClick={() => setActiveWeekTab('current')}
+                onClick={() => handleWeekTabChange('current')}
                 className={`px-5 py-2 text-xs font-bold rounded-md transition-all ${
                   activeWeekTab === 'current' ? 'bg-[#EA5B3C] text-white' : 'text-[#888888] hover:text-[#333333]'
                 }`}
@@ -447,7 +454,7 @@ export default function PortalPage() {
                 本週菜單
               </button>
               <button
-                onClick={() => setActiveWeekTab('next')}
+                onClick={() => handleWeekTabChange('next')}
                 className={`px-5 py-2 text-xs font-bold rounded-md transition-all ${
                   activeWeekTab === 'next' ? 'bg-[#EA5B3C] text-white' : 'text-[#888888] hover:text-[#333333]'
                 }`}
@@ -477,25 +484,19 @@ export default function PortalPage() {
                         : 'border-[#EAE8E4] bg-white hover:border-[#D6D1CA]'
                     }`}
                   >
-                    <div className="text-[11px] md:text-xs text-[#888888] md:mb-1 font-bold leading-tight">
-                      <span className="md:hidden">{d.label.replace(/^本週|^下週/, '')}</span>
-                      <span className="hidden md:inline">{d.label}</span>
-                    </div>
+                    <div className="text-[11px] md:text-xs text-[#888888] md:mb-1 font-bold leading-tight">{d.label}</div>
                     <div className="hidden md:block text-sm font-bold text-[#333333] truncate">
                       {isHolidayCard ? '\u4f11\u5047' : (sched?.restaurant ? sched.restaurant.name : '（未排定）')}
                     </div>
                     {/* Status Badge */}
                     {isHolidayCard && (
-                      <span className="hidden md:inline absolute top-2 right-2 bg-[#F2EFEA] text-[#888888] text-[8px] font-bold px-1 rounded border border-[#EAE8E4]">
+                      <span className="mt-0.5 block text-center text-[8px] font-bold leading-none text-[#888888] md:absolute md:top-2 md:right-2 md:mt-0 md:inline-flex md:px-1 md:rounded md:border md:border-[#EAE8E4] md:bg-[#F2EFEA]">
                         {'\u5047\u671f'}
                       </span>
                     )}
                     {!isHolidayCard && hasOrdered && (
                       <>
-                        <span className="absolute -top-1 right-1 z-10 inline-flex h-4 w-4 items-center justify-center rounded-full bg-green-500 text-white shadow-sm ring-2 ring-white md:hidden">
-                          <i className="ti ti-check text-[10px]"></i>
-                        </span>
-                        <span className="hidden md:inline absolute top-2 right-2 bg-green-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded">
+                        <span className="mt-0.5 block text-center text-[9px] font-bold leading-none text-green-600 md:absolute md:top-2 md:right-2 md:mt-0 md:inline-flex md:rounded md:bg-green-500 md:px-1.5 md:py-0.5 md:text-white">
                           已訂
                         </span>
                       </>

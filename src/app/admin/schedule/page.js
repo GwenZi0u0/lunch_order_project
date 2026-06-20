@@ -32,7 +32,7 @@ function getWeeklyDates() {
     d.setDate(monday.getDate() + i);
     dates.push({
       dateStr: formatDate(d),
-      label: `\u672c\u9031${weekdayLabels[i]}`,
+      label: weekdayLabels[i],
       isWeekend: i >= 5,
       isNextWeek: false
     });
@@ -46,12 +46,19 @@ function getWeeklyDates() {
     d.setDate(nextMonday.getDate() + i);
     dates.push({
       dateStr: formatDate(d),
-      label: `\u4e0b\u9031${weekdayLabels[i]}`,
+      label: weekdayLabels[i],
       isWeekend: i >= 5,
       isNextWeek: true
     });
   }
   return dates;
+}
+
+function getDefaultDateForWeek(weekTab) {
+  const dates = getWeeklyDates();
+  return weekTab === 'next'
+    ? dates.find(d => d.isNextWeek)?.dateStr || formatDate(new Date())
+    : formatDate(new Date());
 }
 
 function isWeekendDate(dateStr) {
@@ -239,6 +246,11 @@ export default function AdminDashboard() {
   const weeklyDates = getWeeklyDates();
   const selectedDateIsHoliday = activeSchedule ? !activeSchedule.isOpen && !activeSchedule.deliveredAt : isHoliday;
   const activeMenuItems = activeSchedule?.restaurant?.menuItems || [];
+
+  const handleWeekTabChange = (weekTab) => {
+    setActiveWeekTab(weekTab);
+    setSelectedDate(getDefaultDateForWeek(weekTab));
+  };
 
   // Update schedule selection inputs
   useEffect(() => {
@@ -608,7 +620,7 @@ export default function AdminDashboard() {
             {/* Week Tab Switcher */}
             <div className="inline-flex bg-[#F9F8F5] border border-[#EAE8E4] p-1 rounded-xl">
               <button
-                onClick={() => setActiveWeekTab('current')}
+                onClick={() => handleWeekTabChange('current')}
                 className={`px-5 py-2 text-xs font-bold rounded-md transition-all ${
                   activeWeekTab === 'current' ? 'bg-[#EA5B3C] text-white' : 'text-[#888888] hover:text-[#333333]'
                 }`}
@@ -616,7 +628,7 @@ export default function AdminDashboard() {
                 本週日程
               </button>
               <button
-                onClick={() => setActiveWeekTab('next')}
+                onClick={() => handleWeekTabChange('next')}
                 className={`px-5 py-2 text-xs font-bold rounded-md transition-all ${
                   activeWeekTab === 'next' ? 'bg-[#EA5B3C] text-white' : 'text-[#888888] hover:text-[#333333]'
                 }`}
@@ -626,7 +638,7 @@ export default function AdminDashboard() {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-7 gap-3">
+          <div className="grid grid-cols-7 gap-1 md:gap-3">
             {weeklyDates
               .filter(d => (activeWeekTab === 'current' ? !d.isNextWeek : d.isNextWeek))
               .map(d => {
@@ -639,28 +651,28 @@ export default function AdminDashboard() {
                   <button
                     key={d.dateStr}
                     onClick={() => setSelectedDate(d.dateStr)}
-                    className={`p-4 rounded-xl border text-left transition-all relative ${
+                    className={`min-h-12 p-2 md:min-h-0 md:p-4 rounded-lg md:rounded-xl border text-center md:text-left transition-all relative ${
                       isSelected
                         ? 'border-[#EA5B3C] bg-white ring-1 ring-[#EA5B3C]'
                         : 'border-[#EAE8E4] bg-white hover:border-[#D6D1CA]'
                     }`}
                   >
-                    <div className="text-xs text-[#888888] mb-1 font-bold">{d.label}</div>
-                    <div className="text-sm font-bold text-[#333333] truncate">
+                    <div className="text-[11px] md:text-xs text-[#888888] md:mb-1 font-bold leading-tight">{d.label}</div>
+                    <div className="hidden md:block text-sm font-bold text-[#333333] truncate">
                       {isHolidayCard ? '\u4f11\u5047' : (sched?.restaurant?.name || '\u672a\u6392\u5b9a')}
                     </div>
                     {isHolidayCard && (
-                      <span className="absolute top-2 right-2 bg-[#F2EFEA] text-[#888888] text-[8px] font-bold px-1 rounded border border-[#EAE8E4]">
+                      <span className="mt-0.5 block text-center text-[8px] font-bold leading-none text-[#888888] md:absolute md:top-2 md:right-2 md:mt-0 md:inline-flex md:px-1 md:rounded md:border md:border-[#EAE8E4] md:bg-[#F2EFEA]">
                         {'\u5047\u671f'}
                       </span>
                     )}
                     {!isHolidayCard && sched?.deliveredAt && (
-                      <span className="absolute top-2 right-2 bg-green-100 text-green-700 text-[8px] font-bold px-1 rounded border border-green-300">
+                      <span className="mt-0.5 block text-center text-[8px] font-bold leading-none text-green-700 md:absolute md:top-2 md:right-2 md:mt-0 md:inline-flex md:px-1 md:rounded md:border md:border-green-300 md:bg-green-100">
                         已扣款
                       </span>
                     )}
                     {!isHolidayCard && totalOrdersCount > 0 && !sched?.deliveredAt && (
-                      <span className="absolute top-2 right-2 bg-orange-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded animate-pulse">
+                      <span className="mt-0.5 block text-center text-[9px] font-bold leading-none text-orange-500 md:absolute md:top-2 md:right-2 md:mt-0 md:inline-flex md:rounded md:bg-orange-500 md:px-1.5 md:py-0.5 md:text-white md:animate-pulse">
                         {totalOrdersCount} 份
                       </span>
                     )}

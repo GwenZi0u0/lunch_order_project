@@ -68,6 +68,7 @@ export default function PortalPage() {
   const [announcements, setAnnouncements] = useState([]);
   const [selectedDate, setSelectedDate] = useState('');
   const [activeWeekTab, setActiveWeekTab] = useState('current'); // 'current' or 'next'
+  const [allowNextWeekMenu, setAllowNextWeekMenu] = useState(true);
   
   // Order state
   const [orderQuantities, setOrderQuantities] = useState({}); // { menuItemId: quantity }
@@ -108,6 +109,7 @@ export default function PortalPage() {
 
     fetchSchedules();
     fetchAnnouncements();
+    fetchOrderSettings();
 
     return () => clearInterval(timer);
   }, []);
@@ -147,6 +149,17 @@ export default function PortalPage() {
       .catch(err => console.error('Failed to load announcements:', err));
   };
 
+  const fetchOrderSettings = () => {
+    fetch('/api/order-settings')
+      .then(res => res.json())
+      .then(data => {
+        if (typeof data.allowNextWeekMenu === 'boolean') {
+          setAllowNextWeekMenu(data.allowNextWeekMenu);
+        }
+      })
+      .catch(err => console.error('Failed to load order settings:', err));
+  };
+
   const refreshUser = () => {
     fetch('/api/auth')
       .then(res => res.json())
@@ -164,9 +177,17 @@ export default function PortalPage() {
   const weeklyDates = getWeeklyDates();
 
   const handleWeekTabChange = (weekTab) => {
+    if (weekTab === 'next' && !allowNextWeekMenu) return;
     setActiveWeekTab(weekTab);
     setSelectedDate(getDefaultDateForWeek(weekTab));
   };
+
+  useEffect(() => {
+    if (!allowNextWeekMenu && activeWeekTab === 'next') {
+      setActiveWeekTab('current');
+      setSelectedDate(getDefaultDateForWeek('current'));
+    }
+  }, [allowNextWeekMenu, activeWeekTab]);
   
   // Setup order input when selected schedule changes
   useEffect(() => {
@@ -412,8 +433,15 @@ export default function PortalPage() {
             </button>
             <button
               type="button"
-              onClick={() => router.push('/portal/order?week=next')}
-              className="min-h-14 md:min-h-16 rounded-xl border border-[#EAE8E4] bg-[#F9F8F5] px-3 py-2 md:py-3 text-sm font-bold text-[#333333] hover:border-[#EA5B3C] hover:text-[#EA5B3C] transition-all flex flex-col items-center justify-center gap-1"
+              onClick={() => {
+                if (allowNextWeekMenu) router.push('/portal/order?week=next');
+              }}
+              disabled={!allowNextWeekMenu}
+              className={`min-h-14 md:min-h-16 rounded-xl border border-[#EAE8E4] bg-[#F9F8F5] px-3 py-2 md:py-3 text-sm font-bold transition-all flex flex-col items-center justify-center gap-1 disabled:cursor-not-allowed disabled:opacity-45 ${
+                allowNextWeekMenu
+                  ? 'text-[#333333] hover:border-[#EA5B3C] hover:text-[#EA5B3C]'
+                  : 'text-[#888888]'
+              }`}
             >
               <i className="ti ti-calendar-plus text-xl text-[#EA5B3C]"></i>
               下周午餐訂購
@@ -464,11 +492,6 @@ export default function PortalPage() {
                       <div className="text-sm text-[#555555] leading-7 whitespace-pre-wrap break-words">
                         {item.content || '此公告尚無內容。'}
                       </div>
-                      {item.updatedAt && (
-                        <p className="text-[11px] text-[#888888] text-right">
-                          最後更新：{new Date(item.updatedAt).toLocaleString()}
-                        </p>
-                      )}
                     </article>
                   ))}
                 </div>
@@ -502,11 +525,16 @@ export default function PortalPage() {
               </button>
               <button
                 onClick={() => handleWeekTabChange('next')}
-                className={`px-5 py-2 text-xs font-bold rounded-md transition-all ${
-                  activeWeekTab === 'next' ? 'bg-[#EA5B3C] text-white' : 'text-[#888888] hover:text-[#333333]'
+                disabled={!allowNextWeekMenu}
+                className={`px-5 py-2 text-xs font-bold rounded-md transition-all disabled:cursor-not-allowed disabled:opacity-45 ${
+                  activeWeekTab === 'next'
+                    ? 'bg-[#EA5B3C] text-white'
+                    : allowNextWeekMenu
+                      ? 'text-[#888888] hover:text-[#333333]'
+                      : 'text-[#888888]'
                 }`}
               >
-                下週菜單 (預先開放)
+                下週菜單
               </button>
             </div>
           </div>

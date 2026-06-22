@@ -713,11 +713,6 @@ export default function AdminDashboard() {
                           <h4 className="text-base font-bold text-[#333333] break-words">
                             {item.title || '未命名公告'}
                           </h4>
-                          {item.pinned && (
-                            <span className="shrink-0 inline-flex items-center gap-1 rounded-full border border-[#EA5B3C]/20 bg-[#FFF3EF] px-2 py-1 text-[11px] font-bold text-[#EA5B3C]">
-                              <i className="ti ti-pin text-xs"></i> ??
-                            </span>
-                          )}
                         </div>
                         <div className="text-sm text-[#555555] leading-7 whitespace-pre-wrap break-words">
                           {item.content || '此公告尚無內容。'}

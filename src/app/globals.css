@@ -50,6 +50,15 @@
   background: #EA5B3C;
 }
 
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
 /* Kaizen UI Elements */
 .c-box {
   background: #FFFFFF;

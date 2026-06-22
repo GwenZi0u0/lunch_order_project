@@ -102,6 +102,9 @@ export default function AdminDashboard() {
   const [schedules, setSchedules] = useState([]);
   const [selectedDate, setSelectedDate] = useState('');
   const [activeWeekTab, setActiveWeekTab] = useState('current'); // 'current' or 'next'
+  const [allowNextWeekMenu, setAllowNextWeekMenu] = useState(true);
+  const [isSavingOrderSettings, setIsSavingOrderSettings] = useState(false);
+  const [orderSettingsMessage, setOrderSettingsMessage] = useState('');
   
   // Scheduling state
   const [selectedRestaurantId, setSelectedRestaurantId] = useState('');
@@ -147,6 +150,7 @@ export default function AdminDashboard() {
             fetchMembers();
             fetchSchedules();
             fetchAnnouncement();
+            fetchOrderSettings();
           }
         }
       })
@@ -189,6 +193,17 @@ export default function AdminDashboard() {
         }
       })
       .catch(err => console.error('無法載入排程:', err));
+  };
+
+  const fetchOrderSettings = () => {
+    fetch('/api/order-settings')
+      .then(res => res.json())
+      .then(data => {
+        if (typeof data.allowNextWeekMenu === 'boolean') {
+          setAllowNextWeekMenu(data.allowNextWeekMenu);
+        }
+      })
+      .catch(err => console.error('Failed to load order settings:', err));
   };
 
   const fetchAnnouncement = () => {
@@ -250,6 +265,33 @@ export default function AdminDashboard() {
   const handleWeekTabChange = (weekTab) => {
     setActiveWeekTab(weekTab);
     setSelectedDate(getDefaultDateForWeek(weekTab));
+  };
+
+  const handleToggleNextWeekMenu = async () => {
+    const nextValue = !allowNextWeekMenu;
+    setIsSavingOrderSettings(true);
+    setOrderSettingsMessage('');
+
+    try {
+      const res = await fetch('/api/order-settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ allowNextWeekMenu: nextValue })
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || '設定儲存失敗');
+      }
+
+      setAllowNextWeekMenu(data.allowNextWeekMenu);
+      setOrderSettingsMessage('訂購者下週菜單查閱設定已更新。');
+      setTimeout(() => setOrderSettingsMessage(''), 3000);
+    } catch (err) {
+      setOrderSettingsMessage(err.message);
+    } finally {
+      setIsSavingOrderSettings(false);
+    }
   };
 
   // Update schedule selection inputs
@@ -827,6 +869,30 @@ export default function AdminDashboard() {
                   {message.text}
                 </div>
               )}
+
+              <div className="space-y-2 border-b border-[#EAE8E4] pb-4">
+                <button
+                  type="button"
+                  onClick={handleToggleNextWeekMenu}
+                  disabled={isSavingOrderSettings}
+                  className={`w-full flex items-center justify-between px-3 py-3 rounded-lg border text-xs font-bold transition-all disabled:opacity-60 disabled:cursor-not-allowed ${
+                    allowNextWeekMenu
+                      ? 'border-[#EA5B3C] bg-[#FFF3EF] text-[#EA5B3C]'
+                      : 'border-[#EAE8E4] bg-white text-[#333333] hover:border-[#D6D1CA]'
+                  }`}
+                >
+                  <span className="flex items-center gap-2">
+                    <i className={allowNextWeekMenu ? 'ti ti-toggle-right text-lg' : 'ti ti-toggle-left text-lg'}></i>
+                    訂購者下週菜單查閱
+                  </span>
+                  <span className="text-[10px] text-[#888888]">
+                    {allowNextWeekMenu ? '已開放' : '已關閉'}
+                  </span>
+                </button>
+                {orderSettingsMessage && (
+                  <p className="text-[11px] font-bold text-[#888888]">{orderSettingsMessage}</p>
+                )}
+              </div>
 
               <div className="space-y-4">
                 <div className="space-y-1.5">

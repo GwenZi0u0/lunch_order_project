@@ -98,6 +98,17 @@ export default function WalletsManagementPage() {
     return () => clearTimeout(timer);
   }, [statusMsg.text]);
 
+  useEffect(() => {
+    if (!selectedUser) return;
+
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    return () => {
+      document.body.style.overflow = originalOverflow;
+    };
+  }, [selectedUser]);
+
   const fetchUsers = () => {
     fetch('/api/wallets?action=list_users')
       .then(res => res.json())
@@ -195,6 +206,15 @@ export default function WalletsManagementPage() {
     }
   };
 
+  const closeWalletAction = () => {
+    setSelectedUser(null);
+    setWalletMode('topup');
+    setAdjustmentDirection('increase');
+    setTransactionSource(DEFAULT_TOPUP_SOURCE);
+    setTransactionNote('');
+    setCustomAmount('');
+  };
+
   const handleDepositSubmit = async (e) => {
     e.preventDefault();
     if (!selectedUser) return;
@@ -241,13 +261,7 @@ export default function WalletsManagementPage() {
       fetchUsers();
       fetchTransactions();
       
-      // Close modal/form
-      setSelectedUser(null);
-      setWalletMode('topup');
-      setAdjustmentDirection('increase');
-      setTransactionSource(DEFAULT_TOPUP_SOURCE);
-      setTransactionNote('');
-      setCustomAmount('');
+      closeWalletAction();
     } catch (err) {
       alert(err.message);
     } finally {
@@ -270,6 +284,144 @@ export default function WalletsManagementPage() {
     setTransactionSource(mode === 'topup' ? DEFAULT_TOPUP_SOURCE : DEFAULT_ADJUSTMENT_SOURCE);
     setTransactionNote('');
     setStatusMsg({ text: '', type: '' });
+  };
+
+  const renderWalletActionForm = (containerClassName = '') => {
+    if (!selectedUser) return null;
+
+    return (
+      <div className={`bg-white border border-[#EAE8E4] rounded-xl shadow-sm overflow-hidden ${containerClassName}`}>
+        <div className="sticky top-0 z-10 flex justify-between items-center border-b border-[#EAE8E4] bg-white px-6 py-4">
+          <h3 className="font-bold text-base text-[#333333] flex items-center gap-1.5">
+            <i className={`${walletMode === 'topup' ? 'ti ti-piggy-bank' : 'ti ti-adjustments-dollar'} text-[#EA5B3C]`}></i>
+            {walletMode === 'topup' ? '儲值' : '異動'}
+          </h3>
+          <button
+            type="button"
+            onClick={closeWalletAction}
+            className="text-[#888888] hover:text-[#EA5B3C] text-sm"
+          >
+            取消
+          </button>
+        </div>
+
+        <div className="space-y-4 p-6">
+          <div className="bg-[#F9F8F5] p-4 rounded-xl border border-[#EAE8E4] space-y-1">
+            <div className="text-[11px] text-[#888888] font-bold">儲值對象</div>
+            <div className="font-bold text-sm text-[#333333]">{selectedUser.name}</div>
+            <div className="text-xs text-[#888888] truncate">{selectedUser.email}</div>
+            <div className="text-xs font-bold text-[#333333] mt-2 pt-2 border-t border-[#EAE8E4]">
+              當前餘額: <span className={selectedUser.balance >= 0 ? 'text-green-600' : 'text-red-600'}>
+                NT$ {selectedUser.balance}
+              </span>
+            </div>
+          </div>
+
+          <form onSubmit={handleDepositSubmit} className="space-y-4">
+            {walletMode === 'adjustment' && (
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-[#888888]">異動方向</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { value: 'increase', label: '調增金額', icon: 'ti ti-plus' },
+                    { value: 'decrease', label: '調減金額', icon: 'ti ti-minus' },
+                  ].map(option => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => setAdjustmentDirection(option.value)}
+                      className={`py-2 rounded-lg text-xs font-bold border transition-all flex items-center justify-center gap-1 ${
+                        adjustmentDirection === option.value
+                          ? 'border-[#EA5B3C] bg-orange-[0.005] text-[#EA5B3C]'
+                          : 'border-[#EAE8E4] bg-white text-[#333333] hover:border-[#D6D1CA]'
+                      }`}
+                    >
+                      <i className={option.icon}></i>{option.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-[#888888]">
+                {walletMode === 'topup' ? '選擇儲值金額' : '選擇異動金額'}
+              </label>
+              <div className="grid grid-cols-3 gap-2">
+                {[100, 500, 1000].map(amt => (
+                  <button
+                    key={amt}
+                    type="button"
+                    onClick={() => {
+                      setDepositAmount(amt);
+                      setCustomAmount('');
+                    }}
+                    className={`py-2 rounded-lg text-xs font-bold border transition-all ${
+                      depositAmount === amt && !customAmount
+                        ? 'border-[#EA5B3C] bg-orange-[0.005] text-[#EA5B3C]'
+                        : 'border-[#EAE8E4] bg-white text-[#333333] hover:border-[#D6D1CA]'
+                    }`}
+                  >
+                    NT$ {amt}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-[#888888]">或輸入自訂金額 (NT$)</label>
+              <input
+                type="number"
+                placeholder="例如: 250"
+                value={customAmount}
+                onChange={(e) => {
+                  setCustomAmount(e.target.value);
+                  setDepositAmount(0);
+                }}
+                className="w-full text-xs px-3 py-2 border border-[#EAE8E4] rounded-lg focus:outline-none focus:border-[#EA5B3C] bg-white font-bold"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-[#888888]">來源</label>
+              <select
+                value={transactionSource}
+                onChange={(e) => setTransactionSource(e.target.value)}
+                className="w-full text-xs px-3 py-2 border border-[#EAE8E4] rounded-lg focus:outline-none focus:border-[#EA5B3C] bg-white font-bold"
+              >
+                {WALLET_TRANSACTION_SOURCES.map(source => (
+                  <option key={source} value={source}>{source}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-[#888888]">備註</label>
+              <textarea
+                value={transactionNote}
+                onChange={(e) => setTransactionNote(e.target.value)}
+                maxLength={200}
+                rows={3}
+                placeholder="例：補登上週餐費、現金已收"
+                className="w-full text-xs px-3 py-2 border border-[#EAE8E4] rounded-lg focus:outline-none focus:border-[#EA5B3C] bg-white font-bold resize-none"
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={isSubmittingDeposit}
+              className="w-full py-3 text-xs font-bold bg-[#EA5B3C] text-white rounded-xl shadow-sm hover:bg-[#333333] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isSubmittingDeposit
+                ? '處理中...'
+                : walletMode === 'topup'
+                  ? `確認加值 NT$ ${customAmount || depositAmount}`
+                  : `確認${adjustmentDirection === 'increase' ? '調增' : '調減'} NT$ ${customAmount || depositAmount}`}
+            </button>
+          </form>
+        </div>
+      </div>
+    );
   };
 
   if (!user) {
@@ -298,7 +450,8 @@ export default function WalletsManagementPage() {
             onClick={() => router.push('/admin')}
             className="text-xs font-bold border border-[#EAE8E4] px-4 py-2 bg-white rounded-lg hover:border-[#EA5B3C] hover:text-[#EA5B3C] transition-all"
           >
-            返回排程總覽
+            <span className="sm:hidden">返回排程</span>
+            <span className="hidden sm:inline">返回排程總覽</span>
           </button>
         </div>
 
@@ -458,148 +611,10 @@ export default function WalletsManagementPage() {
             </div>
           </div>
 
-          {/* Deposit Action Form (Col-span 1) */}
-          <div className="space-y-6">
+          {/* Deposit Action Form (desktop side panel) */}
+          <div className="hidden lg:block space-y-6">
             {selectedUser ? (
-              <div className="bg-white border border-[#EAE8E4] rounded-xl shadow-sm p-6 space-y-6 sticky top-24">
-                <div className="flex justify-between items-center border-b border-[#EAE8E4] pb-3">
-                  <h3 className="font-bold text-base text-[#333333] flex items-center gap-1.5">
-                    <i className={`${walletMode === 'topup' ? 'ti ti-piggy-bank' : 'ti ti-adjustments-dollar'} text-[#EA5B3C]`}></i>
-                    {walletMode === 'topup' ? '儲值' : '異動'}
-                  </h3>
-                  <button 
-                    onClick={() => {
-                      setSelectedUser(null);
-                      setWalletMode('topup');
-                      setAdjustmentDirection('increase');
-                      setTransactionSource(DEFAULT_TOPUP_SOURCE);
-                      setTransactionNote('');
-                      setCustomAmount('');
-                    }}
-                    className="text-[#888888] hover:text-[#EA5B3C] text-sm"
-                  >
-                    取消
-                  </button>
-                </div>
-
-                <div className="space-y-4">
-                  <div className="bg-[#F9F8F5] p-4 rounded-xl border border-[#EAE8E4] space-y-1">
-                    <div className="text-[11px] text-[#888888] font-bold">儲值對象</div>
-                    <div className="font-bold text-sm text-[#333333]">{selectedUser.name}</div>
-                    <div className="text-xs text-[#888888] truncate">{selectedUser.email}</div>
-                    <div className="text-xs font-bold text-[#333333] mt-2 pt-2 border-t border-[#EAE8E4]">
-                      當前餘額: <span className={selectedUser.balance >= 0 ? 'text-green-600' : 'text-red-600'}>
-                        NT$ {selectedUser.balance}
-                      </span>
-                    </div>
-                  </div>
-
-                  <form onSubmit={handleDepositSubmit} className="space-y-4">
-                    {walletMode === 'adjustment' && (
-                      <div className="space-y-1.5">
-                        <label className="text-xs font-bold text-[#888888]">異動方向</label>
-                        <div className="grid grid-cols-2 gap-2">
-                          {[
-                            { value: 'increase', label: '調增金額', icon: 'ti ti-plus' },
-                            { value: 'decrease', label: '調減金額', icon: 'ti ti-minus' },
-                          ].map(option => (
-                            <button
-                              key={option.value}
-                              type="button"
-                              onClick={() => setAdjustmentDirection(option.value)}
-                              className={`py-2 rounded-lg text-xs font-bold border transition-all flex items-center justify-center gap-1 ${
-                                adjustmentDirection === option.value
-                                  ? 'border-[#EA5B3C] bg-orange-[0.005] text-[#EA5B3C]'
-                                  : 'border-[#EAE8E4] bg-white text-[#333333] hover:border-[#D6D1CA]'
-                              }`}
-                            >
-                              <i className={option.icon}></i>{option.label}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Preset Amounts */}
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-[#888888]">
-                        {walletMode === 'topup' ? '選擇儲值金額' : '選擇異動金額'}
-                      </label>
-                      <div className="grid grid-cols-3 gap-2">
-                        {[100, 500, 1000].map(amt => (
-                          <button
-                            key={amt}
-                            type="button"
-                            onClick={() => {
-                              setDepositAmount(amt);
-                              setCustomAmount('');
-                            }}
-                            className={`py-2 rounded-lg text-xs font-bold border transition-all ${
-                              depositAmount === amt && !customAmount
-                                ? 'border-[#EA5B3C] bg-orange-[0.005] text-[#EA5B3C]'
-                                : 'border-[#EAE8E4] bg-white text-[#333333] hover:border-[#D6D1CA]'
-                            }`}
-                          >
-                            NT$ {amt}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Custom Amount */}
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-[#888888]">或輸入自訂金額 (NT$)</label>
-                      <input
-                        type="number"
-                        placeholder="例如: 250"
-                        value={customAmount}
-                        onChange={(e) => {
-                          setCustomAmount(e.target.value);
-                          setDepositAmount(0);
-                        }}
-                        className="w-full text-xs px-3 py-2 border border-[#EAE8E4] rounded-lg focus:outline-none focus:border-[#EA5B3C] bg-white font-bold"
-                      />
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-[#888888]">來源</label>
-                      <select
-                        value={transactionSource}
-                        onChange={(e) => setTransactionSource(e.target.value)}
-                        className="w-full text-xs px-3 py-2 border border-[#EAE8E4] rounded-lg focus:outline-none focus:border-[#EA5B3C] bg-white font-bold"
-                      >
-                        {WALLET_TRANSACTION_SOURCES.map(source => (
-                          <option key={source} value={source}>{source}</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-bold text-[#888888]">備註</label>
-                      <textarea
-                        value={transactionNote}
-                        onChange={(e) => setTransactionNote(e.target.value)}
-                        maxLength={200}
-                        rows={3}
-                        placeholder="例：補登上週餐費、現金已收"
-                        className="w-full text-xs px-3 py-2 border border-[#EAE8E4] rounded-lg focus:outline-none focus:border-[#EA5B3C] bg-white font-bold resize-none"
-                      />
-                    </div>
-
-                    <button
-                      type="submit"
-                      disabled={isSubmittingDeposit}
-                      className="w-full py-3 text-xs font-bold bg-[#EA5B3C] text-white rounded-xl shadow-sm hover:bg-[#333333] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {isSubmittingDeposit
-                        ? '處理中...'
-                        : walletMode === 'topup'
-                          ? `確認加值 NT$ ${customAmount || depositAmount}`
-                          : `確認${adjustmentDirection === 'increase' ? '調增' : '調減'} NT$ ${customAmount || depositAmount}`}
-                    </button>
-                  </form>
-                </div>
-              </div>
+              renderWalletActionForm('sticky top-24')
             ) : (
               <div className="bg-[#F9F8F5] border border-dashed border-[#D6D1CA] rounded-xl p-8 text-center text-xs text-[#888888] space-y-2 sticky top-24">
                 <i className="ti ti-pointer-hand text-3xl text-[#888888]"></i>
@@ -609,6 +624,14 @@ export default function WalletsManagementPage() {
           </div>
 
         </section>
+
+        {selectedUser && (
+          <div className="lg:hidden fixed -top-8 -bottom-8 left-0 right-0 z-[100] flex w-screen items-end justify-center bg-black/40 px-3 py-4">
+            <div className="w-full max-h-[88vh] overflow-y-auto rounded-xl shadow-2xl no-scrollbar">
+              {renderWalletActionForm('')}
+            </div>
+          </div>
+        )}
 
         {/* Global Transaction Audit Ledger (Full width) */}
         <section className="c-box space-y-6">

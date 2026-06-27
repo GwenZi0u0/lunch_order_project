@@ -73,6 +73,9 @@ export default function PortalPage() {
   const [orderQuantities, setOrderQuantities] = useState({}); // { menuItemId: quantity }
   const [itemNotes, setItemNotes] = useState({}); // { menuItemId: note }
   const [orderNote, setOrderNote] = useState('');
+  const [seatArea, setSeatArea] = useState('');
+  const [useSavedOrderNote, setUseSavedOrderNote] = useState(false);
+  const [saveOrderPreference, setSaveOrderPreference] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [orderError, setOrderError] = useState('');
   const [orderSuccess, setOrderSuccess] = useState('');
@@ -181,11 +184,20 @@ export default function PortalPage() {
       setSelectedDate(getDefaultDateForWeek('current'));
     }
   }, [allowNextWeekMenu, activeWeekTab]);
+
+  useEffect(() => {
+    if (!useSavedOrderNote || !user) return;
+    setOrderNote(user.defaultOrderNote || '');
+    setSeatArea(user.defaultSeatArea || '');
+  }, [useSavedOrderNote, user]);
   
   // Setup order input when selected schedule changes
   useEffect(() => {
     if (activeSchedule) {
       setOrderNote(activeSchedule.userOrder?.note || '');
+      setSeatArea(activeSchedule.userOrder?.seatArea || '');
+      setUseSavedOrderNote(false);
+      setSaveOrderPreference(false);
       const quantities = {};
       const notes = {};
       if (activeSchedule.userOrder) {
@@ -200,6 +212,9 @@ export default function PortalPage() {
       setOrderQuantities({});
       setItemNotes({});
       setOrderNote('');
+      setSeatArea('');
+      setUseSavedOrderNote(false);
+      setSaveOrderPreference(false);
     }
     setOrderError('');
     setOrderSuccess('');
@@ -262,7 +277,9 @@ export default function PortalPage() {
         body: JSON.stringify({
           scheduleId: activeSchedule.id,
           items,
-          note: orderNote
+          note: orderNote,
+          seatArea,
+          saveOrderPreference
         })
       });
 
@@ -304,6 +321,9 @@ export default function PortalPage() {
       setOrderQuantities({});
       setItemNotes({});
       setOrderNote('');
+      setSeatArea('');
+      setUseSavedOrderNote(false);
+      setSaveOrderPreference(false);
       fetchSchedules();
       refreshUser();
     } catch (err) {
@@ -414,6 +434,11 @@ export default function PortalPage() {
                   {todayOrder.note && (
                     <p className="border-t border-[#EAE8E4] bg-white px-4 py-3 text-xs leading-5 text-[#888888]">
                       備註：{todayOrder.note}
+                    </p>
+                  )}
+                  {todayOrder.seatArea && (
+                    <p className="border-t border-[#EAE8E4] bg-white px-4 py-3 text-xs leading-5 text-[#888888]">
+                      座位區：{todayOrder.seatArea}區
                     </p>
                   )}
                 </div>
@@ -739,6 +764,18 @@ export default function PortalPage() {
                           <span className="text-[#888888]">訂單狀態:</span>
                           <span className="font-bold text-green-600">已成立 ({activeSchedule.userOrder.status})</span>
                         </div>
+                        {activeSchedule.userOrder.seatArea && (
+                          <div className="flex justify-between">
+                            <span className="text-[#888888]">座位區</span>
+                            <span className="font-bold text-[#333333]">{activeSchedule.userOrder.seatArea}區</span>
+                          </div>
+                        )}
+                        {activeSchedule.userOrder.note && (
+                          <div className="flex justify-between gap-3">
+                            <span className="text-[#888888] shrink-0">整筆備註</span>
+                            <span className="font-bold text-[#333333] text-right">{activeSchedule.userOrder.note}</span>
+                          </div>
+                        )}
                         {activeSchedule.userOrder.chargedAt && (
                           <div className="flex justify-between">
                             <span className="text-[#888888]">扣款時間:</span>
@@ -749,6 +786,62 @@ export default function PortalPage() {
                         )}
                       </div>
                     )}
+
+                    <div className="space-y-3 rounded-xl border border-[#EAE8E4] bg-[#F9F8F5] p-3">
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-[#888888]">座位區</label>
+                        <div className="grid grid-cols-2 gap-2">
+                          {['A', 'B'].map(area => (
+                            <button
+                              key={area}
+                              type="button"
+                              disabled={isClosed() || isSubmitting}
+                              onClick={() => setSeatArea(prev => prev === area ? '' : area)}
+                              className={`rounded-lg border px-3 py-2 text-xs font-bold transition-all disabled:cursor-not-allowed disabled:opacity-50 ${
+                                seatArea === area
+                                  ? 'border-[#EA5B3C] bg-[#FFF3EF] text-[#EA5B3C]'
+                                  : 'border-[#EAE8E4] bg-white text-[#888888] hover:border-[#EA5B3C] hover:text-[#EA5B3C]'
+                              }`}
+                            >
+                              {area}區
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-[#888888]">整筆訂單備註</label>
+                        <input
+                          type="text"
+                          disabled={isClosed() || isSubmitting}
+                          value={orderNote}
+                          onChange={(e) => setOrderNote(e.target.value)}
+                          placeholder="例如靠窗、外帶、一起送"
+                          className="w-full rounded-lg border border-[#EAE8E4] bg-white px-3 py-2 text-xs font-medium text-[#333333] placeholder:text-[#B8B2AA] focus:border-[#EA5B3C] focus:outline-none disabled:bg-[#F2EFEA]"
+                        />
+                      </div>
+
+                      <label className="flex items-center gap-2 text-[11px] font-bold text-[#555555]">
+                        <input
+                          type="checkbox"
+                          checked={useSavedOrderNote}
+                          onChange={(e) => setUseSavedOrderNote(e.target.checked)}
+                          className="h-4 w-4 accent-[#EA5B3C]"
+                        />
+                        常用備註
+                      </label>
+
+                      <label className="flex items-center gap-2 text-[11px] font-bold text-[#555555]">
+                        <input
+                          type="checkbox"
+                          checked={saveOrderPreference}
+                          onChange={(e) => setSaveOrderPreference(e.target.checked)}
+                          disabled={isClosed() || isSubmitting}
+                          className="h-4 w-4 accent-[#EA5B3C] disabled:opacity-50"
+                        />
+                        儲存備註設定
+                      </label>
+                    </div>
 
                     {/* Total & Action Buttons */}
                     <div className="flex justify-between items-center font-bold text-[#333333] text-sm pt-2">

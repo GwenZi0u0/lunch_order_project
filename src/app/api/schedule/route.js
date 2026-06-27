@@ -100,6 +100,7 @@ export async function GET(request) {
           orderNumberDisplay: formatOrderNumberDisplay(userOrder.orderNumber),
           totalAmount: userOrder.totalAmount,
           note: userOrder.note,
+          seatArea: userOrder.seatArea,
           status: userOrder.status,
           chargedAt: userOrder.chargedAt,
           items: userOrder.orderItems.map(oi => ({
@@ -124,6 +125,7 @@ export async function GET(request) {
             user: order.user,
             totalAmount: order.totalAmount,
             note: order.note,
+            seatArea: order.seatArea,
             status: order.status,
             chargedAt: order.chargedAt,
             orderItems: order.orderItems

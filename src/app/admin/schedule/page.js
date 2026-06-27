@@ -602,7 +602,7 @@ export default function AdminDashboard() {
     orders.forEach(order => {
       if (order.status === 'cancelled') return;
       order.orderItems.forEach(oi => {
-        const note = options.includeNotes ? ((oi.note || order.note || '').trim()) : '';
+        const note = options.includeNotes ? (oi.note || '').trim() : '';
         const menuItemId = oi.menuItemId;
         const name = oi.menuItem?.name || '????';
         const qty = oi.quantity;
@@ -657,6 +657,7 @@ export default function AdminDashboard() {
         order.user?.email || '',
         String(order.totalAmount || ''),
         order.note || '',
+        order.seatArea || '',
         order.status || '',
         statusText,
         ...(order.orderItems || []).flatMap(oi => [
@@ -672,7 +673,7 @@ export default function AdminDashboard() {
     : activeOrders;
   const orderCopyGroups = activeOrders.reduce((groups, order) => {
     (order.orderItems || []).forEach(oi => {
-      const note = (oi.note || order.note || '').trim();
+      const note = (oi.note || '').trim();
       const name = oi.menuItem?.name || '';
       if (!name) return;
 
@@ -701,8 +702,17 @@ export default function AdminDashboard() {
   const copyAlaCarteCount = orderCopyItems
     .filter(item => item.isAlaCarte)
     .reduce((sum, item) => sum + item.qty, 0);
+  const orderCopyOrderNotes = activeOrders
+    .map(order => {
+      const parts = [];
+      if (order.seatArea) parts.push(`${order.seatArea}區`);
+      if (order.note) parts.push(order.note);
+      return parts.join(' ');
+    })
+    .filter(Boolean);
   const orderCopyText = [
     ...orderCopyItems.map(item => `${item.name}${item.note ? ` ${item.note}` : ''} *${item.qty}`),
+    ...(orderCopyOrderNotes.length ? ['', '訂單備註：', ...orderCopyOrderNotes] : []),
     '',
     `共計${copyMealCount}份餐，${copyAlaCarteCount}份單點`,
     `總金額$${totalOrderAmount}`
@@ -1352,9 +1362,9 @@ export default function AdminDashboard() {
                                     {order.orderItems.map(oi => (
                                       <div key={oi.id} className="font-medium">
                                         {oi.menuItem.name} <span className="text-[#888888]">x {oi.quantity}</span>
-                                        {(oi.note || order.note) && (
+                                        {oi.note && (
                                           <span className="block text-[11px] font-bold text-[#EA5B3C]">
-                                            備註: {oi.note || order.note}
+                                            備註: {oi.note}
                                           </span>
                                         )}
                                       </div>
@@ -1364,7 +1374,12 @@ export default function AdminDashboard() {
                                     NT$ {order.totalAmount}
                                   </td>
                                   <td className="p-3 text-[#888888] italic">
-                                    {order.note ? order.note : '-'}
+                                    {order.seatArea || order.note ? (
+                                      <div className="space-y-1">
+                                        {order.seatArea && <div>座位區：{order.seatArea}區</div>}
+                                        {order.note && <div>{order.note}</div>}
+                                      </div>
+                                    ) : '-'}
                                   </td>
                                   <td className="p-3">
                                     <span className={`inline-block px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${

@@ -146,7 +146,7 @@ export async function POST(request) {
     }
 
     const body = await request.json();
-    const { scheduleId, items, note, targetUserId } = body; // items: [{ menuItemId, quantity }]
+    const { scheduleId, items, note, targetUserId } = body; // items: [{ menuItemId, quantity, note }]
     const isAdminOverride = user.role === 'admin' && targetUserId;
     const orderUserId = isAdminOverride ? targetUserId : user.userId;
 
@@ -210,7 +210,8 @@ export async function POST(request) {
       return {
         menuItemId: item.menuItemId,
         quantity,
-        unitPrice: price // Snapshot price
+        unitPrice: price, // Snapshot price
+        note: typeof item.note === 'string' ? item.note.trim() : null
       };
     });
 

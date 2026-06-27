@@ -71,6 +71,7 @@ export default function PortalPage() {
   
   // Order state
   const [orderQuantities, setOrderQuantities] = useState({}); // { menuItemId: quantity }
+  const [itemNotes, setItemNotes] = useState({}); // { menuItemId: note }
   const [orderNote, setOrderNote] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [orderError, setOrderError] = useState('');
@@ -186,14 +187,18 @@ export default function PortalPage() {
     if (activeSchedule) {
       setOrderNote(activeSchedule.userOrder?.note || '');
       const quantities = {};
+      const notes = {};
       if (activeSchedule.userOrder) {
         activeSchedule.userOrder.items.forEach(item => {
           quantities[item.menuItemId] = item.quantity;
+          notes[item.menuItemId] = item.note || '';
         });
       }
       setOrderQuantities(quantities);
+      setItemNotes(notes);
     } else {
       setOrderQuantities({});
+      setItemNotes({});
       setOrderNote('');
     }
     setOrderError('');
@@ -237,7 +242,8 @@ export default function PortalPage() {
       .filter(([_, qty]) => qty > 0)
       .map(([menuItemId, qty]) => ({
         menuItemId,
-        quantity: qty
+        quantity: qty,
+        note: itemNotes[menuItemId] || ''
       }));
 
     if (items.length === 0) {
@@ -296,6 +302,7 @@ export default function PortalPage() {
 
       setOrderSuccess('訂單已取消！');
       setOrderQuantities({});
+      setItemNotes({});
       setOrderNote('');
       fetchSchedules();
       refreshUser();
@@ -385,7 +392,14 @@ export default function PortalPage() {
                   <div className="max-h-[180px] overflow-y-auto bg-white px-4 py-3 kaizen-scrollbar">
                     {todayOrder.items.map(item => (
                       <div key={item.id} className="grid grid-cols-[1fr_auto_auto] items-center gap-3 border-b border-[#EAE8E4] py-2 text-xs last:border-b-0">
-                        <span className="font-bold text-[#333333] truncate">{item.name}</span>
+                        <span className="font-bold text-[#333333] truncate">
+                          {item.name}
+                          {item.note && (
+                            <span className="block truncate text-[11px] font-bold text-[#EA5B3C]">
+                              備註: {item.note}
+                            </span>
+                          )}
+                        </span>
                         <span className="rounded-full bg-[#F9F8F5] px-2 py-0.5 font-bold text-[#888888] shrink-0">x {item.quantity}</span>
                         <span className="font-bold text-[#EA5B3C] shrink-0">NT$ {item.unitPrice * item.quantity}</span>
                       </div>
@@ -673,10 +687,20 @@ export default function PortalPage() {
                       const qty = orderQuantities[item.id] || 0;
                       if (qty === 0) return null;
                       return (
-                        <div key={item.id} className="flex justify-between items-center text-xs">
-                          <span className="text-[#333333] font-bold truncate max-w-[150px]">{item.name}</span>
-                          <span className="text-[#888888]">x {qty}</span>
-                          <span className="text-[#333333] font-bold">NT$ {item.price * qty}</span>
+                        <div key={item.id} className="space-y-2 rounded-lg border border-[#EAE8E4] bg-[#F9F8F5] p-3 text-xs">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[#333333] font-bold truncate">{item.name}</span>
+                            <span className="text-[#888888] shrink-0">x {qty}</span>
+                            <span className="text-[#333333] font-bold shrink-0">NT$ {item.price * qty}</span>
+                          </div>
+                          <input
+                            type="text"
+                            disabled={isClosed() || isSubmitting}
+                            value={itemNotes[item.id] || ''}
+                            onChange={(e) => setItemNotes(prev => ({ ...prev, [item.id]: e.target.value }))}
+                            placeholder="此餐點備註，例如飯少、換菜"
+                            className="w-full rounded-lg border border-[#EAE8E4] bg-white px-3 py-2 text-xs font-medium text-[#333333] placeholder:text-[#B8B2AA] focus:border-[#EA5B3C] focus:outline-none disabled:bg-[#F2EFEA]"
+                          />
                         </div>
                       );
                     })}
@@ -690,7 +714,7 @@ export default function PortalPage() {
 
                   <div className="border-t border-[#EAE8E4] pt-4 space-y-3">
                     {/* Custom Note input */}
-                    <div className="space-y-1.5">
+                    <div className="hidden">
                       <label className="text-xs font-bold text-[#888888]">餐點備註說明 (如: 不辣、不要蔥)</label>
                       <input
                         type="text"

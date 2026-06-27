@@ -9,6 +9,10 @@ const DEFAULT_TOPUP_SOURCE = '現金';
 const DEFAULT_ADJUSTMENT_SOURCE = '-';
 const WEEKDAY_LABELS = ['日', '一', '二', '三', '四', '五', '六'];
 
+function getDisplayName(name = '') {
+  return name.replace(/(\s*[\(（][^\)）]*[\)）]\s*)+$/g, '').trim();
+}
+
 function toDateKey(date) {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -308,7 +312,7 @@ export default function WalletsManagementPage() {
         <div className="space-y-4 p-6">
           <div className="bg-[#F9F8F5] p-4 rounded-xl border border-[#EAE8E4] space-y-1">
             <div className="text-[11px] text-[#888888] font-bold">儲值對象</div>
-            <div className="font-bold text-sm text-[#333333]">{selectedUser.name}</div>
+            <div className="font-bold text-sm text-[#333333]">{getDisplayName(selectedUser.name)}</div>
             <div className="text-xs text-[#888888] truncate">{selectedUser.email}</div>
             <div className="text-xs font-bold text-[#333333] mt-2 pt-2 border-t border-[#EAE8E4]">
               當前餘額: <span className={selectedUser.balance >= 0 ? 'text-green-600' : 'text-red-600'}>
@@ -504,6 +508,7 @@ export default function WalletsManagementPage() {
                       </tr>
                     ) : (
                       filteredUsers.map(u => {
+                        const displayName = getDisplayName(u.name);
                         const balance = u.balance;
                         let balanceColor = 'text-[#333333] font-bold';
                         let warningBadge = null;
@@ -537,7 +542,7 @@ export default function WalletsManagementPage() {
                                   }}
                                   className="font-bold text-[#333333] hover:text-[#EA5B3C] focus:outline-none focus:text-[#EA5B3C]"
                                 >
-                                  {u.name}
+                                  {displayName}
                                 </button>
                                 <span
                                   className={`pointer-events-none absolute left-0 top-full z-[999] mt-2 whitespace-nowrap rounded-lg border border-[#EAE8E4] bg-white px-2.5 py-1.5 text-[10px] font-bold text-[#555555] shadow-[0_8px_20px_rgba(0,0,0,0.08)] transition-opacity sm:left-full sm:top-1/2 sm:ml-2 sm:mt-0 sm:-translate-y-1/2 ${
@@ -582,7 +587,7 @@ export default function WalletsManagementPage() {
                                     openWalletAction(u, 'topup');
                                   }}
                                   title="儲值"
-                                  aria-label={`為 ${u.name} 儲值`}
+                                  aria-label={`為 ${displayName} 儲值`}
                                   className="h-8 w-8 sm:h-auto sm:w-auto text-[10px] font-bold border border-[#EAE8E4] px-0 sm:px-2.5 py-1 rounded bg-white hover:border-[#EA5B3C] hover:text-[#EA5B3C] transition-all inline-flex items-center justify-center"
                                 >
                                   <i className="ti ti-plus sm:mr-0.5"></i><span className="hidden sm:inline">儲值</span>
@@ -594,7 +599,7 @@ export default function WalletsManagementPage() {
                                     openWalletAction(u, 'adjustment');
                                   }}
                                   title="異動"
-                                  aria-label={`為 ${u.name} 異動`}
+                                  aria-label={`為 ${displayName} 異動`}
                                   className="h-8 w-8 sm:h-auto sm:w-auto text-[10px] font-bold border border-[#EAE8E4] px-0 sm:px-2.5 py-1 rounded bg-white hover:border-[#EA5B3C] hover:text-[#EA5B3C] transition-all inline-flex items-center justify-center"
                                 >
                                   <i className="ti ti-adjustments-dollar sm:mr-0.5"></i><span className="hidden sm:inline">異動</span>
@@ -658,7 +663,7 @@ export default function WalletsManagementPage() {
                   <option value="">全部成員</option>
                   {users.map(member => (
                     <option key={member.id} value={member.id}>
-                      {member.name} ({member.email})
+                      {getDisplayName(member.name)} ({member.email})
                     </option>
                   ))}
                 </select>
@@ -775,7 +780,7 @@ export default function WalletsManagementPage() {
                         </td>
                         <td className="py-3 font-bold">
                           <span className="relative inline-flex group">
-                            {tx.user?.name}
+                            {getDisplayName(tx.user?.name)}
                             <span className="pointer-events-none absolute left-full top-1/2 z-[999] ml-2 -translate-y-1/2 whitespace-nowrap rounded-lg border border-[#EAE8E4] bg-white px-2.5 py-1.5 text-[10px] font-bold text-[#555555] opacity-0 shadow-[0_8px_20px_rgba(0,0,0,0.08)] transition-opacity group-hover:opacity-100">
                               {tx.user?.email}
                             </span>
@@ -788,7 +793,7 @@ export default function WalletsManagementPage() {
                           {tx.source || (tx.type === 'charge' ? '訂單扣款' : '-')}
                         </td>
                         <td className="py-3 text-[#888888]">
-                          {tx.operator ? tx.operator.name : '系統自動'}
+                          {tx.operator ? getDisplayName(tx.operator.name) : '系統自動'}
                         </td>
                         <td className="py-3 max-w-[240px] text-[#555555]">
                           {tx.note || '-'}

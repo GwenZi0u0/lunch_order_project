@@ -391,9 +391,16 @@ export default function PortalPage() {
                 </div>
 
                 <div className="max-h-[180px] overflow-y-auto bg-white px-4 py-3 kaizen-scrollbar">
-                  {todayOrder.items.map(item => (
-                    <div key={item.id} className="grid grid-cols-[1fr_auto_auto] items-center gap-3 border-b border-[#EAE8E4] py-2 text-xs last:border-b-0">
-                      <span className="font-bold text-[#333333] truncate">{item.name}</span>
+                    {todayOrder.items.map(item => (
+                      <div key={item.id} className="grid grid-cols-[1fr_auto_auto] items-center gap-3 border-b border-[#EAE8E4] py-2 text-xs last:border-b-0">
+                      <span className="font-bold text-[#333333] truncate">
+                        {item.name}
+                        {item.note && (
+                          <span className="block truncate text-[11px] font-bold text-[#EA5B3C]">
+                            備註: {item.note}
+                          </span>
+                        )}
+                      </span>
                       <span className="rounded-full bg-[#F9F8F5] px-2 py-0.5 font-bold text-[#888888] shrink-0">x {item.quantity}</span>
                       <span className="font-bold text-[#EA5B3C] shrink-0">NT$ {item.unitPrice * item.quantity}</span>
                     </div>

@@ -113,6 +113,8 @@ export default function AdminDashboard() {
   const [isUpdatingSchedule, setIsUpdatingSchedule] = useState(false);
   const [orderEditor, setOrderEditor] = useState(null);
   const [isSavingOrder, setIsSavingOrder] = useState(false);
+  const [orderSearchTerm, setOrderSearchTerm] = useState('');
+  const [copyOrderMessage, setCopyOrderMessage] = useState('');
   
   // Billing action state
   const [isProcessingDelivery, setIsProcessingDelivery] = useState(false);
@@ -401,21 +403,25 @@ export default function AdminDashboard() {
       orderId: null,
       userId: '',
       note: '',
-      quantities: {}
+      quantities: {},
+      itemNotes: {}
     });
   };
 
   const startEditOrder = (order) => {
     const quantities = {};
+    const itemNotes = {};
     order.orderItems.forEach(item => {
       quantities[item.menuItemId] = item.quantity;
+      itemNotes[item.menuItemId] = item.note || '';
     });
 
     setOrderEditor({
       orderId: order.id,
       userId: order.userId,
       note: order.note || '',
-      quantities
+      quantities,
+      itemNotes
     });
   };
 
@@ -430,12 +436,26 @@ export default function AdminDashboard() {
     }));
   };
 
+  const updateOrderItemNote = (menuItemId, value) => {
+    setOrderEditor(prev => ({
+      ...prev,
+      itemNotes: {
+        ...(prev.itemNotes || {}),
+        [menuItemId]: value
+      }
+    }));
+  };
+
   const handleSaveAdminOrder = async () => {
     if (!activeSchedule || !orderEditor) return;
 
     const items = Object.entries(orderEditor.quantities)
       .filter(([, quantity]) => quantity > 0)
-      .map(([menuItemId, quantity]) => ({ menuItemId, quantity }));
+      .map(([menuItemId, quantity]) => ({
+        menuItemId,
+        quantity,
+        note: orderEditor.itemNotes?.[menuItemId] || orderEditor.note || ''
+      }));
 
     if (!orderEditor.userId) {
       setMessage({ text: '請選擇成員。', type: 'error' });
@@ -576,21 +596,23 @@ export default function AdminDashboard() {
     }
   };
 
-  const getOrderSummaryFromOrders = (orders = []) => {
+  const getOrderSummaryFromOrders = (orders = [], options = {}) => {
     const summary = {};
 
     orders.forEach(order => {
       if (order.status === 'cancelled') return;
       order.orderItems.forEach(oi => {
+        const note = options.includeNotes ? ((oi.note || order.note || '').trim()) : '';
         const menuItemId = oi.menuItemId;
         const name = oi.menuItem?.name || '????';
         const qty = oi.quantity;
         const price = oi.unitPrice;
+        const summaryKey = options.includeNotes ? `${menuItemId}__${note}` : menuItemId;
 
-        if (summary[menuItemId]) {
-          summary[menuItemId].qty += qty;
+        if (summary[summaryKey]) {
+          summary[summaryKey].qty += qty;
         } else {
-          summary[menuItemId] = { name, qty, price };
+          summary[summaryKey] = { name, note, qty, price };
         }
       });
     });
@@ -601,7 +623,7 @@ export default function AdminDashboard() {
   // Compile daily items ordered statistics
   const getOrderedItemsSummary = () => {
     if (!activeSchedule || !activeSchedule.orders) return [];
-    return getOrderSummaryFromOrders(activeSchedule.orders);
+    return getOrderSummaryFromOrders(activeSchedule.orders, { includeNotes: true });
   };
 
   const itemSummaries = getOrderedItemsSummary();
@@ -623,6 +645,101 @@ export default function AdminDashboard() {
     return summary;
   }, {});
   const todayItems = Object.values(todayItemSummary);
+  const activeOrders = activeSchedule?.orders?.filter(order => order.status !== 'cancelled') || [];
+  const normalizedOrderSearchTerm = orderSearchTerm.trim().toLowerCase();
+  const filteredActiveOrders = normalizedOrderSearchTerm
+    ? activeOrders.filter(order => {
+      const statusText = order.status === 'delivered' ? '\u5df2\u6263\u6b3e' : '\u5df2\u8a02\u8cfc';
+      const searchableText = [
+        order.orderNumber || '',
+        order.orderNumberDisplay || '',
+        order.user?.name || '',
+        order.user?.email || '',
+        String(order.totalAmount || ''),
+        order.note || '',
+        order.status || '',
+        statusText,
+        ...(order.orderItems || []).flatMap(oi => [
+          oi.menuItem?.name || '',
+          oi.note || '',
+          String(oi.quantity || ''),
+          `${oi.menuItem?.name || ''} x ${oi.quantity || ''}`
+        ])
+      ].join(' ').toLowerCase();
+
+      return searchableText.includes(normalizedOrderSearchTerm);
+    })
+    : activeOrders;
+  const orderCopyGroups = activeOrders.reduce((groups, order) => {
+    (order.orderItems || []).forEach(oi => {
+      const note = (oi.note || order.note || '').trim();
+      const name = oi.menuItem?.name || '';
+      if (!name) return;
+
+      const category = oi.menuItem?.category || '';
+      const isAlaCarte = category.includes('\u55ae\u9ede') || category.includes('\u52a0\u9ede');
+      const key = `${name}__${note}__${isAlaCarte ? 'alaCarte' : 'meal'}`;
+
+      if (!groups[key]) {
+        groups[key] = {
+          name,
+          note,
+          qty: 0,
+          isAlaCarte
+        };
+      }
+
+      groups[key].qty += oi.quantity;
+    });
+
+    return groups;
+  }, {});
+  const orderCopyItems = Object.values(orderCopyGroups).sort((a, b) => a.name.localeCompare(b.name, 'zh-Hant'));
+  const copyMealCount = orderCopyItems
+    .filter(item => !item.isAlaCarte)
+    .reduce((sum, item) => sum + item.qty, 0);
+  const copyAlaCarteCount = orderCopyItems
+    .filter(item => item.isAlaCarte)
+    .reduce((sum, item) => sum + item.qty, 0);
+  const orderCopyText = [
+    ...orderCopyItems.map(item => `${item.name}${item.note ? ` ${item.note}` : ''} *${item.qty}`),
+    '',
+    `共計${copyMealCount}份餐，${copyAlaCarteCount}份單點`,
+    `總金額$${totalOrderAmount}`
+  ].join('\n').trim();
+
+  const handleCopyOrderSummary = async () => {
+    if (!orderCopyItems.length) return;
+
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(orderCopyText);
+      } else {
+        throw new Error('Clipboard API unavailable');
+      }
+      setCopyOrderMessage('已複製訂單。');
+      setTimeout(() => setCopyOrderMessage(''), 3000);
+    } catch (err) {
+      const textarea = document.createElement('textarea');
+      textarea.value = orderCopyText;
+      textarea.setAttribute('readonly', '');
+      textarea.style.position = 'fixed';
+      textarea.style.left = '-9999px';
+      textarea.style.top = '0';
+      document.body.appendChild(textarea);
+      textarea.select();
+
+      try {
+        const copied = document.execCommand('copy');
+        setCopyOrderMessage(copied ? '已複製訂單。' : '複製失敗，請再試一次。');
+      } catch {
+        setCopyOrderMessage('複製失敗，請再試一次。');
+      } finally {
+        document.body.removeChild(textarea);
+        setTimeout(() => setCopyOrderMessage(''), 3000);
+      }
+    }
+  };
 
   if (!user) {
     return (
@@ -1042,12 +1159,26 @@ export default function AdminDashboard() {
                 <>
                   {/* Aggregated Menu Item Quantities - FOR RESTAURANT CALLS */}
                   <div className="space-y-4">
-                    <h4 className="font-bold text-sm text-[#333333] border-l-4 border-l-[#EA5B3C] pl-2.5 flex justify-between items-center">
-                      <span>便當品項總計 (方便撥打電話點餐)</span>
-                      <span className="text-xs font-bold text-[#888888]">
-                        總消費額: <span className="text-[#333333]">NT$ {totalOrderAmount}</span>
+                    <h4 className="font-bold text-sm text-[#333333] border-l-4 border-l-[#EA5B3C] pl-2.5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                      <span>餐點總計</span>
+                      <span className="flex flex-wrap items-center gap-2 text-xs font-bold text-[#888888]">
+                        <span>
+                          總消費額: <span className="text-[#333333]">NT$ {totalOrderAmount}</span>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={handleCopyOrderSummary}
+                          disabled={orderCopyItems.length === 0}
+                          className="inline-flex items-center justify-center gap-1 rounded-lg border border-[#EA5B3C] bg-[#FFF3EF] px-2.5 py-1.5 text-[11px] font-bold text-[#EA5B3C] transition-all hover:bg-[#FFE7DE] disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <i className="ti ti-copy text-sm"></i>
+                          複製訂單
+                        </button>
                       </span>
                     </h4>
+                    {copyOrderMessage && (
+                      <p className="text-[11px] font-bold text-[#888888]">{copyOrderMessage}</p>
+                    )}
 
                     {itemSummaries.length === 0 ? (
                       <div className="text-center py-8 text-xs text-[#888888]">
@@ -1056,10 +1187,15 @@ export default function AdminDashboard() {
                     ) : (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         {itemSummaries.map(item => (
-                          <div key={item.name} className="p-4 bg-[#F9F8F5] border border-[#EAE8E4] rounded-xl flex justify-between items-center">
+                          <div key={`${item.name}-${item.note || 'default'}`} className="p-4 bg-[#F9F8F5] border border-[#EAE8E4] rounded-xl flex justify-between items-center">
                             <div>
                               <span className="font-bold text-sm text-[#333333]">{item.name}</span>
                               <span className="text-xs text-[#888888] block mt-1">單價: NT$ {item.price}</span>
+                              {item.note && (
+                                <span className="mt-1 block text-xs font-bold text-[#EA5B3C]">
+                                  備註: {item.note}
+                                </span>
+                              )}
                             </div>
                             <div className="text-right">
                               <span className="text-lg font-bold text-[#EA5B3C]">{item.qty}</span>
@@ -1077,15 +1213,27 @@ export default function AdminDashboard() {
                       <h4 className="font-bold text-sm text-[#333333] border-l-4 border-l-[#EA5B3C] pl-2.5">
                         {'\u6210\u54e1\u8a02\u55ae\u660e\u7d30\u8207\u5099\u8a3b'}
                       </h4>
-                      <button
-                        type="button"
-                        onClick={startNewOrder}
-                        disabled={selectedDateIsHoliday || !activeSchedule.restaurant || Boolean(activeSchedule.deliveredAt)}
-                        className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-[#EA5B3C] bg-[#FFF3EF] text-[#EA5B3C] text-xs font-bold hover:bg-[#FFE7DE] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        <i className="ti ti-plus"></i>
-                        {'\u52a0\u55ae'}
-                      </button>
+                      <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+                        <label className="relative w-full sm:w-56">
+                          <i className="ti ti-search pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-[#888888]"></i>
+                          <input
+                            type="search"
+                            value={orderSearchTerm}
+                            onChange={(e) => setOrderSearchTerm(e.target.value)}
+                            placeholder={'\u641c\u5c0b\u59d3\u540d\u6216\u9910\u9ede'}
+                            className="w-full rounded-lg border border-[#EAE8E4] bg-white py-2 pl-8 pr-3 text-xs font-bold text-[#333333] placeholder:text-[#B8B2AA] focus:border-[#EA5B3C] focus:outline-none"
+                          />
+                        </label>
+                        <button
+                          type="button"
+                          onClick={startNewOrder}
+                          disabled={selectedDateIsHoliday || !activeSchedule.restaurant || Boolean(activeSchedule.deliveredAt)}
+                          className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-[#EA5B3C] bg-[#FFF3EF] text-[#EA5B3C] text-xs font-bold hover:bg-[#FFE7DE] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          <i className="ti ti-plus"></i>
+                          {'\u52a0\u55ae'}
+                        </button>
+                      </div>
                     </div>
 
                     {orderEditor && (
@@ -1119,17 +1267,26 @@ export default function AdminDashboard() {
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-72 overflow-y-auto pr-1 custom-scrollbar">
                           {activeMenuItems.map(item => (
-                            <div key={item.id} className="flex items-center justify-between gap-3 rounded-lg border border-[#EAE8E4] bg-white px-3 py-2">
-                              <div className="min-w-0">
-                                <div className="text-xs font-bold text-[#333333] truncate">{item.name}</div>
-                                <div className="text-[11px] text-[#888888]">NT$ {item.price}</div>
+                            <div key={item.id} className="space-y-2 rounded-lg border border-[#EAE8E4] bg-white px-3 py-2">
+                              <div className="flex items-center justify-between gap-3">
+                                <div className="min-w-0">
+                                  <div className="text-xs font-bold text-[#333333] truncate">{item.name}</div>
+                                  <div className="text-[11px] text-[#888888]">NT$ {item.price}</div>
+                                </div>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  value={orderEditor.quantities[item.id] || 0}
+                                  onChange={(e) => updateOrderItemQuantity(item.id, e.target.value)}
+                                  className="w-20 text-xs px-2 py-1.5 border border-[#EAE8E4] rounded-lg text-right focus:outline-none focus:border-[#EA5B3C]"
+                                />
                               </div>
                               <input
-                                type="number"
-                                min="0"
-                                value={orderEditor.quantities[item.id] || 0}
-                                onChange={(e) => updateOrderItemQuantity(item.id, e.target.value)}
-                                className="w-20 text-xs px-2 py-1.5 border border-[#EAE8E4] rounded-lg text-right focus:outline-none focus:border-[#EA5B3C]"
+                                type="text"
+                                value={orderEditor.itemNotes?.[item.id] || ''}
+                                onChange={(e) => updateOrderItemNote(item.id, e.target.value)}
+                                placeholder="此餐點備註"
+                                className="w-full text-xs px-3 py-2 border border-[#EAE8E4] rounded-lg focus:outline-none focus:border-[#EA5B3C]"
                               />
                             </div>
                           ))}
@@ -1160,9 +1317,13 @@ export default function AdminDashboard() {
                       </div>
                     )}
 
-                    {activeSchedule.orders && activeSchedule.orders.filter(o => o.status !== 'cancelled').length === 0 ? (
+                    {activeOrders.length === 0 ? (
                       <div className="text-center py-8 text-xs text-[#888888]">
                         {'\u76ee\u524d\u6c92\u6709\u6210\u54e1\u8a02\u55ae\u3002'}
+                      </div>
+                    ) : filteredActiveOrders.length === 0 ? (
+                      <div className="text-center py-8 text-xs text-[#888888]">
+                        {'\u627e\u4e0d\u5230\u7b26\u5408\u641c\u5c0b\u689d\u4ef6\u7684\u8a02\u55ae\u3002'}
                       </div>
                     ) : (
                       <div className="overflow-x-auto border border-[#EAE8E4] rounded-xl bg-white">
@@ -1179,9 +1340,7 @@ export default function AdminDashboard() {
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-[#EAE8E4] text-[#333333]">
-                            {activeSchedule.orders && activeSchedule.orders
-                              .filter(o => o.status !== 'cancelled')
-                              .map(order => (
+                            {filteredActiveOrders.map(order => (
                                 <tr key={order.id} className="hover:bg-[#F9F8F5]/30">
                                   <td className="p-3">
                                     <span className="inline-flex min-w-8 items-center justify-center rounded-full border border-[#EA5B3C]/20 bg-[#FFF3EF] px-2 py-0.5 text-[10px] font-bold text-[#EA5B3C]">
@@ -1193,6 +1352,11 @@ export default function AdminDashboard() {
                                     {order.orderItems.map(oi => (
                                       <div key={oi.id} className="font-medium">
                                         {oi.menuItem.name} <span className="text-[#888888]">x {oi.quantity}</span>
+                                        {(oi.note || order.note) && (
+                                          <span className="block text-[11px] font-bold text-[#EA5B3C]">
+                                            備註: {oi.note || order.note}
+                                          </span>
+                                        )}
                                       </div>
                                     ))}
                                   </td>

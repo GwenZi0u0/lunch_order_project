@@ -107,7 +107,8 @@ export async function GET(request) {
             menuItemId: oi.menuItemId,
             name: oi.menuItem.name,
             quantity: oi.quantity,
-            unitPrice: oi.unitPrice
+            unitPrice: oi.unitPrice,
+            note: oi.note
           }))
         } : null,
         stats: user.role === 'admin' ? {

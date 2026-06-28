@@ -797,33 +797,34 @@ export default function PortalPage() {
 
           {/* Order Checkout Summary (Col-span 1) */}
           <div className="order-1 lg:order-2 space-y-6">
-            <div id="order-summary" className="scroll-mt-24 bg-white border border-[#EAE8E4] rounded-xl shadow-sm p-6 space-y-6 lg:sticky lg:top-24">
+            <div id="order-summary" className="scroll-mt-24 bg-white border border-[#EAE8E4] rounded-xl shadow-sm p-6 lg:sticky lg:top-24 lg:max-h-[calc(100vh-8rem)] lg:flex lg:flex-col">
               <h3 className="font-bold text-base text-[#333333] border-b border-[#EAE8E4] pb-3">
                 您的訂購清單
               </h3>
 
-              {orderError && (
-                <div className="p-3 text-xs bg-red-50 border border-red-200 text-red-600 rounded-lg flex items-center gap-1.5">
-                  <i className="ti ti-alert-circle"></i> {orderError}
-                </div>
-              )}
+              <div className="min-h-0 space-y-6 pt-6 lg:flex-1 lg:overflow-y-auto lg:pr-1 no-scrollbar">
+                {orderError && (
+                  <div className="p-3 text-xs bg-red-50 border border-red-200 text-red-600 rounded-lg flex items-center gap-1.5">
+                    <i className="ti ti-alert-circle"></i> {orderError}
+                  </div>
+                )}
 
-              {orderSuccess && (
-                <div className="p-3 text-xs bg-green-50 border border-green-200 text-green-600 rounded-lg flex items-center gap-1.5">
-                  <i className="ti ti-discount-check"></i> {orderSuccess}
-                </div>
-              )}
+                {orderSuccess && (
+                  <div className="p-3 text-xs bg-green-50 border border-green-200 text-green-600 rounded-lg flex items-center gap-1.5">
+                    <i className="ti ti-discount-check"></i> {orderSuccess}
+                  </div>
+                )}
 
-              {/* Selected items receipt */}
-              {activeRestaurant ? (
-                <>
+                {/* Selected items receipt */}
+                {activeRestaurant ? (
+                  <>
                   {calculateTotal() > 0 && (
                     <div className="text-xs font-bold text-[#888888]">
                       {selectedOrderDateLabel}餐點內容
                     </div>
                   )}
 
-                  <div className="space-y-4 max-h-[220px] overflow-y-auto pr-1">
+                  <div className="space-y-4">
                     {activeRestaurant.menuItems.map(item => {
                       const qty = orderQuantities[item.id] || 0;
                       if (qty === 0) return null;
@@ -967,49 +968,52 @@ export default function PortalPage() {
                       </div>
                     </div>
 
-                    {/* Total & Action Buttons */}
-                    <div className="flex justify-between items-center font-bold text-[#333333] text-sm pt-2">
-                      <span>總計金額</span>
-                      <span className="text-xl text-[#EA5B3C] font-bold">NT$ {calculateTotal()}</span>
-                    </div>
+                    <div className="sticky bottom-0 z-10 space-y-2 bg-white pt-3">
+                      {/* Total & Action Buttons */}
+                      <div className="flex justify-between items-center font-bold text-[#333333] text-sm">
+                        <span>總計金額</span>
+                        <span className="text-xl text-[#EA5B3C] font-bold">NT$ {calculateTotal()}</span>
+                      </div>
 
-                    <div className="space-y-2 pt-2">
-                      <div className="flex gap-2">
+                      <div className="space-y-2 pt-2">
+                        <div className="flex gap-2">
+                          {activeSchedule.userOrder && !isClosed() && (
+                            <button
+                              disabled={isSubmitting || !hasOrderChanges()}
+                              onClick={handleCancelDraftModification}
+                              className="flex-1 py-3 text-xs font-bold border border-[#EAE8E4] text-[#888888] hover:text-[#EA5B3C] hover:border-[#EA5B3C]/40 rounded-xl transition-all bg-white disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              取消修改
+                            </button>
+                          )}
+                          
+                          <button
+                            disabled={isClosed() || isSubmitting || calculateTotal() === 0 || !seatArea || (activeSchedule.userOrder && !hasOrderChanges())}
+                            onClick={handlePlaceOrder}
+                            className="flex-[2] py-3 text-xs font-bold bg-[#EA5B3C] text-white rounded-xl shadow-sm hover:bg-[#333333] hover:shadow-md transition-all disabled:opacity-50 disabled:cursor-not-allowed text-center"
+                          >
+                            {isSubmitting ? '處理中...' : activeSchedule.userOrder ? '修改並送出訂單' : '送出訂購'}
+                          </button>
+                        </div>
                         {activeSchedule.userOrder && !isClosed() && (
                           <button
-                            disabled={isSubmitting || !hasOrderChanges()}
-                            onClick={handleCancelDraftModification}
-                            className="flex-1 py-3 text-xs font-bold border border-[#EAE8E4] text-[#888888] hover:text-[#EA5B3C] hover:border-[#EA5B3C]/40 rounded-xl transition-all bg-white disabled:opacity-50 disabled:cursor-not-allowed"
+                            disabled={isSubmitting}
+                            onClick={handleCancelOrder}
+                            className="w-full py-3 text-xs font-bold border border-[#EAE8E4] text-[#888888] hover:text-red-600 hover:border-red-200 rounded-xl transition-all bg-white"
                           >
-                            取消修改
+                            取消訂單
                           </button>
                         )}
-                        
-                        <button
-                          disabled={isClosed() || isSubmitting || calculateTotal() === 0 || !seatArea || (activeSchedule.userOrder && !hasOrderChanges())}
-                          onClick={handlePlaceOrder}
-                          className="flex-[2] py-3 text-xs font-bold bg-[#EA5B3C] text-white rounded-xl shadow-sm hover:bg-[#333333] hover:shadow-md transition-all disabled:opacity-50 disabled:cursor-not-allowed text-center"
-                        >
-                          {isSubmitting ? '處理中...' : activeSchedule.userOrder ? '修改並送出訂單' : '送出訂購'}
-                        </button>
                       </div>
-                      {activeSchedule.userOrder && !isClosed() && (
-                        <button
-                          disabled={isSubmitting}
-                          onClick={handleCancelOrder}
-                          className="w-full py-3 text-xs font-bold border border-[#EAE8E4] text-[#888888] hover:text-red-600 hover:border-red-200 rounded-xl transition-all bg-white"
-                        >
-                          取消訂單
-                        </button>
-                      )}
                     </div>
                   </div>
-                </>
-              ) : (
-                <div className="text-center py-8 text-xs text-[#888888]">
-                  請先選擇上方有供餐的日期
-                </div>
-              )}
+                  </>
+                ) : (
+                  <div className="text-center py-8 text-xs text-[#888888]">
+                    請先選擇上方有供餐的日期
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 

@@ -71,10 +71,15 @@ export default function PortalPage() {
   
   // Order state
   const [orderQuantities, setOrderQuantities] = useState({}); // { menuItemId: quantity }
+  const [itemNotes, setItemNotes] = useState({}); // { menuItemId: note }
   const [orderNote, setOrderNote] = useState('');
+  const [seatArea, setSeatArea] = useState('');
+  const [useSavedOrderNote, setUseSavedOrderNote] = useState(false);
+  const [saveOrderPreference, setSaveOrderPreference] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [orderError, setOrderError] = useState('');
   const [orderSuccess, setOrderSuccess] = useState('');
+  const [isCumulativeTipOpen, setIsCumulativeTipOpen] = useState(false);
   
   // Current system date/time check
   const [currentDateTime, setCurrentDateTime] = useState({ dateStr: '', timeStr: '' });
@@ -115,6 +120,18 @@ export default function PortalPage() {
 
     return () => clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    if (!isCumulativeTipOpen) return;
+
+    const handlePointerDown = (event) => {
+      if (event.target.closest('[data-cumulative-tip]')) return;
+      setIsCumulativeTipOpen(false);
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown);
+    return () => document.removeEventListener('pointerdown', handlePointerDown);
+  }, [isCumulativeTipOpen]);
 
   const updateTime = () => {
     const now = new Date();
@@ -159,6 +176,9 @@ export default function PortalPage() {
       });
   };
 
+  const removeSeatAreaFromNote = (value) => (value || '').replace(/(^|\s)(A區|B區)(?=\s|$)/g, ' ').replace(/\s+/g, ' ').trim();
+  const applySeatAreaToNote = (area, value) => [area ? `${area}區` : '', removeSeatAreaFromNote(value)].filter(Boolean).join(' ');
+
   // Find schedule details for selected date
   const activeSchedule = schedules.find(s => s.date === selectedDate);
   const activeRestaurant = activeSchedule?.restaurant || null;
@@ -180,22 +200,53 @@ export default function PortalPage() {
       setSelectedDate(getDefaultDateForWeek('current'));
     }
   }, [allowNextWeekMenu, activeWeekTab]);
+
+  useEffect(() => {
+    if (!useSavedOrderNote || !user) return;
+    const defaultSeatArea = user.defaultSeatArea || '';
+    setOrderNote(applySeatAreaToNote(defaultSeatArea, user.defaultOrderNote || ''));
+    setSeatArea(defaultSeatArea);
+  }, [useSavedOrderNote, user]);
+
+  const resetOrderDraft = (schedule = activeSchedule) => {
+    if (!schedule) {
+      setOrderQuantities({});
+      setItemNotes({});
+      setOrderNote('');
+      setSeatArea('');
+      setUseSavedOrderNote(false);
+      setSaveOrderPreference(false);
+      return;
+    }
+
+    const userOrderSeatArea = schedule.userOrder?.seatArea || '';
+    const quantities = {};
+    const notes = {};
+
+    if (schedule.userOrder) {
+      schedule.userOrder.items.forEach(item => {
+        quantities[item.menuItemId] = item.quantity;
+        notes[item.menuItemId] = item.note || '';
+      });
+    }
+
+    setOrderNote(applySeatAreaToNote(userOrderSeatArea, schedule.userOrder?.note || ''));
+    setSeatArea(userOrderSeatArea);
+    setUseSavedOrderNote(false);
+    setSaveOrderPreference(false);
+    setOrderQuantities(quantities);
+    setItemNotes(notes);
+  };
+
+  const handleCancelDraftModification = () => {
+    resetOrderDraft();
+    setOrderError('');
+    setOrderSuccess('');
+  };
   
   // Setup order input when selected schedule changes
   useEffect(() => {
-    if (activeSchedule) {
-      setOrderNote(activeSchedule.userOrder?.note || '');
-      const quantities = {};
-      if (activeSchedule.userOrder) {
-        activeSchedule.userOrder.items.forEach(item => {
-          quantities[item.menuItemId] = item.quantity;
-        });
-      }
-      setOrderQuantities(quantities);
-    } else {
-      setOrderQuantities({});
-      setOrderNote('');
-    }
+    resetOrderDraft(activeSchedule);
     setOrderError('');
     setOrderSuccess('');
   }, [selectedDate, activeSchedule]);
@@ -205,6 +256,18 @@ export default function PortalPage() {
       const current = prev[menuItemId] || 0;
       const next = Math.max(0, current + delta);
       return { ...prev, [menuItemId]: next };
+    });
+  };
+
+  const handleSeatAreaToggle = (area) => {
+    setSeatArea(area);
+    setOrderNote(prev => applySeatAreaToNote(area, prev));
+  };
+
+  const scrollToOrderSummary = () => {
+    document.getElementById('order-summary')?.scrollIntoView({
+      behavior: 'smooth',
+      block: 'start'
     });
   };
 
@@ -230,18 +293,61 @@ export default function PortalPage() {
     }, 0);
   };
 
+  const normalizeOrderText = (value) => (value || '').trim();
+
+  const getCurrentOrderItems = () => Object.entries(orderQuantities)
+    .filter(([_, qty]) => qty > 0)
+    .map(([menuItemId, qty]) => ({
+      menuItemId,
+      quantity: qty,
+      note: normalizeOrderText(itemNotes[menuItemId])
+    }))
+    .sort((a, b) => a.menuItemId.localeCompare(b.menuItemId));
+
+  const hasOrderChanges = () => {
+    if (!activeSchedule?.userOrder) return true;
+    if (normalizeOrderText(orderNote) !== normalizeOrderText(activeSchedule.userOrder.note)) return true;
+    if ((seatArea || '') !== (activeSchedule.userOrder.seatArea || '')) return true;
+    if (saveOrderPreference) return true;
+
+    const currentItems = getCurrentOrderItems();
+    const originalItems = activeSchedule.userOrder.items
+      .map(item => ({
+        menuItemId: item.menuItemId,
+        quantity: item.quantity,
+        note: normalizeOrderText(item.note)
+      }))
+      .sort((a, b) => a.menuItemId.localeCompare(b.menuItemId));
+
+    return JSON.stringify(currentItems) !== JSON.stringify(originalItems);
+  };
+
+  const shouldShowModifyShortcut = Boolean(
+    activeSchedule?.userOrder && activeRestaurant && !isClosed() && hasOrderChanges()
+  );
+
+  useEffect(() => {
+    document.body.classList.toggle('has-bottom-order-shortcut', shouldShowModifyShortcut);
+
+    return () => {
+      document.body.classList.remove('has-bottom-order-shortcut');
+    };
+  }, [shouldShowModifyShortcut]);
+
   const handlePlaceOrder = async () => {
     if (isClosed()) return;
     
-    const items = Object.entries(orderQuantities)
-      .filter(([_, qty]) => qty > 0)
-      .map(([menuItemId, qty]) => ({
-        menuItemId,
-        quantity: qty
-      }));
+    if (activeSchedule.userOrder && !hasOrderChanges()) return;
+
+    const items = getCurrentOrderItems();
 
     if (items.length === 0) {
       setOrderError('請至少選擇一項餐點！');
+      return;
+    }
+
+    if (!seatArea) {
+      setOrderError('請選擇座位區！');
       return;
     }
 
@@ -256,7 +362,9 @@ export default function PortalPage() {
         body: JSON.stringify({
           scheduleId: activeSchedule.id,
           items,
-          note: orderNote
+          note: applySeatAreaToNote(seatArea, orderNote),
+          seatArea,
+          saveOrderPreference
         })
       });
 
@@ -296,7 +404,11 @@ export default function PortalPage() {
 
       setOrderSuccess('訂單已取消！');
       setOrderQuantities({});
+      setItemNotes({});
       setOrderNote('');
+      setSeatArea('');
+      setUseSavedOrderNote(false);
+      setSaveOrderPreference(false);
       fetchSchedules();
       refreshUser();
     } catch (err) {
@@ -385,7 +497,14 @@ export default function PortalPage() {
                   <div className="max-h-[180px] overflow-y-auto bg-white px-4 py-3 kaizen-scrollbar">
                     {todayOrder.items.map(item => (
                       <div key={item.id} className="grid grid-cols-[1fr_auto_auto] items-center gap-3 border-b border-[#EAE8E4] py-2 text-xs last:border-b-0">
-                        <span className="font-bold text-[#333333] truncate">{item.name}</span>
+                        <span className="font-bold text-[#333333] truncate">
+                          {item.name}
+                          {item.note && (
+                            <span className="block truncate text-[11px] font-bold text-[#EA5B3C]">
+                              備註: {item.note}
+                            </span>
+                          )}
+                        </span>
                         <span className="rounded-full bg-[#F9F8F5] px-2 py-0.5 font-bold text-[#888888] shrink-0">x {item.quantity}</span>
                         <span className="font-bold text-[#EA5B3C] shrink-0">NT$ {item.unitPrice * item.quantity}</span>
                       </div>
@@ -400,6 +519,11 @@ export default function PortalPage() {
                   {todayOrder.note && (
                     <p className="border-t border-[#EAE8E4] bg-white px-4 py-3 text-xs leading-5 text-[#888888]">
                       備註：{todayOrder.note}
+                    </p>
+                  )}
+                  {todayOrder.seatArea && (
+                    <p className="border-t border-[#EAE8E4] bg-white px-4 py-3 text-xs leading-5 text-[#888888]">
+                      座位區：{todayOrder.seatArea}區
                     </p>
                   )}
                 </div>
@@ -552,13 +676,50 @@ export default function PortalPage() {
                       )}
                     </div>
 
-                    <div className="text-right">
-                      <span className="text-xs font-bold text-[#888888] block">截止訂購時間</span>
-                      <span className="text-sm font-bold text-[#EA5B3C] flex items-center gap-1 mt-1 justify-end">
-                        <i className="ti ti-alarm"></i> 每日 {activeSchedule.orderDeadline} 前
-                      </span>
+                    <div className="flex w-full flex-col gap-3 text-left md:w-auto md:flex-row md:items-center md:justify-end md:gap-8 md:text-right">
+                      <div>
+                        <span className="text-xs font-bold text-[#888888] block">截止訂購時間</span>
+                        <span className="text-sm font-bold text-[#EA5B3C] flex items-center gap-1 mt-1 md:justify-end">
+                          <i className="ti ti-alarm"></i> 每日 {activeSchedule.orderDeadline} 前
+                        </span>
+                      </div>
+                      <div>
+                        <span className="relative inline-flex items-center gap-1 text-xs font-bold text-[#888888]" data-cumulative-tip>
+                          目前累計金額
+                          <button
+                            type="button"
+                            onClick={() => setIsCumulativeTipOpen(prev => !prev)}
+                            onMouseEnter={() => setIsCumulativeTipOpen(true)}
+                            onFocus={() => setIsCumulativeTipOpen(true)}
+                            className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-[#D6D1CA] bg-white text-[10px] font-bold text-[#888888] transition-all hover:border-[#EA5B3C] hover:text-[#EA5B3C]"
+                            aria-label="目前累計金額說明"
+                          >
+                            i
+                          </button>
+                          {isCumulativeTipOpen && (
+                            <span className="absolute left-0 top-full z-20 mt-2 w-[min(18rem,calc(100vw-3rem))] rounded-lg border border-[#EAE8E4] bg-white p-3 text-left text-[11px] font-bold leading-relaxed text-[#555555] shadow-lg md:left-auto md:right-0 md:w-56">
+                              這是大家目前已送出的訂單總額，可用來一起確認是否接近餐廳免運門檻。
+                            </span>
+                          )}
+                        </span>
+                        <span className="text-sm font-bold text-[#EA5B3C] block mt-1">
+                          NT$ {activeSchedule.stats?.totalAmount || 0}
+                        </span>
+                      </div>
                     </div>
                   </div>
+
+                  {activeRestaurant.note && (
+                    <div className="flex items-start gap-3 rounded-xl border border-[#EA5B3C]/25 bg-[#FFF3EF] p-4 text-sm leading-normal shadow-sm">
+                      <span className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white text-[#EA5B3C] shadow-sm">
+                        <i className="ti ti-info-circle text-lg"></i>
+                      </span>
+                      <div className="space-y-1">
+                        <div className="text-xs font-bold tracking-widest text-[#EA5B3C]">餐廳備註</div>
+                        <div className="font-bold text-[#333333]">{activeRestaurant.note}</div>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Warning Banner if Closed */}
                   {isClosed() && (
@@ -623,12 +784,6 @@ export default function PortalPage() {
                       );
                     })}
                   </div>
-                  
-                  {activeRestaurant.note && (
-                    <div className="p-4 bg-[#F9F8F5] rounded-xl text-xs text-[#888888] leading-normal border border-[#EAE8E4]">
-                      <strong>備註：</strong>{activeRestaurant.note}
-                    </div>
-                  )}
                 </div>
               ) : (
                 <div className="text-center py-16 space-y-4">
@@ -642,41 +797,52 @@ export default function PortalPage() {
 
           {/* Order Checkout Summary (Col-span 1) */}
           <div className="order-1 lg:order-2 space-y-6">
-            <div className="bg-white border border-[#EAE8E4] rounded-xl shadow-sm p-6 space-y-6 lg:sticky lg:top-24">
+            <div id="order-summary" className="scroll-mt-24 bg-white border border-[#EAE8E4] rounded-xl shadow-sm p-6 lg:sticky lg:top-24 lg:max-h-[calc(100vh-8rem)] lg:flex lg:flex-col">
               <h3 className="font-bold text-base text-[#333333] border-b border-[#EAE8E4] pb-3">
                 您的訂購清單
               </h3>
 
-              {orderError && (
-                <div className="p-3 text-xs bg-red-50 border border-red-200 text-red-600 rounded-lg flex items-center gap-1.5">
-                  <i className="ti ti-alert-circle"></i> {orderError}
-                </div>
-              )}
+              <div className="min-h-0 space-y-6 pt-6 lg:flex-1 lg:overflow-y-auto lg:pr-1 no-scrollbar">
+                {orderError && (
+                  <div className="p-3 text-xs bg-red-50 border border-red-200 text-red-600 rounded-lg flex items-center gap-1.5">
+                    <i className="ti ti-alert-circle"></i> {orderError}
+                  </div>
+                )}
 
-              {orderSuccess && (
-                <div className="p-3 text-xs bg-green-50 border border-green-200 text-green-600 rounded-lg flex items-center gap-1.5">
-                  <i className="ti ti-discount-check"></i> {orderSuccess}
-                </div>
-              )}
+                {orderSuccess && (
+                  <div className="p-3 text-xs bg-green-50 border border-green-200 text-green-600 rounded-lg flex items-center gap-1.5">
+                    <i className="ti ti-discount-check"></i> {orderSuccess}
+                  </div>
+                )}
 
-              {/* Selected items receipt */}
-              {activeRestaurant ? (
-                <>
+                {/* Selected items receipt */}
+                {activeRestaurant ? (
+                  <>
                   {calculateTotal() > 0 && (
                     <div className="text-xs font-bold text-[#888888]">
                       {selectedOrderDateLabel}餐點內容
                     </div>
                   )}
 
-                  <div className="space-y-4 max-h-[220px] overflow-y-auto pr-1">
+                  <div className="space-y-4">
                     {activeRestaurant.menuItems.map(item => {
                       const qty = orderQuantities[item.id] || 0;
                       if (qty === 0) return null;
                       return (
-                        <div key={item.id} className="flex justify-between items-center text-xs">
-                          <span className="text-[#333333] font-bold truncate max-w-[150px]">{item.name}</span>
-                          <span className="text-[#888888]">x {qty}</span>
-                          <span className="text-[#333333] font-bold">NT$ {item.price * qty}</span>
+                        <div key={item.id} className="space-y-2 rounded-lg border border-[#EAE8E4] bg-[#F9F8F5] p-3 text-xs">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[#333333] font-bold truncate">{item.name}</span>
+                            <span className="text-[#888888] shrink-0">x {qty}</span>
+                            <span className="text-[#333333] font-bold shrink-0">NT$ {item.price * qty}</span>
+                          </div>
+                          <input
+                            type="text"
+                            disabled={isClosed() || isSubmitting}
+                            value={itemNotes[item.id] || ''}
+                            onChange={(e) => setItemNotes(prev => ({ ...prev, [item.id]: e.target.value }))}
+                            placeholder="此餐點備註，例如飯少、換菜"
+                            className="w-full rounded-lg border border-[#EAE8E4] bg-white px-3 py-2 text-xs font-medium text-[#333333] placeholder:text-[#B8B2AA] focus:border-[#EA5B3C] focus:outline-none disabled:bg-[#F2EFEA]"
+                          />
                         </div>
                       );
                     })}
@@ -690,7 +856,7 @@ export default function PortalPage() {
 
                   <div className="border-t border-[#EAE8E4] pt-4 space-y-3">
                     {/* Custom Note input */}
-                    <div className="space-y-1.5">
+                    <div className="hidden">
                       <label className="text-xs font-bold text-[#888888]">餐點備註說明 (如: 不辣、不要蔥)</label>
                       <input
                         type="text"
@@ -715,6 +881,18 @@ export default function PortalPage() {
                           <span className="text-[#888888]">訂單狀態:</span>
                           <span className="font-bold text-green-600">已成立 ({activeSchedule.userOrder.status})</span>
                         </div>
+                        {activeSchedule.userOrder.seatArea && (
+                          <div className="flex justify-between">
+                            <span className="text-[#888888]">座位區</span>
+                            <span className="font-bold text-[#333333]">{activeSchedule.userOrder.seatArea}區</span>
+                          </div>
+                        )}
+                        {activeSchedule.userOrder.note && (
+                          <div className="flex justify-between gap-3">
+                            <span className="text-[#888888] shrink-0">整筆備註</span>
+                            <span className="font-bold text-[#333333] text-right">{activeSchedule.userOrder.note}</span>
+                          </div>
+                        )}
                         {activeSchedule.userOrder.chargedAt && (
                           <div className="flex justify-between">
                             <span className="text-[#888888]">扣款時間:</span>
@@ -726,42 +904,141 @@ export default function PortalPage() {
                       </div>
                     )}
 
-                    {/* Total & Action Buttons */}
-                    <div className="flex justify-between items-center font-bold text-[#333333] text-sm pt-2">
-                      <span>總計金額</span>
-                      <span className="text-xl text-[#EA5B3C] font-bold">NT$ {calculateTotal()}</span>
+                    <div className="space-y-3 rounded-xl border border-[#EAE8E4] bg-[#F9F8F5] p-3">
+                      <div className="space-y-1.5">
+                        <div className="grid grid-cols-2 gap-2">
+                          {['A', 'B'].map(area => (
+                            <button
+                              key={area}
+                              type="button"
+                              disabled={isClosed() || isSubmitting}
+                              onClick={() => handleSeatAreaToggle(area)}
+                              className={`rounded-lg border px-3 py-2 text-xs font-bold transition-all disabled:cursor-not-allowed disabled:opacity-50 ${
+                                seatArea === area
+                                  ? 'border-[#EA5B3C] bg-[#FFF3EF] text-[#EA5B3C]'
+                                  : 'border-[#EAE8E4] bg-white text-[#888888] hover:border-[#EA5B3C] hover:text-[#EA5B3C]'
+                              }`}
+                            >
+                              {area}區
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between gap-2">
+                          <label className="text-xs font-bold text-[#888888]">備註</label>
+                          <div className="flex items-center gap-1 text-[11px] font-bold">
+                            <button
+                              type="button"
+                              onClick={() => setUseSavedOrderNote(prev => !prev)}
+                              className={`rounded px-1.5 py-0.5 transition-all ${
+                                useSavedOrderNote
+                                  ? 'bg-[#FFF3EF] text-[#EA5B3C] underline decoration-[#EA5B3C] underline-offset-4'
+                                  : 'text-[#888888] hover:bg-white hover:text-[#EA5B3C]'
+                              }`}
+                            >
+                              常用備註
+                            </button>
+                            <span className="text-[#C9C3BB]">|</span>
+                            <button
+                              type="button"
+                              disabled={isClosed() || isSubmitting}
+                              onClick={() => setSaveOrderPreference(prev => !prev)}
+                              className={`rounded px-1.5 py-0.5 transition-all disabled:cursor-not-allowed disabled:opacity-50 ${
+                                saveOrderPreference
+                                  ? 'bg-[#FFF3EF] text-[#EA5B3C] underline decoration-[#EA5B3C] underline-offset-4'
+                                  : 'text-[#888888] hover:bg-white hover:text-[#EA5B3C]'
+                              }`}
+                            >
+                              儲存備註
+                            </button>
+                          </div>
+                        </div>
+                        <input
+                          type="text"
+                          disabled={isClosed() || isSubmitting}
+                          value={orderNote}
+                          onChange={(e) => {
+                            setOrderNote(seatArea ? applySeatAreaToNote(seatArea, e.target.value) : e.target.value);
+                            setUseSavedOrderNote(false);
+                          }}
+                          className="w-full rounded-lg border border-[#EAE8E4] bg-white px-3 py-2 text-xs font-medium text-[#333333] placeholder:text-[#B8B2AA] focus:border-[#EA5B3C] focus:outline-none disabled:bg-[#F2EFEA]"
+                        />
+                      </div>
                     </div>
 
-                    <div className="flex gap-2 pt-2">
-                      {activeSchedule.userOrder && !isClosed() && (
-                        <button
-                          disabled={isSubmitting}
-                          onClick={handleCancelOrder}
-                          className="flex-1 py-3 text-xs font-bold border border-[#EAE8E4] text-[#888888] hover:text-red-600 hover:border-red-200 rounded-xl transition-all bg-white"
-                        >
-                          取消訂單
-                        </button>
-                      )}
-                      
-                      <button
-                        disabled={isClosed() || isSubmitting || calculateTotal() === 0}
-                        onClick={handlePlaceOrder}
-                        className="flex-[2] py-3 text-xs font-bold bg-[#EA5B3C] text-white rounded-xl shadow-sm hover:bg-[#333333] hover:shadow-md transition-all disabled:opacity-50 disabled:cursor-not-allowed text-center"
-                      >
-                        {isSubmitting ? '處理中...' : activeSchedule.userOrder ? '修改訂單' : '送出訂購'}
-                      </button>
+                    <div className="sticky bottom-0 z-10 space-y-2 bg-white pt-3">
+                      {/* Total & Action Buttons */}
+                      <div className="flex justify-between items-center font-bold text-[#333333] text-sm">
+                        <span>總計金額</span>
+                        <span className="text-xl text-[#EA5B3C] font-bold">NT$ {calculateTotal()}</span>
+                      </div>
+
+                      <div className="space-y-2 pt-2">
+                        <div className="flex gap-2">
+                          {activeSchedule.userOrder && !isClosed() && (
+                            <button
+                              disabled={isSubmitting || !hasOrderChanges()}
+                              onClick={handleCancelDraftModification}
+                              className="flex-1 py-3 text-xs font-bold border border-[#EAE8E4] text-[#888888] hover:text-[#EA5B3C] hover:border-[#EA5B3C]/40 rounded-xl transition-all bg-white disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              取消修改
+                            </button>
+                          )}
+                          
+                          <button
+                            disabled={isClosed() || isSubmitting || calculateTotal() === 0 || !seatArea || (activeSchedule.userOrder && !hasOrderChanges())}
+                            onClick={handlePlaceOrder}
+                            className="flex-[2] py-3 text-xs font-bold bg-[#EA5B3C] text-white rounded-xl shadow-sm hover:bg-[#333333] hover:shadow-md transition-all disabled:opacity-50 disabled:cursor-not-allowed text-center"
+                          >
+                            {isSubmitting ? '處理中...' : activeSchedule.userOrder ? '修改並送出訂單' : '送出訂購'}
+                          </button>
+                        </div>
+                        {activeSchedule.userOrder && !isClosed() && (
+                          <button
+                            disabled={isSubmitting}
+                            onClick={handleCancelOrder}
+                            className="w-full py-3 text-xs font-bold border border-[#EAE8E4] text-[#888888] hover:text-red-600 hover:border-red-200 rounded-xl transition-all bg-white"
+                          >
+                            取消訂單
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
-                </>
-              ) : (
-                <div className="text-center py-8 text-xs text-[#888888]">
-                  請先選擇上方有供餐的日期
-                </div>
-              )}
+                  </>
+                ) : (
+                  <div className="text-center py-8 text-xs text-[#888888]">
+                    請先選擇上方有供餐的日期
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
         </section>
+
+        {shouldShowModifyShortcut && (
+          <div className="fixed inset-x-0 bottom-4 z-40 px-6 lg:hidden">
+            <div className="mx-auto flex w-full max-w-sm gap-2">
+              <button
+                type="button"
+                onClick={handleCancelDraftModification}
+                className="flex-[0.9] rounded-full border border-[#EAE8E4] bg-white px-4 py-3 text-sm font-bold text-[#888888] shadow-lg shadow-black/5 transition-all active:scale-[0.98]"
+              >
+                取消修改
+              </button>
+              <button
+                type="button"
+                onClick={scrollToOrderSummary}
+                className="flex-[1.5] rounded-full bg-[#EA5B3C] px-4 py-3 text-sm font-bold text-white shadow-lg shadow-[#EA5B3C]/25 transition-all active:scale-[0.98]"
+              >
+                修改訂單內容
+              </button>
+            </div>
+          </div>
+        )}
 
       </main>
     </>

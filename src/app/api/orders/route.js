@@ -146,9 +146,11 @@ export async function POST(request) {
     }
 
     const body = await request.json();
-    const { scheduleId, items, note, targetUserId } = body; // items: [{ menuItemId, quantity }]
+    const { scheduleId, items, note, seatArea, saveOrderPreference, targetUserId } = body; // items: [{ menuItemId, quantity, note }]
     const isAdminOverride = user.role === 'admin' && targetUserId;
     const orderUserId = isAdminOverride ? targetUserId : user.userId;
+    const normalizedNote = typeof note === 'string' ? note.trim() : '';
+    const normalizedSeatArea = ['A', 'B'].includes(seatArea) ? seatArea : null;
 
     if (!scheduleId || !items || !Array.isArray(items) || items.length === 0) {
       return NextResponse.json({ error: 'Invalid order input' }, { status: 400 });
@@ -210,7 +212,8 @@ export async function POST(request) {
       return {
         menuItemId: item.menuItemId,
         quantity,
-        unitPrice: price // Snapshot price
+        unitPrice: price, // Snapshot price
+        note: typeof item.note === 'string' ? item.note.trim() : null
       };
     });
 
@@ -237,7 +240,8 @@ export async function POST(request) {
           data: {
             orderNumber,
             totalAmount,
-            note,
+            note: normalizedNote || null,
+            seatArea: normalizedSeatArea,
             status: 'pending',
             chargedAt: null,
             orderItems: {
@@ -259,7 +263,8 @@ export async function POST(request) {
           userId: orderUserId,
           scheduleId,
           totalAmount,
-          note,
+          note: normalizedNote || null,
+          seatArea: normalizedSeatArea,
           status: 'pending',
           orderItems: {
             create: orderItemsData
@@ -272,6 +277,16 @@ export async function POST(request) {
 
       return newOrder;
     });
+
+    if (!isAdminOverride && saveOrderPreference) {
+      await prisma.user.update({
+        where: { id: orderUserId },
+        data: {
+          defaultSeatArea: normalizedSeatArea,
+          defaultOrderNote: normalizedNote || null
+        }
+      });
+    }
 
     return NextResponse.json({
       success: true,

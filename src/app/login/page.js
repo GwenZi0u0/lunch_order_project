@@ -53,20 +53,42 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="flex-1 flex flex-col justify-center items-center px-4 py-12 relative overflow-hidden bg-gradient-to-br from-[#F9F8F5] via-[#F4F1EA] to-[#eae8e4]">
+    <div className="flex-1 flex flex-col justify-center items-center px-4 py-8 relative overflow-hidden bg-gradient-to-br from-[#F9F8F5] via-[#F4F1EA] to-[#eae8e4]">
       {/* Decorative background shapes */}
       <div className="absolute top-[-20%] left-[-10%] w-[600px] h-[600px] rounded-full bg-[#FFDB27] opacity-[0.06] blur-[80px] pointer-events-none"></div>
       <div className="absolute bottom-[-10%] right-[-10%] w-[500px] h-[500px] rounded-full bg-[#EA5B3C] opacity-[0.05] blur-[100px] pointer-events-none"></div>
 
       <div className="w-full max-w-[500px] z-10">
         {/* Logo and Header */}
-        <div className="text-center mb-10 animate-fade-in">
-          <div className="inline-flex items-center gap-3 font-bold text-3xl tracking-widest text-[#333333] mb-4">
+        <div className="text-center mb-5 animate-fade-in">
+          <div className="inline-flex items-center gap-3 font-bold text-3xl tracking-widest text-[#333333] mb-2">
             TSA Lunch
           </div>
-          <p className="text-sm font-bold tracking-[0.2em] text-[#888888] uppercase mb-2">LUNCH ORDER SYSTEM</p>
-          <div className="inline-block bg-[#FFDB27] text-[#333333] font-bold text-sm px-6 py-2 rounded-xl shadow-sm">
-            現場をもっと自由に、面白く ─ 讓訂餐更自由、更便利、更有趣！
+          <p className="text-sm font-bold tracking-[0.2em] text-[#888888] uppercase mb-1">LUNCH ORDER SYSTEM</p>
+          <div className="login-cat-scene" aria-label="貓咪叼著便當跑向貓洞動畫">
+            <div className="login-cat-track">
+              <div className="login-cat-runner">
+                <span className="login-cat-tail">
+                  <svg viewBox="0 0 36 28" aria-hidden="true">
+                    <path d="M33 6 C23 1 12 2 10 10 C8 18 20 18 21 12 C22 5 10 7 4 22" />
+                  </svg>
+                </span>
+                <span className="login-cat-body"></span>
+                <span className="login-cat-head">
+                  <span className="login-cat-ear login-cat-ear-left"></span>
+                  <span className="login-cat-ear login-cat-ear-right"></span>
+                  <span className="login-cat-eye"></span>
+                  <span className="login-cat-whiskers"></span>
+                </span>
+                <span className="login-cat-leg login-cat-leg-front"></span>
+                <span className="login-cat-leg login-cat-leg-back"></span>
+                <span className="login-bento">
+                  <span></span>
+                </span>
+              </div>
+              <span className="login-cat-hole"></span>
+              <span className="login-cat-heart"></span>
+            </div>
           </div>
         </div>
 
@@ -135,7 +157,7 @@ export default function LoginPage() {
               <button
                 disabled={loading}
                 onClick={() => handleDeveloperLogin('user', 'positive')}
-                className="w-full flex items-center justify-between p-4 border border-[#EAE8E4] rounded-xl hover:border-[#EA5B3C] text-left transition-all duration-200 group"
+                className="hidden"
               >
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-full bg-green-50 text-green-600 flex items-center justify-center text-xl">
@@ -153,7 +175,7 @@ export default function LoginPage() {
               <button
                 disabled={loading}
                 onClick={() => handleDeveloperLogin('user', 'neutral')}
-                className="w-full flex items-center justify-between p-4 border border-[#EAE8E4] rounded-xl hover:border-[#EA5B3C] text-left transition-all duration-200 group"
+                className="hidden"
               >
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-full bg-gray-50 text-gray-600 flex items-center justify-center text-xl">
@@ -171,15 +193,14 @@ export default function LoginPage() {
               <button
                 disabled={loading}
                 onClick={() => handleDeveloperLogin('user', 'negative')}
-                className="w-full flex items-center justify-between p-4 border border-[#EAE8E4] rounded-xl hover:border-red-200 hover:bg-red-[0.01] hover:border-[#EA5B3C] text-left transition-all duration-200 group"
+                className="w-full flex items-center justify-between p-4 border border-[#EAE8E4] rounded-xl hover:border-[#EA5B3C] text-left transition-all duration-200 group"
               >
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-red-50 text-red-600 flex items-center justify-center text-xl animate-pulse">
-                    <i className="ti ti-alert-circle"></i>
+                  <div className="w-10 h-10 rounded-full bg-gray-50 text-[#333333] flex items-center justify-center text-xl">
+                    <i className="ti ti-user"></i>
                   </div>
                   <div>
-                    <h4 className="font-bold text-sm text-[#333333] group-hover:text-[#EA5B3C]">王大同 <span className="text-xs font-normal text-red-600 ml-1">欠款警示</span></h4>
-                    <p className="text-xs text-[#888888] mt-0.5">儲值金餘額：<span className="text-red-600 font-bold">－NT$ 80</span> (紅字 + 繳款警示)</p>
+                    <h4 className="font-bold text-sm text-[#333333] group-hover:text-[#EA5B3C]">王大同</h4>
                   </div>
                 </div>
                 <i className="ti ti-chevron-right text-[#888888] group-hover:translate-x-1 transition-transform"></i>
@@ -189,10 +210,6 @@ export default function LoginPage() {
 
           {activeTab === 'google' && (
             <div className="space-y-6 py-4">
-              <div className="text-sm text-[#888888] leading-relaxed mb-6">
-                您可以在後台的環境變數檔 `.env` 設定 `GOOGLE_CLIENT_ID` 與 `GOOGLE_CLIENT_SECRET` 來啟用真實的 Google 單一登入。目前本機開發環境建議先使用 **開發者快速登入** 面板進行功能驗證。
-              </div>
-
               {/* Google Button */}
               <button
                 disabled={loading}
@@ -205,7 +222,7 @@ export default function LoginPage() {
                   <path fill="#FBBC05" d="M5.45 14.33a7.14 7.14 0 0 1 0-4.66V6.45H1.31a12 12 0 0 0 0 11.1l4.14-3.22Z"/>
                   <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42A11.94 11.94 0 0 0 12 0 12 12 0 0 0 1.31 6.45l4.14 3.22c.92-2.77 3.5-4.83 6.55-4.83Z"/>
                 </svg>
-                Google 帳號登入 (請先配置憑證)
+                Google 帳號登入
               </button>
             </div>
           )}
@@ -213,7 +230,7 @@ export default function LoginPage() {
 
         {/* Footer */}
         <p className="text-center text-xs text-[#888888] mt-8">
-          © 2026 TSK Corp. KAIZEN project team. All Rights Reserved.
+          © 2026 TSA Corp. Gwen project . All Rights Reserved.
         </p>
       </div>
     </div>

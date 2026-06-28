@@ -207,33 +207,46 @@ export default function PortalPage() {
     setOrderNote(applySeatAreaToNote(defaultSeatArea, user.defaultOrderNote || ''));
     setSeatArea(defaultSeatArea);
   }, [useSavedOrderNote, user]);
-  
-  // Setup order input when selected schedule changes
-  useEffect(() => {
-    if (activeSchedule) {
-      const userOrderSeatArea = activeSchedule.userOrder?.seatArea || '';
-      setOrderNote(applySeatAreaToNote(userOrderSeatArea, activeSchedule.userOrder?.note || ''));
-      setSeatArea(userOrderSeatArea);
-      setUseSavedOrderNote(false);
-      setSaveOrderPreference(false);
-      const quantities = {};
-      const notes = {};
-      if (activeSchedule.userOrder) {
-        activeSchedule.userOrder.items.forEach(item => {
-          quantities[item.menuItemId] = item.quantity;
-          notes[item.menuItemId] = item.note || '';
-        });
-      }
-      setOrderQuantities(quantities);
-      setItemNotes(notes);
-    } else {
+
+  const resetOrderDraft = (schedule = activeSchedule) => {
+    if (!schedule) {
       setOrderQuantities({});
       setItemNotes({});
       setOrderNote('');
       setSeatArea('');
       setUseSavedOrderNote(false);
       setSaveOrderPreference(false);
+      return;
     }
+
+    const userOrderSeatArea = schedule.userOrder?.seatArea || '';
+    const quantities = {};
+    const notes = {};
+
+    if (schedule.userOrder) {
+      schedule.userOrder.items.forEach(item => {
+        quantities[item.menuItemId] = item.quantity;
+        notes[item.menuItemId] = item.note || '';
+      });
+    }
+
+    setOrderNote(applySeatAreaToNote(userOrderSeatArea, schedule.userOrder?.note || ''));
+    setSeatArea(userOrderSeatArea);
+    setUseSavedOrderNote(false);
+    setSaveOrderPreference(false);
+    setOrderQuantities(quantities);
+    setItemNotes(notes);
+  };
+
+  const handleCancelDraftModification = () => {
+    resetOrderDraft();
+    setOrderError('');
+    setOrderSuccess('');
+  };
+  
+  // Setup order input when selected schedule changes
+  useEffect(() => {
+    resetOrderDraft(activeSchedule);
     setOrderError('');
     setOrderSuccess('');
   }, [selectedDate, activeSchedule]);
@@ -249,6 +262,13 @@ export default function PortalPage() {
   const handleSeatAreaToggle = (area) => {
     setSeatArea(area);
     setOrderNote(prev => applySeatAreaToNote(area, prev));
+  };
+
+  const scrollToOrderSummary = () => {
+    document.getElementById('order-summary')?.scrollIntoView({
+      behavior: 'smooth',
+      block: 'start'
+    });
   };
 
   // Calculate order closed status
@@ -301,6 +321,18 @@ export default function PortalPage() {
 
     return JSON.stringify(currentItems) !== JSON.stringify(originalItems);
   };
+
+  const shouldShowModifyShortcut = Boolean(
+    activeSchedule?.userOrder && activeRestaurant && !isClosed() && hasOrderChanges()
+  );
+
+  useEffect(() => {
+    document.body.classList.toggle('has-bottom-order-shortcut', shouldShowModifyShortcut);
+
+    return () => {
+      document.body.classList.remove('has-bottom-order-shortcut');
+    };
+  }, [shouldShowModifyShortcut]);
 
   const handlePlaceOrder = async () => {
     if (isClosed()) return;
@@ -765,7 +797,7 @@ export default function PortalPage() {
 
           {/* Order Checkout Summary (Col-span 1) */}
           <div className="order-1 lg:order-2 space-y-6">
-            <div className="bg-white border border-[#EAE8E4] rounded-xl shadow-sm p-6 space-y-6 lg:sticky lg:top-24">
+            <div id="order-summary" className="scroll-mt-24 bg-white border border-[#EAE8E4] rounded-xl shadow-sm p-6 space-y-6 lg:sticky lg:top-24">
               <h3 className="font-bold text-base text-[#333333] border-b border-[#EAE8E4] pb-3">
                 您的訂購清單
               </h3>
@@ -941,24 +973,35 @@ export default function PortalPage() {
                       <span className="text-xl text-[#EA5B3C] font-bold">NT$ {calculateTotal()}</span>
                     </div>
 
-                    <div className="flex gap-2 pt-2">
+                    <div className="space-y-2 pt-2">
+                      <div className="flex gap-2">
+                        {activeSchedule.userOrder && !isClosed() && (
+                          <button
+                            disabled={isSubmitting || !hasOrderChanges()}
+                            onClick={handleCancelDraftModification}
+                            className="flex-1 py-3 text-xs font-bold border border-[#EAE8E4] text-[#888888] hover:text-[#EA5B3C] hover:border-[#EA5B3C]/40 rounded-xl transition-all bg-white disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            取消修改
+                          </button>
+                        )}
+                        
+                        <button
+                          disabled={isClosed() || isSubmitting || calculateTotal() === 0 || !seatArea || (activeSchedule.userOrder && !hasOrderChanges())}
+                          onClick={handlePlaceOrder}
+                          className="flex-[2] py-3 text-xs font-bold bg-[#EA5B3C] text-white rounded-xl shadow-sm hover:bg-[#333333] hover:shadow-md transition-all disabled:opacity-50 disabled:cursor-not-allowed text-center"
+                        >
+                          {isSubmitting ? '處理中...' : activeSchedule.userOrder ? '修改並送出訂單' : '送出訂購'}
+                        </button>
+                      </div>
                       {activeSchedule.userOrder && !isClosed() && (
                         <button
                           disabled={isSubmitting}
                           onClick={handleCancelOrder}
-                          className="flex-1 py-3 text-xs font-bold border border-[#EAE8E4] text-[#888888] hover:text-red-600 hover:border-red-200 rounded-xl transition-all bg-white"
+                          className="w-full py-3 text-xs font-bold border border-[#EAE8E4] text-[#888888] hover:text-red-600 hover:border-red-200 rounded-xl transition-all bg-white"
                         >
                           取消訂單
                         </button>
                       )}
-                      
-                      <button
-                        disabled={isClosed() || isSubmitting || calculateTotal() === 0 || !seatArea || (activeSchedule.userOrder && !hasOrderChanges())}
-                        onClick={handlePlaceOrder}
-                        className="flex-[2] py-3 text-xs font-bold bg-[#EA5B3C] text-white rounded-xl shadow-sm hover:bg-[#333333] hover:shadow-md transition-all disabled:opacity-50 disabled:cursor-not-allowed text-center"
-                      >
-                        {isSubmitting ? '處理中...' : activeSchedule.userOrder ? '修改並送出訂單' : '送出訂購'}
-                      </button>
                     </div>
                   </div>
                 </>
@@ -971,6 +1014,27 @@ export default function PortalPage() {
           </div>
 
         </section>
+
+        {shouldShowModifyShortcut && (
+          <div className="fixed inset-x-0 bottom-4 z-40 px-6 lg:hidden">
+            <div className="mx-auto flex w-full max-w-sm gap-2">
+              <button
+                type="button"
+                onClick={handleCancelDraftModification}
+                className="flex-[0.9] rounded-full border border-[#EAE8E4] bg-white px-4 py-3 text-sm font-bold text-[#888888] shadow-lg shadow-black/5 transition-all active:scale-[0.98]"
+              >
+                取消修改
+              </button>
+              <button
+                type="button"
+                onClick={scrollToOrderSummary}
+                className="flex-[1.5] rounded-full bg-[#EA5B3C] px-4 py-3 text-sm font-bold text-white shadow-lg shadow-[#EA5B3C]/25 transition-all active:scale-[0.98]"
+              >
+                修改訂單內容
+              </button>
+            </div>
+          </div>
+        )}
 
       </main>
     </>

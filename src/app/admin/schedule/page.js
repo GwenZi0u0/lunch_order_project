@@ -112,6 +112,7 @@ export default function AdminDashboard() {
   const [isHoliday, setIsHoliday] = useState(false);
   const [isUpdatingSchedule, setIsUpdatingSchedule] = useState(false);
   const [orderEditor, setOrderEditor] = useState(null);
+  const [selectedOrderDetail, setSelectedOrderDetail] = useState(null);
   const [isSavingOrder, setIsSavingOrder] = useState(false);
   const [orderSearchTerm, setOrderSearchTerm] = useState('');
   const [copyOrderMessage, setCopyOrderMessage] = useState('');
@@ -163,6 +164,15 @@ export default function AdminDashboard() {
     setSelectedDate(formatDate(today));
     setHistoryDate(formatDate(today));
   }, []);
+
+  useEffect(() => {
+    if (!selectedOrderDetail) return;
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = originalOverflow;
+    };
+  }, [selectedOrderDetail]);
 
   const fetchRestaurants = () => {
     fetch('/api/restaurants?active=true')
@@ -702,17 +712,8 @@ export default function AdminDashboard() {
   const copyAlaCarteCount = orderCopyItems
     .filter(item => item.isAlaCarte)
     .reduce((sum, item) => sum + item.qty, 0);
-  const orderCopyOrderNotes = activeOrders
-    .map(order => {
-      const parts = [];
-      if (order.seatArea) parts.push(`${order.seatArea}區`);
-      if (order.note) parts.push(order.note);
-      return parts.join(' ');
-    })
-    .filter(Boolean);
   const orderCopyText = [
     ...orderCopyItems.map(item => `${item.name}${item.note ? ` ${item.note}` : ''} *${item.qty}`),
-    ...(orderCopyOrderNotes.length ? ['', '訂單備註：', ...orderCopyOrderNotes] : []),
     '',
     `共計${copyMealCount}份餐，${copyAlaCarteCount}份單點`,
     `總金額$${totalOrderAmount}`
@@ -813,7 +814,11 @@ export default function AdminDashboard() {
               .map(d => {
                 const sched = schedules.find(s => s.date === d.dateStr);
                 const isSelected = selectedDate === d.dateStr;
-                const totalOrdersCount = sched?.orders ? sched.orders.filter(o => o.status !== 'cancelled').length : 0;
+                const totalOrdersCount = sched?.orders
+                  ? sched.orders
+                    .filter(o => o.status !== 'cancelled')
+                    .reduce((sum, order) => sum + (order.items || []).reduce((itemSum, item) => itemSum + (item.quantity || 0), 0), 0)
+                  : 0;
                 const isHolidayCard = sched ? !sched.isOpen && !sched.deliveredAt : d.isWeekend;
                 
                 return (
@@ -1359,27 +1364,31 @@ export default function AdminDashboard() {
                                   </td>
                                   <td className="p-3 font-bold">{order.user.name}</td>
                                   <td className="p-3 leading-normal">
-                                    {order.orderItems.map(oi => (
-                                      <div key={oi.id} className="font-medium">
-                                        {oi.menuItem.name} <span className="text-[#888888]">x {oi.quantity}</span>
-                                        {oi.note && (
-                                          <span className="block text-[11px] font-bold text-[#EA5B3C]">
-                                            備註: {oi.note}
-                                          </span>
-                                        )}
-                                      </div>
-                                    ))}
+                                    <div className="hidden md:block">
+                                      {order.orderItems.map(oi => (
+                                        <div key={oi.id} className="font-medium">
+                                          {oi.menuItem.name} <span className="text-[#888888]">x {oi.quantity}</span>
+                                          {oi.note && (
+                                            <span className="block text-[11px] font-bold text-[#EA5B3C]">
+                                              備註: {oi.note}
+                                            </span>
+                                          )}
+                                        </div>
+                                      ))}
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => setSelectedOrderDetail(order)}
+                                      className="font-bold text-[#EA5B3C] underline underline-offset-4 md:hidden"
+                                    >
+                                      詳細
+                                    </button>
                                   </td>
                                   <td className="p-3 text-right font-bold text-[#EA5B3C]">
                                     NT$ {order.totalAmount}
                                   </td>
                                   <td className="p-3 text-[#888888] italic">
-                                    {order.seatArea || order.note ? (
-                                      <div className="space-y-1">
-                                        {order.seatArea && <div>座位區：{order.seatArea}區</div>}
-                                        {order.note && <div>{order.note}</div>}
-                                      </div>
-                                    ) : '-'}
+                                    {order.note || '-'}
                                   </td>
                                   <td className="p-3">
                                     <span className={`inline-block px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${
@@ -1435,6 +1444,44 @@ export default function AdminDashboard() {
 
         </section>
         </section>
+
+        {selectedOrderDetail && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 md:hidden">
+            <div className="w-full max-w-sm rounded-2xl border border-[#EAE8E4] bg-white p-5 shadow-xl">
+              <div className="mb-4 flex items-start justify-between gap-3">
+                <div>
+                  <h4 className="text-base font-bold text-[#333333]">餐點內容</h4>
+                  <p className="mt-1 text-xs font-bold text-[#888888]">
+                    {selectedOrderDetail.user.name} · {selectedOrderDetail.orderNumberDisplay || '-'}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedOrderDetail(null)}
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[#EAE8E4] bg-white text-[#888888] transition-all hover:border-[#EA5B3C] hover:text-[#EA5B3C]"
+                  aria-label="關閉餐點內容"
+                >
+                  <i className="ti ti-x text-base"></i>
+                </button>
+              </div>
+              <div className="space-y-3">
+                {selectedOrderDetail.orderItems.map(oi => (
+                  <div key={oi.id} className="rounded-xl border border-[#EAE8E4] bg-[#F9F8F5] p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="font-bold text-[#333333]">{oi.menuItem.name}</div>
+                      <div className="shrink-0 text-sm font-bold text-[#EA5B3C]">x {oi.quantity}</div>
+                    </div>
+                    {oi.note && (
+                      <div className="mt-2 text-xs font-bold text-[#EA5B3C]">
+                        備註: {oi.note}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
 
       </main>
     </>

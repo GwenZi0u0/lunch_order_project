@@ -96,6 +96,11 @@ export async function GET(request) {
           },
           order: {
             include: {
+              orderItems: {
+                include: {
+                  menuItem: true
+                }
+              },
               schedule: {
                 include: {
                   restaurant: true

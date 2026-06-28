@@ -79,6 +79,7 @@ export default function PortalPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [orderError, setOrderError] = useState('');
   const [orderSuccess, setOrderSuccess] = useState('');
+  const [isCumulativeTipOpen, setIsCumulativeTipOpen] = useState(false);
   
   // Current system date/time check
   const [currentDateTime, setCurrentDateTime] = useState({ dateStr: '', timeStr: '' });
@@ -119,6 +120,18 @@ export default function PortalPage() {
 
     return () => clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    if (!isCumulativeTipOpen) return;
+
+    const handlePointerDown = (event) => {
+      if (event.target.closest('[data-cumulative-tip]')) return;
+      setIsCumulativeTipOpen(false);
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown);
+    return () => document.removeEventListener('pointerdown', handlePointerDown);
+  }, [isCumulativeTipOpen]);
 
   const updateTime = () => {
     const now = new Date();
@@ -163,6 +176,9 @@ export default function PortalPage() {
       });
   };
 
+  const removeSeatAreaFromNote = (value) => (value || '').replace(/(^|\s)(A區|B區)(?=\s|$)/g, ' ').replace(/\s+/g, ' ').trim();
+  const applySeatAreaToNote = (area, value) => [area ? `${area}區` : '', removeSeatAreaFromNote(value)].filter(Boolean).join(' ');
+
   // Find schedule details for selected date
   const activeSchedule = schedules.find(s => s.date === selectedDate);
   const activeRestaurant = activeSchedule?.restaurant || null;
@@ -187,15 +203,17 @@ export default function PortalPage() {
 
   useEffect(() => {
     if (!useSavedOrderNote || !user) return;
-    setOrderNote(user.defaultOrderNote || '');
-    setSeatArea(user.defaultSeatArea || '');
+    const defaultSeatArea = user.defaultSeatArea || '';
+    setOrderNote(applySeatAreaToNote(defaultSeatArea, user.defaultOrderNote || ''));
+    setSeatArea(defaultSeatArea);
   }, [useSavedOrderNote, user]);
   
   // Setup order input when selected schedule changes
   useEffect(() => {
     if (activeSchedule) {
-      setOrderNote(activeSchedule.userOrder?.note || '');
-      setSeatArea(activeSchedule.userOrder?.seatArea || '');
+      const userOrderSeatArea = activeSchedule.userOrder?.seatArea || '';
+      setOrderNote(applySeatAreaToNote(userOrderSeatArea, activeSchedule.userOrder?.note || ''));
+      setSeatArea(userOrderSeatArea);
       setUseSavedOrderNote(false);
       setSaveOrderPreference(false);
       const quantities = {};
@@ -228,6 +246,11 @@ export default function PortalPage() {
     });
   };
 
+  const handleSeatAreaToggle = (area) => {
+    setSeatArea(area);
+    setOrderNote(prev => applySeatAreaToNote(area, prev));
+  };
+
   // Calculate order closed status
   const isClosed = () => {
     if (!activeSchedule) return true;
@@ -250,19 +273,49 @@ export default function PortalPage() {
     }, 0);
   };
 
+  const normalizeOrderText = (value) => (value || '').trim();
+
+  const getCurrentOrderItems = () => Object.entries(orderQuantities)
+    .filter(([_, qty]) => qty > 0)
+    .map(([menuItemId, qty]) => ({
+      menuItemId,
+      quantity: qty,
+      note: normalizeOrderText(itemNotes[menuItemId])
+    }))
+    .sort((a, b) => a.menuItemId.localeCompare(b.menuItemId));
+
+  const hasOrderChanges = () => {
+    if (!activeSchedule?.userOrder) return true;
+    if (normalizeOrderText(orderNote) !== normalizeOrderText(activeSchedule.userOrder.note)) return true;
+    if ((seatArea || '') !== (activeSchedule.userOrder.seatArea || '')) return true;
+    if (saveOrderPreference) return true;
+
+    const currentItems = getCurrentOrderItems();
+    const originalItems = activeSchedule.userOrder.items
+      .map(item => ({
+        menuItemId: item.menuItemId,
+        quantity: item.quantity,
+        note: normalizeOrderText(item.note)
+      }))
+      .sort((a, b) => a.menuItemId.localeCompare(b.menuItemId));
+
+    return JSON.stringify(currentItems) !== JSON.stringify(originalItems);
+  };
+
   const handlePlaceOrder = async () => {
     if (isClosed()) return;
     
-    const items = Object.entries(orderQuantities)
-      .filter(([_, qty]) => qty > 0)
-      .map(([menuItemId, qty]) => ({
-        menuItemId,
-        quantity: qty,
-        note: itemNotes[menuItemId] || ''
-      }));
+    if (activeSchedule.userOrder && !hasOrderChanges()) return;
+
+    const items = getCurrentOrderItems();
 
     if (items.length === 0) {
       setOrderError('請至少選擇一項餐點！');
+      return;
+    }
+
+    if (!seatArea) {
+      setOrderError('請選擇座位區！');
       return;
     }
 
@@ -277,7 +330,7 @@ export default function PortalPage() {
         body: JSON.stringify({
           scheduleId: activeSchedule.id,
           items,
-          note: orderNote,
+          note: applySeatAreaToNote(seatArea, orderNote),
           seatArea,
           saveOrderPreference
         })
@@ -591,13 +644,50 @@ export default function PortalPage() {
                       )}
                     </div>
 
-                    <div className="text-right">
-                      <span className="text-xs font-bold text-[#888888] block">截止訂購時間</span>
-                      <span className="text-sm font-bold text-[#EA5B3C] flex items-center gap-1 mt-1 justify-end">
-                        <i className="ti ti-alarm"></i> 每日 {activeSchedule.orderDeadline} 前
-                      </span>
+                    <div className="flex w-full flex-col gap-3 text-left md:w-auto md:flex-row md:items-center md:justify-end md:gap-8 md:text-right">
+                      <div>
+                        <span className="text-xs font-bold text-[#888888] block">截止訂購時間</span>
+                        <span className="text-sm font-bold text-[#EA5B3C] flex items-center gap-1 mt-1 md:justify-end">
+                          <i className="ti ti-alarm"></i> 每日 {activeSchedule.orderDeadline} 前
+                        </span>
+                      </div>
+                      <div>
+                        <span className="relative inline-flex items-center gap-1 text-xs font-bold text-[#888888]" data-cumulative-tip>
+                          目前累計金額
+                          <button
+                            type="button"
+                            onClick={() => setIsCumulativeTipOpen(prev => !prev)}
+                            onMouseEnter={() => setIsCumulativeTipOpen(true)}
+                            onFocus={() => setIsCumulativeTipOpen(true)}
+                            className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-[#D6D1CA] bg-white text-[10px] font-bold text-[#888888] transition-all hover:border-[#EA5B3C] hover:text-[#EA5B3C]"
+                            aria-label="目前累計金額說明"
+                          >
+                            i
+                          </button>
+                          {isCumulativeTipOpen && (
+                            <span className="absolute left-0 top-full z-20 mt-2 w-[min(18rem,calc(100vw-3rem))] rounded-lg border border-[#EAE8E4] bg-white p-3 text-left text-[11px] font-bold leading-relaxed text-[#555555] shadow-lg md:left-auto md:right-0 md:w-56">
+                              這是大家目前已送出的訂單總額，可用來一起確認是否接近餐廳免運門檻。
+                            </span>
+                          )}
+                        </span>
+                        <span className="text-sm font-bold text-[#EA5B3C] block mt-1">
+                          NT$ {activeSchedule.stats?.totalAmount || 0}
+                        </span>
+                      </div>
                     </div>
                   </div>
+
+                  {activeRestaurant.note && (
+                    <div className="flex items-start gap-3 rounded-xl border border-[#EA5B3C]/25 bg-[#FFF3EF] p-4 text-sm leading-normal shadow-sm">
+                      <span className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white text-[#EA5B3C] shadow-sm">
+                        <i className="ti ti-info-circle text-lg"></i>
+                      </span>
+                      <div className="space-y-1">
+                        <div className="text-xs font-bold tracking-widest text-[#EA5B3C]">餐廳備註</div>
+                        <div className="font-bold text-[#333333]">{activeRestaurant.note}</div>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Warning Banner if Closed */}
                   {isClosed() && (
@@ -662,12 +752,6 @@ export default function PortalPage() {
                       );
                     })}
                   </div>
-                  
-                  {activeRestaurant.note && (
-                    <div className="p-4 bg-[#F9F8F5] rounded-xl text-xs text-[#888888] leading-normal border border-[#EAE8E4]">
-                      <strong>備註：</strong>{activeRestaurant.note}
-                    </div>
-                  )}
                 </div>
               ) : (
                 <div className="text-center py-16 space-y-4">
@@ -789,14 +873,13 @@ export default function PortalPage() {
 
                     <div className="space-y-3 rounded-xl border border-[#EAE8E4] bg-[#F9F8F5] p-3">
                       <div className="space-y-1.5">
-                        <label className="text-xs font-bold text-[#888888]">座位區</label>
                         <div className="grid grid-cols-2 gap-2">
                           {['A', 'B'].map(area => (
                             <button
                               key={area}
                               type="button"
                               disabled={isClosed() || isSubmitting}
-                              onClick={() => setSeatArea(prev => prev === area ? '' : area)}
+                              onClick={() => handleSeatAreaToggle(area)}
                               className={`rounded-lg border px-3 py-2 text-xs font-bold transition-all disabled:cursor-not-allowed disabled:opacity-50 ${
                                 seatArea === area
                                   ? 'border-[#EA5B3C] bg-[#FFF3EF] text-[#EA5B3C]'
@@ -810,37 +893,46 @@ export default function PortalPage() {
                       </div>
 
                       <div className="space-y-1.5">
-                        <label className="text-xs font-bold text-[#888888]">整筆訂單備註</label>
+                        <div className="flex items-center justify-between gap-2">
+                          <label className="text-xs font-bold text-[#888888]">備註</label>
+                          <div className="flex items-center gap-1 text-[11px] font-bold">
+                            <button
+                              type="button"
+                              onClick={() => setUseSavedOrderNote(prev => !prev)}
+                              className={`rounded px-1.5 py-0.5 transition-all ${
+                                useSavedOrderNote
+                                  ? 'bg-[#FFF3EF] text-[#EA5B3C] underline decoration-[#EA5B3C] underline-offset-4'
+                                  : 'text-[#888888] hover:bg-white hover:text-[#EA5B3C]'
+                              }`}
+                            >
+                              常用備註
+                            </button>
+                            <span className="text-[#C9C3BB]">|</span>
+                            <button
+                              type="button"
+                              disabled={isClosed() || isSubmitting}
+                              onClick={() => setSaveOrderPreference(prev => !prev)}
+                              className={`rounded px-1.5 py-0.5 transition-all disabled:cursor-not-allowed disabled:opacity-50 ${
+                                saveOrderPreference
+                                  ? 'bg-[#FFF3EF] text-[#EA5B3C] underline decoration-[#EA5B3C] underline-offset-4'
+                                  : 'text-[#888888] hover:bg-white hover:text-[#EA5B3C]'
+                              }`}
+                            >
+                              儲存備註
+                            </button>
+                          </div>
+                        </div>
                         <input
                           type="text"
                           disabled={isClosed() || isSubmitting}
                           value={orderNote}
-                          onChange={(e) => setOrderNote(e.target.value)}
-                          placeholder="例如靠窗、外帶、一起送"
+                          onChange={(e) => {
+                            setOrderNote(seatArea ? applySeatAreaToNote(seatArea, e.target.value) : e.target.value);
+                            setUseSavedOrderNote(false);
+                          }}
                           className="w-full rounded-lg border border-[#EAE8E4] bg-white px-3 py-2 text-xs font-medium text-[#333333] placeholder:text-[#B8B2AA] focus:border-[#EA5B3C] focus:outline-none disabled:bg-[#F2EFEA]"
                         />
                       </div>
-
-                      <label className="flex items-center gap-2 text-[11px] font-bold text-[#555555]">
-                        <input
-                          type="checkbox"
-                          checked={useSavedOrderNote}
-                          onChange={(e) => setUseSavedOrderNote(e.target.checked)}
-                          className="h-4 w-4 accent-[#EA5B3C]"
-                        />
-                        常用備註
-                      </label>
-
-                      <label className="flex items-center gap-2 text-[11px] font-bold text-[#555555]">
-                        <input
-                          type="checkbox"
-                          checked={saveOrderPreference}
-                          onChange={(e) => setSaveOrderPreference(e.target.checked)}
-                          disabled={isClosed() || isSubmitting}
-                          className="h-4 w-4 accent-[#EA5B3C] disabled:opacity-50"
-                        />
-                        儲存備註設定
-                      </label>
                     </div>
 
                     {/* Total & Action Buttons */}
@@ -861,11 +953,11 @@ export default function PortalPage() {
                       )}
                       
                       <button
-                        disabled={isClosed() || isSubmitting || calculateTotal() === 0}
+                        disabled={isClosed() || isSubmitting || calculateTotal() === 0 || !seatArea || (activeSchedule.userOrder && !hasOrderChanges())}
                         onClick={handlePlaceOrder}
                         className="flex-[2] py-3 text-xs font-bold bg-[#EA5B3C] text-white rounded-xl shadow-sm hover:bg-[#333333] hover:shadow-md transition-all disabled:opacity-50 disabled:cursor-not-allowed text-center"
                       >
-                        {isSubmitting ? '處理中...' : activeSchedule.userOrder ? '修改訂單' : '送出訂購'}
+                        {isSubmitting ? '處理中...' : activeSchedule.userOrder ? '修改並送出訂單' : '送出訂購'}
                       </button>
                     </div>
                   </div>

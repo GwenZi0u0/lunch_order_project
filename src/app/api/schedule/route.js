@@ -112,10 +112,10 @@ export async function GET(request) {
             note: oi.note
           }))
         } : null,
-        stats: user.role === 'admin' ? {
+        stats: {
           totalOrders: orderCount,
           totalAmount: sched.orders.filter(o => o.status !== 'cancelled').reduce((sum, o) => sum + o.totalAmount, 0)
-        } : null,
+        },
         orders: user.role === 'admin'
           ? sched.orders.map(order => ({
             id: order.id,

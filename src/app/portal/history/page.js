@@ -37,6 +37,16 @@ function getDateLabel(startDate, endDate) {
   return `${startDate} - ${endDate}`;
 }
 
+function formatTransactionTime(value) {
+  const date = new Date(value);
+  const year = date.getFullYear();
+  const month = date.getMonth() + 1;
+  const day = date.getDate();
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  return `${year}/${month}/${day} ${hours}:${minutes}`;
+}
+
 export default function HistoryPage() {
   const router = useRouter();
   const [user, setUser] = useState(null);
@@ -46,6 +56,7 @@ export default function HistoryPage() {
   const [ledgerEndDate, setLedgerEndDate] = useState('');
   const [isLedgerCalendarOpen, setIsLedgerCalendarOpen] = useState(false);
   const [ledgerCalendarMonth, setLedgerCalendarMonth] = useState(() => new Date());
+  const [selectedTransaction, setSelectedTransaction] = useState(null);
 
   useEffect(() => {
     // Check authentication
@@ -65,6 +76,15 @@ export default function HistoryPage() {
       })
       .catch(() => router.push('/login'));
   }, []);
+
+  useEffect(() => {
+    if (!selectedTransaction) return;
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = originalOverflow;
+    };
+  }, [selectedTransaction]);
 
   const fetchTransactions = ({
     startDate = ledgerStartDate,
@@ -289,11 +309,12 @@ export default function HistoryPage() {
               <table className="w-full text-left border-collapse text-xs">
                 <thead>
                   <tr className="border-b border-[#EAE8E4] text-[#888888] font-bold">
-                    <th className="py-4 font-bold">交易日期</th>
+                    <th className="py-4 font-bold">交易時間</th>
                     <th className="py-4 font-bold">異動金額</th>
                     <th className="py-4 font-bold">來源</th>
-                    <th className="py-4 font-bold">經手人</th>
-                    <th className="py-4 font-bold">備註</th>
+                    <th className="hidden py-4 font-bold md:table-cell">內容</th>
+                    <th className="hidden py-4 font-bold md:table-cell">經手人</th>
+                    <th className="hidden py-4 font-bold md:table-cell">備註</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#EAE8E4] text-[#333333]">
@@ -301,7 +322,7 @@ export default function HistoryPage() {
                     return (
                       <tr key={tx.id} className="hover:bg-[#F9F8F5]/50 transition-colors">
                         <td className="py-4 font-medium">
-                          {new Date(tx.createdAt).toLocaleString('zh-TW', { hour12: false })}
+                          {formatTransactionTime(tx.createdAt)}
                         </td>
                         <td className={`py-4 font-bold text-sm ${tx.amount >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                           {tx.amount >= 0 ? '＋' : '－'}NT$ {Math.abs(tx.amount)}
@@ -309,10 +330,21 @@ export default function HistoryPage() {
                         <td className="py-4 text-[#555555]">
                           {tx.source || (tx.type === 'charge' ? '訂單扣款' : '-')}
                         </td>
-                        <td className="py-4 text-[#888888]">
+                        <td className="hidden py-4 md:table-cell">
+                          {tx.order?.orderItems?.length ? (
+                            <button
+                              type="button"
+                              onClick={() => setSelectedTransaction(tx)}
+                              className="font-bold text-[#EA5B3C] underline underline-offset-4"
+                            >
+                              查看
+                            </button>
+                          ) : '-'}
+                        </td>
+                        <td className="hidden py-4 text-[#888888] md:table-cell">
                           {tx.operator ? tx.operator.name : '系統自動'}
                         </td>
-                        <td className="py-4 leading-normal max-w-[400px] text-[#555555]">
+                        <td className="hidden py-4 leading-normal max-w-[400px] text-[#555555] md:table-cell">
                           {tx.note || '-'}
                         </td>
                       </tr>
@@ -323,6 +355,48 @@ export default function HistoryPage() {
             </div>
           )}
         </div>
+
+        {selectedTransaction && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+            <div className="w-full max-w-sm rounded-2xl border border-[#EAE8E4] bg-white p-5 shadow-xl">
+              <div className="mb-4 flex items-start justify-between gap-3">
+                <div>
+                  <h4 className="text-base font-bold text-[#333333]">訂單詳細內容</h4>
+                  <p className="mt-1 text-xs font-bold text-[#888888]">
+                    {selectedTransaction.order?.schedule?.restaurant?.name || '訂單'} · {formatTransactionTime(selectedTransaction.createdAt)}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedTransaction(null)}
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[#EAE8E4] bg-white text-[#888888] transition-all hover:border-[#EA5B3C] hover:text-[#EA5B3C]"
+                  aria-label="關閉訂單詳細內容"
+                >
+                  <i className="ti ti-x text-base"></i>
+                </button>
+              </div>
+              <div className="space-y-3">
+                {selectedTransaction.order?.orderItems?.map(item => (
+                  <div key={item.id} className="rounded-xl border border-[#EAE8E4] bg-[#F9F8F5] p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="font-bold text-[#333333]">{item.menuItem?.name || '餐點'}</div>
+                      <div className="shrink-0 text-sm font-bold text-[#EA5B3C]">x {item.quantity}</div>
+                    </div>
+                    {item.note && (
+                      <div className="mt-2 text-xs font-bold text-[#EA5B3C]">
+                        備註: {item.note}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+              <div className="mt-4 flex items-center justify-between border-t border-[#EAE8E4] pt-4 text-sm font-bold">
+                <span className="text-[#333333]">總金額</span>
+                <span className="text-[#EA5B3C]">NT$ {Math.abs(selectedTransaction.amount)}</span>
+              </div>
+            </div>
+          </div>
+        )}
 
       </main>
     </>

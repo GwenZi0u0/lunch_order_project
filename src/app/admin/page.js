@@ -469,12 +469,48 @@ export default function AdminDashboard() {
   const todayItemSummary = todayOrders.reduce((summary, order) => {
     order.orderItems.forEach(item => {
       const name = item.menuItem?.name || '未命名品項';
-      if (!summary[name]) summary[name] = { name, qty: 0, price: item.unitPrice };
-      summary[name].qty += item.quantity;
+      const note = (item.note || order.note || '').trim();
+      const summaryKey = `${item.menuItemId || name}__${note}`;
+      if (!summary[summaryKey]) summary[summaryKey] = { name, note, qty: 0, price: item.unitPrice };
+      summary[summaryKey].qty += item.quantity;
     });
     return summary;
   }, {});
-  const todayItems = Object.values(todayItemSummary);
+  const todayItems = Object.values(todayItemSummary).sort((a, b) => {
+    if (a.name !== b.name) return a.name.localeCompare(b.name, 'zh-Hant');
+    return (a.note || '').localeCompare(b.note || '', 'zh-Hant');
+  });
+  const getSeatArea = (order) => {
+    const directArea = (order.seatArea || '').trim().toUpperCase();
+    if (directArea === 'A' || directArea === 'B') return directArea;
+
+    const searchableNote = [
+      order.note,
+      ...(order.orderItems || []).map(item => item.note)
+    ].filter(Boolean).join(' ');
+
+    if (/A\s*[\u5340\u533A]|\uFF21\s*[\u5340\u533A]/i.test(searchableNote)) return 'A';
+    if (/B\s*[\u5340\u533A]|\uFF22\s*[\u5340\u533A]/i.test(searchableNote)) return 'B';
+    return 'unassigned';
+  };
+  const todayOrdersBySeatArea = [
+    {
+      key: 'A',
+      title: 'A \u5340',
+      orders: todayOrders.filter(order => getSeatArea(order) === 'A')
+    },
+    {
+      key: 'B',
+      title: 'B \u5340',
+      orders: todayOrders.filter(order => getSeatArea(order) === 'B')
+    },
+    {
+      key: 'unassigned',
+      title: '\u672A\u5206\u985E',
+      orders: todayOrders.filter(order => getSeatArea(order) === 'unassigned')
+    }
+  ].filter(group => group.orders.length > 0);
+  const displayUserName = (name) => (name || '未命名成員').replace(/\s*\(欠款警示\)\s*/g, '').trim();
 
   if (!user) {
     return (
@@ -543,8 +579,13 @@ export default function AdminDashboard() {
                 </h4>
                 <div className="max-h-[240px] overflow-y-auto pr-1 space-y-2 kaizen-scrollbar">
                   {todayItems.length > 0 ? todayItems.map(item => (
-                    <div key={item.name} className="flex items-center justify-between gap-3 rounded-lg border border-[#EAE8E4] px-3 py-2 text-xs">
-                      <span className="font-bold text-[#333333] truncate">{item.name}</span>
+                    <div key={`${item.name}-${item.note || 'no-note'}`} className="flex items-center justify-between gap-3 rounded-lg border border-[#EAE8E4] px-3 py-2 text-xs">
+                      <span className="min-w-0">
+                        <span className="block font-bold text-[#333333] truncate">{item.name}</span>
+                        {item.note && (
+                          <span className="mt-1 block truncate text-[11px] text-[#888888]">備註：{item.note}</span>
+                        )}
+                      </span>
                       <span className="shrink-0 text-[#888888]">x {item.qty}</span>
                     </div>
                   )) : (
@@ -560,7 +601,14 @@ export default function AdminDashboard() {
                   <i className="ti ti-users text-[#EA5B3C]"></i> 今日訂購者訂餐內容
                 </h4>
                 <div className="max-h-[240px] overflow-y-auto pr-1 space-y-3 kaizen-scrollbar">
-                  {todayOrders.length > 0 ? todayOrders.map(order => (
+                  {todayOrders.length > 0 ? todayOrdersBySeatArea.map(group => (
+                    <div key={group.key} className="space-y-2">
+                      <div className="sticky top-0 z-10 flex items-center justify-between rounded-lg border border-[#EAE8E4] bg-[#F9F8F5] px-3 py-2 text-xs font-bold text-[#333333]">
+                        <span>{group.title}</span>
+                        <span className="text-[#888888]">{group.orders.length} {'\u4EBA'}</span>
+                      </div>
+                      <div className="space-y-3">
+                        {group.orders.map(order => (
                     <div key={order.id} className="flex gap-3 rounded-lg border border-[#EAE8E4] p-3 text-xs">
                       <div className="flex w-12 shrink-0 items-start justify-center">
                         <span className="inline-flex min-w-9 items-center justify-center rounded-full border border-[#EA5B3C]/20 bg-[#FFF3EF] px-2 py-1 text-[11px] font-bold text-[#EA5B3C]">
@@ -569,7 +617,7 @@ export default function AdminDashboard() {
                       </div>
                       <div className="min-w-0 flex-1 space-y-2">
                         <div className="flex items-center justify-between gap-3">
-                          <span className="font-bold text-[#333333] truncate">{order.user?.name || '未命名成員'}</span>
+                          <span className="font-bold text-[#333333] truncate">{displayUserName(order.user?.name)}</span>
                           <span className="font-bold text-[#EA5B3C] shrink-0">NT$ {order.totalAmount}</span>
                         </div>
                         <div className="text-[#888888] leading-relaxed">
@@ -581,6 +629,9 @@ export default function AdminDashboard() {
                           ))}
                         </div>
                         {order.note && <p className="text-[#888888] border-t border-[#EAE8E4] pt-2">備註：{order.note}</p>}
+                      </div>
+                    </div>
+                        ))}
                       </div>
                     </div>
                   )) : (

@@ -59,7 +59,7 @@ export async function POST(request) {
           avatarUrl = 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&h=100&fit=crop&crop=faces';
         } else if (userType === 'negative') {
           email = 'datong@kaizen.com';
-          name = '王大同 (欠款警示)';
+          name = '王大同';
           initialBalance = -80;
           avatarUrl = 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&h=100&fit=crop&crop=faces';
         } else {

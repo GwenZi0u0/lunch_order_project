@@ -510,6 +510,8 @@ export default function WalletsManagementPage() {
                       filteredUsers.map(u => {
                         const displayName = getDisplayName(u.name);
                         const balance = u.balance;
+                        const pendingHoldAmount = u.pendingHoldAmount || 0;
+                        const availableBalance = u.availableBalance ?? (balance - pendingHoldAmount);
                         let balanceColor = 'text-[#333333] font-bold';
                         let warningBadge = null;
                         
@@ -573,9 +575,16 @@ export default function WalletsManagementPage() {
                               </select>
                             </td>
                             <td className="p-3 text-right font-bold text-sm">
-                              <span className={balanceColor}>
-                                <span className="hidden sm:inline">{balance > 0 ? '＋' : balance < 0 ? '－' : ''}</span>NT$ {Math.abs(balance)}
-                              </span>
+                              <div className="flex flex-col items-end gap-0.5">
+                                <span className={balanceColor}>
+                                  <span className="hidden sm:inline">{balance > 0 ? '＋' : balance < 0 ? '－' : ''}</span>NT$ {Math.abs(balance)}
+                                </span>
+                                {pendingHoldAmount > 0 && (
+                                  <span className="text-[10px] font-bold text-[#888888]">
+                                    預扣後剩餘 {availableBalance < 0 ? '－' : ''}NT$ {Math.abs(availableBalance)}
+                                  </span>
+                                )}
+                              </div>
                               {warningBadge}
                             </td>
                             <td className="p-3 text-center">

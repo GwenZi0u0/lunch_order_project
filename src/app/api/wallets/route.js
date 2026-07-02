@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/db';
 import { getCurrentUser } from '@/lib/auth';
+import { getPendingHoldAmount, withWalletHold } from '@/lib/wallet';
 
 const WALLET_TRANSACTION_SOURCES = ['-', '現金', '線上支付平台', '銀行轉帳'];
 
@@ -53,7 +54,10 @@ export async function GET(request) {
       const users = await prisma.user.findMany({
         orderBy: { name: 'asc' }
       });
-      return NextResponse.json(users);
+      const usersWithHold = await Promise.all(users.map(async (item) => (
+        withWalletHold(item, await getPendingHoldAmount(prisma, item.id))
+      )));
+      return NextResponse.json(usersWithHold);
     }
 
     if (action === 'history') {

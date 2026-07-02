@@ -179,6 +179,8 @@ export default function HistoryPage() {
 
   const wallet = getWalletStyles();
   const walletAmount = `${user.balance < 0 ? '－' : ''}NT$ ${Math.abs(user.balance)}`;
+  const pendingHoldAmount = user.pendingHoldAmount || 0;
+  const availableBalance = user.availableBalance ?? (user.balance - pendingHoldAmount);
 
   return (
     <>
@@ -202,8 +204,15 @@ export default function HistoryPage() {
         <section className="bg-white rounded-xl border border-[#EAE8E4] p-6 shadow-sm">
           <div className={`p-5 bg-[#F9F8F5] rounded-xl border ${wallet.cardBorder}`}>
             <span className="text-xs font-bold text-[#888888] tracking-widest uppercase mb-2 block">{wallet.label}</span>
-            <div className={`text-3xl font-bold ${wallet.valueColor}`}>
-              {walletAmount}
+            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+              <span className={`text-3xl font-bold ${wallet.valueColor}`}>
+                {walletAmount}
+              </span>
+              {pendingHoldAmount > 0 && (
+                <span className="text-xs font-bold text-[#888888]">
+                  預扣後剩餘 {availableBalance < 0 ? '－' : ''}NT$ {Math.abs(availableBalance)}
+                </span>
+              )}
             </div>
           </div>
         </section>

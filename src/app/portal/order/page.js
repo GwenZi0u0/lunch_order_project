@@ -454,6 +454,11 @@ export default function PortalPage() {
 
   const wallet = getWalletStyles();
   const walletAmount = `${user.balance < 0 ? '－' : ''}NT$ ${Math.abs(user.balance)}`;
+  const pendingHoldAmount = user.pendingHoldAmount || 0;
+  const availableBalance = user.availableBalance ?? (user.balance - pendingHoldAmount);
+  const currentOrderHoldAmount = activeSchedule?.userOrder?.totalAmount || 0;
+  const projectedHoldAmount = Math.max(0, pendingHoldAmount - currentOrderHoldAmount + calculateTotal());
+  const projectedAvailableBalance = user.balance - projectedHoldAmount;
 
   return (
     <>
@@ -467,8 +472,15 @@ export default function PortalPage() {
             {/* Wallet Info */}
             <div className={`p-5 bg-[#F9F8F5] rounded-xl border ${wallet.cardBorder} flex flex-col justify-between h-full`}>
               <span className="text-xs font-bold text-[#888888] tracking-widest uppercase mb-2">{wallet.label}</span>
-              <div className={`text-3xl font-bold ${wallet.valueColor} mb-2`}>
-                {walletAmount}
+              <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 mb-2">
+                <span className={`text-3xl font-bold ${wallet.valueColor}`}>
+                  {walletAmount}
+                </span>
+                {pendingHoldAmount > 0 && (
+                  <span className="text-xs font-bold text-[#888888]">
+                    預扣後剩餘 {availableBalance < 0 ? '－' : ''}NT$ {Math.abs(availableBalance)}
+                  </span>
+                )}
               </div>
             </div>
 
@@ -970,9 +982,16 @@ export default function PortalPage() {
 
                     <div className="sticky bottom-0 z-10 space-y-2 bg-white pt-3">
                       {/* Total & Action Buttons */}
-                      <div className="flex justify-between items-center font-bold text-[#333333] text-sm">
-                        <span>總計金額</span>
-                        <span className="text-xl text-[#EA5B3C] font-bold">NT$ {calculateTotal()}</span>
+                      <div className="space-y-1.5">
+                        <div className="text-right text-[11px] font-bold text-[#888888]">
+                          預扣後金額 {projectedAvailableBalance < 0 ? '－' : ''}${Math.abs(projectedAvailableBalance)}
+                          <span className="px-1.5 text-[#C9C3BB]">|</span>
+                          目前儲值金 {user.balance < 0 ? '－' : ''}${Math.abs(user.balance)}
+                        </div>
+                        <div className="flex justify-between items-center font-bold text-[#333333] text-sm">
+                          <span>總計金額</span>
+                          <span className="text-xl text-[#EA5B3C] font-bold">NT$ {calculateTotal()}</span>
+                        </div>
                       </div>
 
                       <div className="space-y-2 pt-2">

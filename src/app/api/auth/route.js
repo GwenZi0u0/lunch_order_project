@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/db';
 import { signJWT, getCurrentUser } from '@/lib/auth';
+import { getPendingHoldAmount, withWalletHold } from '@/lib/wallet';
 
 export async function GET(request) {
   try {
@@ -18,7 +19,12 @@ export async function GET(request) {
       return NextResponse.json({ authenticated: false }, { status: 401 });
     }
 
-    return NextResponse.json({ authenticated: true, user: dbUser });
+    const pendingHoldAmount = await getPendingHoldAmount(prisma, dbUser.id);
+
+    return NextResponse.json({
+      authenticated: true,
+      user: withWalletHold(dbUser, pendingHoldAmount)
+    });
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

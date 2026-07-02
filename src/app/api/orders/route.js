@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/db';
 import { getCurrentUser } from '@/lib/auth';
+import { getPendingHoldAmount, MIN_AVAILABLE_BALANCE } from '@/lib/wallet';
 
 // Helper to get current Taipei/system date and time info
 function getCurrentDateTime() {
@@ -227,6 +228,21 @@ export async function POST(request) {
           status: { not: 'cancelled' }
         }
       });
+
+      if (!isAdminOverride) {
+        const dbUser = await tx.user.findUnique({
+          where: { id: orderUserId },
+          select: { balance: true }
+        });
+        const pendingHoldAmount = await getPendingHoldAmount(tx, orderUserId, {
+          excludeOrderId: existingOrder?.id
+        });
+        const projectedAvailableBalance = (dbUser?.balance || 0) - pendingHoldAmount - totalAmount;
+
+        if (projectedAvailableBalance < MIN_AVAILABLE_BALANCE) {
+          throw new Error('儲值金不夠，請聯絡管理員。');
+        }
+      }
 
       if (existingOrder) {
         const orderNumber = existingOrder.orderNumber || await allocateOrderNumber(tx, schedule.date);

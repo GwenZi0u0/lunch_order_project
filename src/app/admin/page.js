@@ -623,7 +623,12 @@ export default function AdminDashboard() {
                         <div className="text-[#888888] leading-relaxed">
                           {order.orderItems.map(item => (
                             <div key={item.id} className="flex justify-between gap-3">
-                              <span className="truncate">{item.menuItem?.name || '未命名品項'}</span>
+                              <span className="min-w-0">
+                                <span className="block truncate">{item.menuItem?.name || '未命名品項'}</span>
+                                {item.note && (
+                                  <span className="mt-0.5 block truncate text-[11px] text-[#888888]">備註：{item.note}</span>
+                                )}
+                              </span>
                               <span className="shrink-0">x {item.quantity}</span>
                             </div>
                           ))}

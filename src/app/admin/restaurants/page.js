@@ -4,14 +4,39 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Navbar from '@/components/Navbar';
 
+const DEFAULT_CUSTOMIZATION_OPTIONS = ['\u98ef\u5c11', '\u63db\u83dc', '\u63db\u83dc+$20'];
+
 const MENU_JSON_EXAMPLE = {
   "餐廳": "好食肌",
   "品項列表": [
-    { "類型": "餐盒", "品項": "香煎鮭魚餐盒", "價格": 160 },
-    { "類型": "餐盒", "品項": "板腱牛排餐盒", "價格": 160 },
-    { "類型": "餐盒", "品項": "低溫烹調嫩雞肉餐盒", "價格": 120 }
+    { "類型": "餐盒", "品項": "香煎鮭魚餐盒", "價格": 160, "客製化選項": ["飯少", "換菜", "換菜+$20"] },
+    { "類型": "餐盒", "品項": "板腱牛排餐盒", "價格": 160, "客製化選項": ["飯少", "換菜", "換菜+$20"] },
+    { "類型": "餐盒", "品項": "低溫烹調嫩雞肉餐盒", "價格": 120, "客製化選項": ["飯少", "換菜", "換菜+$20"] }
   ]
 };
+
+function normalizeCustomizationOptions(value) {
+  if (Array.isArray(value)) {
+    return value.map(option => String(option).trim()).filter(Boolean);
+  }
+
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) {
+        return parsed.map(option => String(option).trim()).filter(Boolean);
+      }
+    } catch {
+      return value.split(/[\r\n,;|]+/).map(option => option.trim()).filter(Boolean);
+    }
+  }
+
+  return DEFAULT_CUSTOMIZATION_OPTIONS;
+}
+
+function optionsToInputValue(value) {
+  return normalizeCustomizationOptions(value).join(', ');
+}
 
 export default function RestaurantsPage() {
   const router = useRouter();
@@ -42,6 +67,7 @@ export default function RestaurantsPage() {
       name: (item.name || '').trim(),
       price: parseInt(item.price, 10) || 0,
       category: (item.category || '').trim(),
+      customizationOptions: normalizeCustomizationOptions(item.customizationOptions),
     })),
   });
 
@@ -91,6 +117,7 @@ export default function RestaurantsPage() {
       category: item['類型'] || item.category || '主食',
       name: item['品項'] || item.name || '',
       price: Number(item['價格'] ?? item.price ?? 0),
+      customizationOptions: normalizeCustomizationOptions(item['客製化選項'] || item.customizationOptions),
     })).filter(item => item.name && Number.isFinite(item.price) && item.price > 0);
 
     if (normalizedItems.length === 0) {
@@ -169,7 +196,10 @@ export default function RestaurantsPage() {
       const parsed = result.data;
       setNewRestName(parsed.name || '');
       setNewRestPhone(parsed.phone || '');
-      setMenuItems(parsed.menuItems || []);
+      setMenuItems((parsed.menuItems || []).map(item => ({
+        ...item,
+        customizationOptions: normalizeCustomizationOptions(item.customizationOptions)
+      })));
       
       if (result.warning) {
         setOcrWarning(result.warning);
@@ -194,7 +224,7 @@ export default function RestaurantsPage() {
   };
 
   const handleAddMenuItem = () => {
-    setMenuItems(prev => [{ name: '', price: 0, category: '餐盒' }, ...prev]);
+    setMenuItems(prev => [{ name: '', price: 0, category: '餐盒', customizationOptions: DEFAULT_CUSTOMIZATION_OPTIONS }, ...prev]);
   };
 
   const handleRemoveMenuItem = (index) => {
@@ -216,6 +246,7 @@ export default function RestaurantsPage() {
       name: item.name,
       price: item.price,
       category: item.category || '',
+      customizationOptions: normalizeCustomizationOptions(item.customizationOptions),
     }));
 
     setEditingRestaurantId(restaurant.id);
@@ -530,6 +561,7 @@ export default function RestaurantsPage() {
                           <th className="p-3">品項名稱</th>
                           <th className="p-3 w-[120px]">單價 (NT$)</th>
                           <th className="p-3 w-[150px]">類型</th>
+                          <th className="p-3 min-w-[220px]">客製化選項</th>
                           <th className="p-3 w-[60px] text-center">操作</th>
                         </tr>
                       </thead>
@@ -559,6 +591,15 @@ export default function RestaurantsPage() {
                                 value={item.category || ''}
                                 onChange={(e) => handleMenuItemChange(index, 'category', e.target.value)}
                                 placeholder="例如: 餐盒"
+                                className="w-full text-xs px-2 py-1.5 border border-[#EAE8E4] rounded focus:outline-none focus:border-[#EA5B3C] bg-white font-medium"
+                              />
+                            </td>
+                            <td className="p-2">
+                              <input
+                                type="text"
+                                value={optionsToInputValue(item.customizationOptions)}
+                                onChange={(e) => handleMenuItemChange(index, 'customizationOptions', normalizeCustomizationOptions(e.target.value))}
+                                placeholder="飯少, 換菜, 換菜+$20"
                                 className="w-full text-xs px-2 py-1.5 border border-[#EAE8E4] rounded focus:outline-none focus:border-[#EA5B3C] bg-white font-medium"
                               />
                             </td>

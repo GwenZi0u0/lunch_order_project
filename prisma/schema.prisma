@@ -33,14 +33,15 @@ model Restaurant {
 }
 
 model MenuItem {
-  id           String      @id @default(uuid())
-  restaurantId String
-  restaurant   Restaurant  @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
-  name         String
-  price        Int
-  category     String
-  isAvailable  Boolean     @default(true)
-  orderItems   OrderItem[]
+  id                   String      @id @default(uuid())
+  restaurantId         String
+  restaurant           Restaurant  @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  name                 String
+  price                Int
+  category             String
+  customizationOptions String?
+  isAvailable          Boolean     @default(true)
+  orderItems           OrderItem[]
 }
 
 model WeeklySchedule {

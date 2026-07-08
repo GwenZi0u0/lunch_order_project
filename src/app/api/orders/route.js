@@ -63,6 +63,11 @@ async function allocateOrderNumber(tx, scheduleDate) {
   return `${scheduleDate.replaceAll('-', '')}${String(sequence.lastNumber).padStart(3, '0')}`;
 }
 
+function getCustomizationExtraAmount(value) {
+  const matches = String(value || '').matchAll(/\+\s*(?:NT\$|\$)?\s*(\d+)/gi);
+  return Array.from(matches).reduce((sum, match) => sum + (parseInt(match[1], 10) || 0), 0);
+}
+
 export async function GET(request) {
   try {
     const user = await getCurrentUser(request);
@@ -206,7 +211,8 @@ export async function POST(request) {
     let totalAmount = 0;
     const orderItemsData = items.map(item => {
       const dbItem = menuItems.find(mi => mi.id === item.menuItemId);
-      const price = dbItem.price;
+      const note = typeof item.note === 'string' ? item.note.trim() : '';
+      const price = dbItem.price + getCustomizationExtraAmount(note);
       const quantity = parseInt(item.quantity, 10) || 1;
       totalAmount += price * quantity;
       
@@ -214,7 +220,7 @@ export async function POST(request) {
         menuItemId: item.menuItemId,
         quantity,
         unitPrice: price, // Snapshot price
-        note: typeof item.note === 'string' ? item.note.trim() : null
+        note: note || null
       };
     });
 

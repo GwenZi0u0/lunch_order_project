@@ -4,6 +4,42 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Navbar from '@/components/Navbar';
 
+const DEFAULT_CUSTOMIZATION_OPTIONS = ['\u98ef\u5c11', '\u63db\u83dc', '\u63db\u83dc+$20'];
+
+function parseCustomizationOptions(value) {
+  if (Array.isArray(value)) {
+    return value.map(option => String(option).trim()).filter(Boolean);
+  }
+
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) {
+        return parsed.map(option => String(option).trim()).filter(Boolean);
+      }
+    } catch {
+      return value.split(/[\r\n,;|]+/).map(option => option.trim()).filter(Boolean);
+    }
+  }
+
+  return DEFAULT_CUSTOMIZATION_OPTIONS;
+}
+
+function splitExistingItemNote(menuItem, note) {
+  const options = parseCustomizationOptions(menuItem?.customizationOptions);
+  const selectedOptions = options.filter(option => (note || '').includes(option));
+  const cleanedNote = selectedOptions.reduce((current, option) => {
+    return current.split(option).join(' ');
+  }, note || '').replace(/[;,\s]+/g, ' ').trim();
+
+  return { selectedOptions, note: cleanedNote };
+}
+
+function getCustomizationExtraAmount(value) {
+  const matches = String(value || '').matchAll(/\+\s*(?:NT\$|\$)?\s*(\d+)/gi);
+  return Array.from(matches).reduce((sum, match) => sum + (parseInt(match[1], 10) || 0), 0);
+}
+
 function formatDate(date) {
   const d = new Date(date);
   let month = '' + (d.getMonth() + 1);
@@ -72,6 +108,8 @@ export default function PortalPage() {
   // Order state
   const [orderQuantities, setOrderQuantities] = useState({}); // { menuItemId: quantity }
   const [itemNotes, setItemNotes] = useState({}); // { menuItemId: note }
+  const [itemCustomOptions, setItemCustomOptions] = useState({}); // { menuItemId: string[] }
+  const [editingMenuItemId, setEditingMenuItemId] = useState('');
   const [orderNote, setOrderNote] = useState('');
   const [seatArea, setSeatArea] = useState('');
   const [useSavedOrderNote, setUseSavedOrderNote] = useState(false);
@@ -212,6 +250,8 @@ export default function PortalPage() {
     if (!schedule) {
       setOrderQuantities({});
       setItemNotes({});
+      setItemCustomOptions({});
+      setEditingMenuItemId('');
       setOrderNote('');
       setSeatArea('');
       setUseSavedOrderNote(false);
@@ -222,11 +262,15 @@ export default function PortalPage() {
     const userOrderSeatArea = schedule.userOrder?.seatArea || '';
     const quantities = {};
     const notes = {};
+    const customOptions = {};
 
     if (schedule.userOrder) {
       schedule.userOrder.items.forEach(item => {
+        const menuItem = schedule.restaurant?.menuItems?.find(mi => mi.id === item.menuItemId);
+        const parsedNote = splitExistingItemNote(menuItem, item.note || '');
         quantities[item.menuItemId] = item.quantity;
-        notes[item.menuItemId] = item.note || '';
+        notes[item.menuItemId] = parsedNote.note;
+        customOptions[item.menuItemId] = parsedNote.selectedOptions;
       });
     }
 
@@ -236,6 +280,8 @@ export default function PortalPage() {
     setSaveOrderPreference(false);
     setOrderQuantities(quantities);
     setItemNotes(notes);
+    setItemCustomOptions(customOptions);
+    setEditingMenuItemId('');
   };
 
   const handleCancelDraftModification = () => {
@@ -255,6 +301,52 @@ export default function PortalPage() {
     setOrderQuantities(prev => {
       const current = prev[menuItemId] || 0;
       const next = Math.max(0, current + delta);
+      return { ...prev, [menuItemId]: next };
+    });
+  };
+
+  const getMenuItemById = (menuItemId) => activeRestaurant?.menuItems.find(item => item.id === menuItemId);
+
+  const composeItemNote = (menuItemId) => {
+    const selectedOptions = itemCustomOptions[menuItemId] || [];
+    const freeNote = normalizeOrderText(itemNotes[menuItemId]);
+    return [...selectedOptions, freeNote].filter(Boolean).join('; ');
+  };
+
+  const getItemExtraAmount = (menuItemId) => {
+    return (itemCustomOptions[menuItemId] || []).reduce((sum, option) => {
+      return sum + getCustomizationExtraAmount(option);
+    }, 0);
+  };
+
+  const getItemUnitPrice = (item) => {
+    return item.price + getItemExtraAmount(item.id);
+  };
+
+  const openMenuItemDialog = (item) => {
+    if (isClosed()) return;
+    setEditingMenuItemId(item.id);
+    setItemCustomOptions(prev => ({
+      ...prev,
+      [item.id]: prev[item.id] || []
+    }));
+  };
+
+  const closeMenuItemDialog = () => {
+    setEditingMenuItemId('');
+  };
+
+  const handleDialogQtyChange = (menuItemId, delta) => {
+    handleQtyChange(menuItemId, delta);
+  };
+
+  const handleCustomOptionToggle = (menuItemId, option) => {
+    setItemCustomOptions(prev => {
+      const current = prev[menuItemId] || [];
+      const next = current.includes(option)
+        ? current.filter(item => item !== option)
+        : [...current, option];
+
       return { ...prev, [menuItemId]: next };
     });
   };
@@ -289,7 +381,7 @@ export default function PortalPage() {
     if (!activeRestaurant) return 0;
     return activeRestaurant.menuItems.reduce((sum, item) => {
       const qty = orderQuantities[item.id] || 0;
-      return sum + item.price * qty;
+      return sum + getItemUnitPrice(item) * qty;
     }, 0);
   };
 
@@ -300,7 +392,7 @@ export default function PortalPage() {
     .map(([menuItemId, qty]) => ({
       menuItemId,
       quantity: qty,
-      note: normalizeOrderText(itemNotes[menuItemId])
+      note: composeItemNote(menuItemId)
     }))
     .sort((a, b) => a.menuItemId.localeCompare(b.menuItemId));
 
@@ -459,6 +551,9 @@ export default function PortalPage() {
   const currentOrderHoldAmount = activeSchedule?.userOrder?.totalAmount || 0;
   const projectedHoldAmount = Math.max(0, pendingHoldAmount - currentOrderHoldAmount + calculateTotal());
   const projectedAvailableBalance = user.balance - projectedHoldAmount;
+  const editingMenuItem = getMenuItemById(editingMenuItemId);
+  const editingMenuItemQty = editingMenuItem ? (orderQuantities[editingMenuItem.id] || 0) : 0;
+  const editingMenuItemOptions = editingMenuItem ? parseCustomizationOptions(editingMenuItem.customizationOptions) : [];
 
   return (
     <>
@@ -760,35 +855,39 @@ export default function PortalPage() {
                             {items.map(item => {
                               const qty = orderQuantities[item.id] || 0;
                               return (
-                                <div 
+                                <button
+                                  type="button"
                                   key={item.id}
-                                  className={`p-4 border rounded-xl flex items-center justify-between transition-all ${
+                                  disabled={isClosed()}
+                                  onClick={() => openMenuItemDialog(item)}
+                                  className={`w-full p-4 border rounded-xl flex items-center justify-between text-left transition-all disabled:cursor-not-allowed disabled:opacity-60 ${
                                     qty > 0 ? 'border-[#EA5B3C] bg-orange-[0.005]' : 'border-[#EAE8E4]'
                                   }`}
                                 >
-                                  <div>
+                                  <div className="min-w-0">
                                     <div className="font-bold text-[#333333] text-sm">{item.name}</div>
-                                    <div className="text-xs text-[#EA5B3C] font-bold mt-1">NT$ {item.price}</div>
+                                    <div className="text-xs text-[#EA5B3C] font-bold mt-1">
+                                      NT$ {getItemUnitPrice(item)}
+                                      {getItemExtraAmount(item.id) > 0 && (
+                                        <span className="ml-1 text-[11px] text-[#888888]">
+                                          (含加價 +{getItemExtraAmount(item.id)})
+                                        </span>
+                                      )}
+                                    </div>
+                                    {composeItemNote(item.id) && (
+                                      <div className="mt-1 truncate text-[11px] font-bold text-[#888888]">
+                                        備註：{composeItemNote(item.id)}
+                                      </div>
+                                    )}
                                   </div>
 
-                                  <div className="flex items-center gap-3">
-                                    <button
-                                      disabled={isClosed()}
-                                      onClick={() => handleQtyChange(item.id, -1)}
-                                      className="w-8 h-8 rounded-full border border-[#EAE8E4] flex items-center justify-center text-[#888888] hover:text-[#EA5B3C] hover:border-[#EA5B3C] disabled:opacity-50 disabled:cursor-not-allowed bg-white"
-                                    >
-                                      <i className="ti ti-minus text-xs"></i>
-                                    </button>
-                                    <span className="w-6 text-center font-bold text-sm text-[#333333]">{qty}</span>
-                                    <button
-                                      disabled={isClosed()}
-                                      onClick={() => handleQtyChange(item.id, 1)}
-                                      className="w-8 h-8 rounded-full border border-[#EAE8E4] flex items-center justify-center text-[#888888] hover:text-[#EA5B3C] hover:border-[#EA5B3C] disabled:opacity-50 disabled:cursor-not-allowed bg-white"
-                                    >
-                                      <i className="ti ti-plus text-xs"></i>
-                                    </button>
+                                  <div className="flex shrink-0 items-center gap-2">
+                                    <span className="inline-flex h-9 min-w-9 items-center justify-center rounded-full border border-[#EAE8E4] bg-white px-3 text-sm font-bold text-[#333333]">
+                                      {qty}
+                                    </span>
+                                    <i className="ti ti-chevron-right text-lg text-[#C9C3BB]"></i>
                                   </div>
-                                </div>
+                                </button>
                               );
                             })}
                           </div>
@@ -845,16 +944,13 @@ export default function PortalPage() {
                           <div className="flex items-center justify-between gap-2">
                             <span className="text-[#333333] font-bold truncate">{item.name}</span>
                             <span className="text-[#888888] shrink-0">x {qty}</span>
-                            <span className="text-[#333333] font-bold shrink-0">NT$ {item.price * qty}</span>
+                            <span className="text-[#333333] font-bold shrink-0">NT$ {getItemUnitPrice(item) * qty}</span>
                           </div>
-                          <input
-                            type="text"
-                            disabled={isClosed() || isSubmitting}
-                            value={itemNotes[item.id] || ''}
-                            onChange={(e) => setItemNotes(prev => ({ ...prev, [item.id]: e.target.value }))}
-                            placeholder="此餐點備註，例如飯少、換菜"
-                            className="w-full rounded-lg border border-[#EAE8E4] bg-white px-3 py-2 text-xs font-medium text-[#333333] placeholder:text-[#B8B2AA] focus:border-[#EA5B3C] focus:outline-none disabled:bg-[#F2EFEA]"
-                          />
+                          {composeItemNote(item.id) && (
+                            <div className="rounded-lg border border-[#EAE8E4] bg-white px-3 py-2 text-xs font-bold text-[#888888]">
+                              備註：{composeItemNote(item.id)}
+                            </div>
+                          )}
                         </div>
                       );
                     })}
@@ -1055,6 +1151,117 @@ export default function PortalPage() {
               >
                 修改訂單內容
               </button>
+            </div>
+          </div>
+        )}
+
+        {editingMenuItem && (
+          <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 px-4 py-4 sm:items-center">
+            <div className="w-full max-w-[520px] overflow-hidden rounded-xl border border-[#EAE8E4] bg-white shadow-2xl">
+              <div className="flex items-start justify-between gap-4 border-b border-[#EAE8E4] px-5 py-4">
+                <div className="min-w-0">
+                  <h3 className="truncate text-base font-bold text-[#333333]">{editingMenuItem.name}</h3>
+                  <div className="mt-1 text-xs font-bold text-[#EA5B3C]">NT$ {editingMenuItem.price}</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={closeMenuItemDialog}
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#EAE8E4] text-[#888888] transition-all hover:border-[#EA5B3C] hover:text-[#EA5B3C]"
+                  aria-label="關閉"
+                >
+                  <i className="ti ti-x"></i>
+                </button>
+              </div>
+
+              <div className="space-y-5 px-5 py-5">
+                <div className="flex items-center justify-between rounded-xl border border-[#EAE8E4] bg-[#F9F8F5] p-4">
+                  <span className="text-sm font-bold text-[#333333]">數量</span>
+                  <div className="flex items-center gap-4">
+                    <button
+                      type="button"
+                      onClick={() => handleDialogQtyChange(editingMenuItem.id, -1)}
+                      className="flex h-10 w-10 items-center justify-center rounded-full border border-[#EAE8E4] bg-white text-[#888888] transition-all hover:border-[#EA5B3C] hover:text-[#EA5B3C]"
+                      aria-label="減少數量"
+                    >
+                      <i className="ti ti-minus text-sm"></i>
+                    </button>
+                    <span className="min-w-8 text-center text-lg font-bold text-[#333333]">{editingMenuItemQty}</span>
+                    <button
+                      type="button"
+                      onClick={() => handleDialogQtyChange(editingMenuItem.id, 1)}
+                      className="flex h-10 w-10 items-center justify-center rounded-full border border-[#EAE8E4] bg-white text-[#888888] transition-all hover:border-[#EA5B3C] hover:text-[#EA5B3C]"
+                      aria-label="增加數量"
+                    >
+                      <i className="ti ti-plus text-sm"></i>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <div className="text-xs font-bold tracking-widest text-[#888888]">客製化</div>
+                  <div className="flex flex-wrap gap-2">
+                    {editingMenuItemOptions.map(option => {
+                      const selected = (itemCustomOptions[editingMenuItem.id] || []).includes(option);
+                      return (
+                        <button
+                          key={option}
+                          type="button"
+                          onClick={() => handleCustomOptionToggle(editingMenuItem.id, option)}
+                          className={`rounded-full border px-3 py-2 text-xs font-bold transition-all ${
+                            selected
+                              ? 'border-[#EA5B3C] bg-[#FFF3EF] text-[#EA5B3C]'
+                              : 'border-[#EAE8E4] bg-white text-[#888888] hover:border-[#EA5B3C] hover:text-[#EA5B3C]'
+                          }`}
+                        >
+                          {option}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-xs font-bold tracking-widest text-[#888888]" htmlFor="menu-item-note">
+                    備註
+                  </label>
+                  <textarea
+                    id="menu-item-note"
+                    value={itemNotes[editingMenuItem.id] || ''}
+                    onChange={(e) => setItemNotes(prev => ({ ...prev, [editingMenuItem.id]: e.target.value }))}
+                    placeholder="例如：不要辣、醬另外放"
+                    rows={3}
+                    className="w-full resize-none rounded-xl border border-[#EAE8E4] bg-white px-3 py-2 text-sm font-medium text-[#333333] placeholder:text-[#B8B2AA] focus:border-[#EA5B3C] focus:outline-none"
+                  />
+                </div>
+
+                {composeItemNote(editingMenuItem.id) && (
+                  <div className="rounded-xl border border-[#EAE8E4] bg-[#F9F8F5] px-3 py-2 text-xs font-bold text-[#888888]">
+                    目前備註：{composeItemNote(editingMenuItem.id)}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex gap-2 border-t border-[#EAE8E4] bg-[#F9F8F5] px-5 py-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOrderQuantities(prev => ({ ...prev, [editingMenuItem.id]: 0 }));
+                    setItemNotes(prev => ({ ...prev, [editingMenuItem.id]: '' }));
+                    setItemCustomOptions(prev => ({ ...prev, [editingMenuItem.id]: [] }));
+                    closeMenuItemDialog();
+                  }}
+                  className="flex-1 rounded-xl border border-[#EAE8E4] bg-white py-3 text-xs font-bold text-[#888888] transition-all hover:border-red-200 hover:text-red-600"
+                >
+                  清除此餐點
+                </button>
+                <button
+                  type="button"
+                  onClick={closeMenuItemDialog}
+                  className="flex-[1.5] rounded-xl bg-[#EA5B3C] py-3 text-xs font-bold text-white shadow-sm transition-all hover:bg-[#333333]"
+                >
+                  完成
+                </button>
+              </div>
             </div>
           </div>
         )}

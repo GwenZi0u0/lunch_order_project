@@ -25,6 +25,20 @@ function getWeeklyDates() {
   // Get Monday of current week
   const monday = new Date(now);
   monday.setDate(now.getDate() - (day === 0 ? 6 : day - 1));
+
+  // Previous week Mon-Sun
+  const previousMonday = new Date(monday);
+  previousMonday.setDate(monday.getDate() - 7);
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(previousMonday);
+    d.setDate(previousMonday.getDate() + i);
+    dates.push({
+      dateStr: formatDate(d),
+      label: weekdayLabels[i],
+      isWeekend: i >= 5,
+      week: 'previous'
+    });
+  }
   
   // Current week Mon-Sun
   for (let i = 0; i < 7; i++) {
@@ -34,7 +48,7 @@ function getWeeklyDates() {
       dateStr: formatDate(d),
       label: weekdayLabels[i],
       isWeekend: i >= 5,
-      isNextWeek: false
+      week: 'current'
     });
   }
   
@@ -48,7 +62,7 @@ function getWeeklyDates() {
       dateStr: formatDate(d),
       label: weekdayLabels[i],
       isWeekend: i >= 5,
-      isNextWeek: true
+      week: 'next'
     });
   }
   return dates;
@@ -56,9 +70,13 @@ function getWeeklyDates() {
 
 function getDefaultDateForWeek(weekTab) {
   const dates = getWeeklyDates();
-  return weekTab === 'next'
-    ? dates.find(d => d.isNextWeek)?.dateStr || formatDate(new Date())
-    : formatDate(new Date());
+  if (weekTab === 'previous') {
+    return dates.find(d => d.week === 'previous')?.dateStr || formatDate(new Date());
+  }
+  if (weekTab === 'next') {
+    return dates.find(d => d.week === 'next')?.dateStr || formatDate(new Date());
+  }
+  return formatDate(new Date());
 }
 
 function isWeekendDate(dateStr) {
@@ -101,7 +119,7 @@ export default function AdminDashboard() {
   const [members, setMembers] = useState([]);
   const [schedules, setSchedules] = useState([]);
   const [selectedDate, setSelectedDate] = useState('');
-  const [activeWeekTab, setActiveWeekTab] = useState('current'); // 'current' or 'next'
+  const [activeWeekTab, setActiveWeekTab] = useState('current'); // 'previous', 'current', or 'next'
   const [allowNextWeekMenu, setAllowNextWeekMenu] = useState(true);
   const [isSavingOrderSettings, setIsSavingOrderSettings] = useState(false);
   const [orderSettingsMessage, setOrderSettingsMessage] = useState('');
@@ -197,7 +215,12 @@ export default function AdminDashboard() {
   };
 
   const fetchSchedules = () => {
-    fetch('/api/schedule')
+    const dates = getWeeklyDates();
+    const startDate = dates[0]?.dateStr;
+    const endDate = dates[dates.length - 1]?.dateStr;
+    const query = startDate && endDate ? `?startDate=${startDate}&endDate=${endDate}` : '';
+
+    fetch(`/api/schedule${query}`)
       .then(res => res.json())
       .then(data => {
         if (Array.isArray(data)) {
@@ -790,6 +813,14 @@ export default function AdminDashboard() {
             {/* Week Tab Switcher */}
             <div className="inline-flex bg-[#F9F8F5] border border-[#EAE8E4] p-1 rounded-xl">
               <button
+                onClick={() => handleWeekTabChange('previous')}
+                className={`px-5 py-2 text-xs font-bold rounded-md transition-all ${
+                  activeWeekTab === 'previous' ? 'bg-[#EA5B3C] text-white' : 'text-[#888888] hover:text-[#333333]'
+                }`}
+              >
+                上週日程
+              </button>
+              <button
                 onClick={() => handleWeekTabChange('current')}
                 className={`px-5 py-2 text-xs font-bold rounded-md transition-all ${
                   activeWeekTab === 'current' ? 'bg-[#EA5B3C] text-white' : 'text-[#888888] hover:text-[#333333]'
@@ -810,7 +841,7 @@ export default function AdminDashboard() {
 
           <div className="grid grid-cols-7 gap-1 md:gap-3">
             {weeklyDates
-              .filter(d => (activeWeekTab === 'current' ? !d.isNextWeek : d.isNextWeek))
+              .filter(d => d.week === activeWeekTab)
               .map(d => {
                 const sched = schedules.find(s => s.date === d.dateStr);
                 const isSelected = selectedDate === d.dateStr;

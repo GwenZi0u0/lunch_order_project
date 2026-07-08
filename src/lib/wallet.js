@@ -1,4 +1,4 @@
-export const MIN_AVAILABLE_BALANCE = -80;
+export const MIN_AVAILABLE_BALANCE = -200;
 export const ACTIVE_HOLD_STATUSES = ['pending', 'confirmed'];
 
 export async function getPendingHoldAmount(client, userId, options = {}) {

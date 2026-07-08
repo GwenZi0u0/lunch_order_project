@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Navbar from '@/components/Navbar';
 
 const DEFAULT_CUSTOMIZATION_OPTIONS = ['\u98ef\u5c11', '\u63db\u83dc', '\u63db\u83dc+$20'];
+const MIN_AVAILABLE_BALANCE = -200;
 
 function parseCustomizationOptions(value) {
   if (Array.isArray(value)) {
@@ -242,7 +243,7 @@ export default function PortalPage() {
   useEffect(() => {
     if (!useSavedOrderNote || !user) return;
     const defaultSeatArea = user.defaultSeatArea || '';
-    setOrderNote(applySeatAreaToNote(defaultSeatArea, user.defaultOrderNote || ''));
+    setOrderNote(removeSeatAreaFromNote(user.defaultOrderNote || ''));
     setSeatArea(defaultSeatArea);
   }, [useSavedOrderNote, user]);
 
@@ -274,7 +275,7 @@ export default function PortalPage() {
       });
     }
 
-    setOrderNote(applySeatAreaToNote(userOrderSeatArea, schedule.userOrder?.note || ''));
+    setOrderNote(removeSeatAreaFromNote(schedule.userOrder?.note || ''));
     setSeatArea(userOrderSeatArea);
     setUseSavedOrderNote(false);
     setSaveOrderPreference(false);
@@ -353,7 +354,6 @@ export default function PortalPage() {
 
   const handleSeatAreaToggle = (area) => {
     setSeatArea(area);
-    setOrderNote(prev => applySeatAreaToNote(area, prev));
   };
 
   const scrollToOrderSummary = () => {
@@ -398,7 +398,7 @@ export default function PortalPage() {
 
   const hasOrderChanges = () => {
     if (!activeSchedule?.userOrder) return true;
-    if (normalizeOrderText(orderNote) !== normalizeOrderText(activeSchedule.userOrder.note)) return true;
+    if (normalizeOrderText(orderNote) !== normalizeOrderText(removeSeatAreaFromNote(activeSchedule.userOrder.note))) return true;
     if ((seatArea || '') !== (activeSchedule.userOrder.seatArea || '')) return true;
     if (saveOrderPreference) return true;
 
@@ -430,6 +430,11 @@ export default function PortalPage() {
     if (isClosed()) return;
     
     if (activeSchedule.userOrder && !hasOrderChanges()) return;
+
+    if (projectedAvailableBalance < MIN_AVAILABLE_BALANCE) {
+      setOrderError('預扣後金額不可低於 -$200，請調整餐點或聯絡管理員。');
+      return;
+    }
 
     const items = getCurrentOrderItems();
 
@@ -551,6 +556,7 @@ export default function PortalPage() {
   const currentOrderHoldAmount = activeSchedule?.userOrder?.totalAmount || 0;
   const projectedHoldAmount = Math.max(0, pendingHoldAmount - currentOrderHoldAmount + calculateTotal());
   const projectedAvailableBalance = user.balance - projectedHoldAmount;
+  const isBelowAvailableLimit = projectedAvailableBalance < MIN_AVAILABLE_BALANCE;
   const editingMenuItem = getMenuItemById(editingMenuItemId);
   const editingMenuItemQty = editingMenuItem ? (orderQuantities[editingMenuItem.id] || 0) : 0;
   const editingMenuItemOptions = editingMenuItem ? parseCustomizationOptions(editingMenuItem.customizationOptions) : [];
@@ -1068,7 +1074,7 @@ export default function PortalPage() {
                           disabled={isClosed() || isSubmitting}
                           value={orderNote}
                           onChange={(e) => {
-                            setOrderNote(seatArea ? applySeatAreaToNote(seatArea, e.target.value) : e.target.value);
+                            setOrderNote(e.target.value);
                             setUseSavedOrderNote(false);
                           }}
                           className="w-full rounded-lg border border-[#EAE8E4] bg-white px-3 py-2 text-xs font-medium text-[#333333] placeholder:text-[#B8B2AA] focus:border-[#EA5B3C] focus:outline-none disabled:bg-[#F2EFEA]"
@@ -1081,6 +1087,9 @@ export default function PortalPage() {
                       <div className="space-y-1.5">
                         <div className="text-right text-[11px] font-bold text-[#888888]">
                           預扣後金額 {projectedAvailableBalance < 0 ? '－' : ''}${Math.abs(projectedAvailableBalance)}
+                          {isBelowAvailableLimit && (
+                            <span className="ml-1 text-red-600">不可低於 -$200</span>
+                          )}
                           <span className="px-1.5 text-[#C9C3BB]">|</span>
                           目前儲值金 {user.balance < 0 ? '－' : ''}${Math.abs(user.balance)}
                         </div>
@@ -1103,7 +1112,7 @@ export default function PortalPage() {
                           )}
                           
                           <button
-                            disabled={isClosed() || isSubmitting || calculateTotal() === 0 || !seatArea || (activeSchedule.userOrder && !hasOrderChanges())}
+                            disabled={isClosed() || isSubmitting || calculateTotal() === 0 || !seatArea || isBelowAvailableLimit || (activeSchedule.userOrder && !hasOrderChanges())}
                             onClick={handlePlaceOrder}
                             className="flex-[2] py-3 text-xs font-bold bg-[#EA5B3C] text-white rounded-xl shadow-sm hover:bg-[#333333] hover:shadow-md transition-all disabled:opacity-50 disabled:cursor-not-allowed text-center"
                           >

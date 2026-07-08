@@ -292,6 +292,7 @@ export default function AdminDashboard() {
 
   const activeSchedule = schedules.find(s => s.date === selectedDate);
   const todayDate = formatDate(new Date());
+  const isPastSelectedDate = selectedDate < todayDate;
   const todaySchedule = schedules.find(s => s.date === todayDate);
   const weeklyDates = getWeeklyDates();
   const selectedDateIsHoliday = activeSchedule ? !activeSchedule.isOpen && !activeSchedule.deliveredAt : isHoliday;
@@ -345,6 +346,11 @@ export default function AdminDashboard() {
   }, [selectedDate, activeSchedule]);
 
   const handleSaveSchedule = async () => {
+    if (isPastSelectedDate) {
+      setMessage({ text: '供餐日期已過，無法進行設定。', type: 'error' });
+      return;
+    }
+
     if (!isHoliday && !selectedRestaurantId) {
       setMessage({ text: '請選擇一個餐廳！', type: 'error' });
       return;
@@ -795,8 +801,7 @@ export default function AdminDashboard() {
         <section id="weekly-schedule" className="scroll-mt-24 space-y-6">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 border-b border-[#EAE8E4] pb-4">
             <div>
-              <p className="text-xs font-bold text-[#888888] tracking-widest uppercase">週菜單排程</p>
-              <h2 className="text-xl font-bold text-[#333333] flex items-center gap-2 mt-1">
+              <h2 className="text-xl font-bold text-[#333333] flex items-center gap-2">
                 <i className="ti ti-calendar-week text-2xl text-[#EA5B3C]"></i> 週菜單排程
               </h2>
             </div>
@@ -1033,29 +1038,31 @@ export default function AdminDashboard() {
                 </div>
               )}
 
-              <div className="space-y-2 border-b border-[#EAE8E4] pb-4">
-                <button
-                  type="button"
-                  onClick={handleToggleNextWeekMenu}
-                  disabled={isSavingOrderSettings}
-                  className={`w-full flex items-center justify-between px-3 py-3 rounded-lg border text-xs font-bold transition-all disabled:opacity-60 disabled:cursor-not-allowed ${
-                    allowNextWeekMenu
-                      ? 'border-[#EA5B3C] bg-[#FFF3EF] text-[#EA5B3C]'
-                      : 'border-[#EAE8E4] bg-white text-[#333333] hover:border-[#D6D1CA]'
-                  }`}
-                >
-                  <span className="flex items-center gap-2">
-                    <i className={allowNextWeekMenu ? 'ti ti-toggle-right text-lg' : 'ti ti-toggle-left text-lg'}></i>
-                    訂購者下週菜單查閱
-                  </span>
-                  <span className="text-[10px] text-[#888888]">
-                    {allowNextWeekMenu ? '已開放' : '已關閉'}
-                  </span>
-                </button>
-                {orderSettingsMessage && (
-                  <p className="text-[11px] font-bold text-[#888888]">{orderSettingsMessage}</p>
-                )}
-              </div>
+              {activeWeekTab !== 'previous' && (
+                <div className="space-y-2 border-b border-[#EAE8E4] pb-4">
+                  <button
+                    type="button"
+                    onClick={handleToggleNextWeekMenu}
+                    disabled={isSavingOrderSettings}
+                    className={`w-full flex items-center justify-between px-3 py-3 rounded-lg border text-xs font-bold transition-all disabled:opacity-60 disabled:cursor-not-allowed ${
+                      allowNextWeekMenu
+                        ? 'border-[#EA5B3C] bg-[#FFF3EF] text-[#EA5B3C]'
+                        : 'border-[#EAE8E4] bg-white text-[#333333] hover:border-[#D6D1CA]'
+                    }`}
+                  >
+                    <span className="flex items-center gap-2">
+                      <i className={allowNextWeekMenu ? 'ti ti-toggle-right text-lg' : 'ti ti-toggle-left text-lg'}></i>
+                      訂購者下週菜單查閱
+                    </span>
+                    <span className="text-[10px] text-[#888888]">
+                      {allowNextWeekMenu ? '已開放' : '已關閉'}
+                    </span>
+                  </button>
+                  {orderSettingsMessage && (
+                    <p className="text-[11px] font-bold text-[#888888]">{orderSettingsMessage}</p>
+                  )}
+                </div>
+              )}
 
               <div className="space-y-4">
                 <div className="space-y-1.5">
@@ -1071,11 +1078,12 @@ export default function AdminDashboard() {
                 <button
                   type="button"
                   onClick={() => setIsHoliday(prev => !prev)}
+                  disabled={isPastSelectedDate}
                   className={`w-full flex items-center justify-between px-3 py-3 rounded-lg border text-xs font-bold transition-all ${
                     isHoliday
                       ? 'border-[#EA5B3C] bg-[#FFF3EF] text-[#EA5B3C]'
                       : 'border-[#EAE8E4] bg-white text-[#333333] hover:border-[#D6D1CA]'
-                  }`}
+                  } disabled:cursor-not-allowed disabled:opacity-50`}
                 >
                   <span className="flex items-center gap-2">
                     <i className={isHoliday ? 'ti ti-toggle-right text-lg' : 'ti ti-toggle-left text-lg'}></i>
@@ -1091,7 +1099,7 @@ export default function AdminDashboard() {
                   <select
                     value={selectedRestaurantId}
                     onChange={(e) => setSelectedRestaurantId(e.target.value)}
-                    disabled={isHoliday}
+                    disabled={isHoliday || isPastSelectedDate}
                     className="w-full text-xs px-3 py-2 border border-[#EAE8E4] rounded-lg focus:outline-none focus:border-[#EA5B3C] bg-white font-medium disabled:bg-[#F9F8F5] disabled:text-[#B8B2AA] disabled:cursor-not-allowed"
                   >
                     <option value="">-- 請選擇餐廳 --</option>
@@ -1107,13 +1115,20 @@ export default function AdminDashboard() {
                     type="time"
                     value={orderDeadline}
                     onChange={(e) => setOrderDeadline(e.target.value)}
-                    className="w-full text-xs px-3 py-2 border border-[#EAE8E4] rounded-lg focus:outline-none focus:border-[#EA5B3C] bg-white font-medium"
+                    disabled={isPastSelectedDate}
+                    className="w-full text-xs px-3 py-2 border border-[#EAE8E4] rounded-lg focus:outline-none focus:border-[#EA5B3C] bg-white font-medium disabled:bg-[#F9F8F5] disabled:text-[#B8B2AA] disabled:cursor-not-allowed"
                   />
                 </div>
 
+                {isPastSelectedDate && (
+                  <div className="rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-xs font-bold text-orange-700">
+                    供餐日期已過，無法進行設定。
+                  </div>
+                )}
+
                 <button
                   onClick={handleSaveSchedule}
-                  disabled={isUpdatingSchedule || (!isHoliday && !selectedRestaurantId)}
+                  disabled={isPastSelectedDate || isUpdatingSchedule || (!isHoliday && !selectedRestaurantId)}
                   className="w-full py-3 text-xs font-bold bg-[#EA5B3C] text-white rounded-xl shadow-sm hover:bg-[#333333] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {isUpdatingSchedule ? '正在儲存...' : '儲存排程設定'}

@@ -441,18 +441,22 @@ export default function RestaurantsPage() {
                     type="button"
                     onClick={openJsonDialog}
                     disabled={ocrLoading}
-                    className="text-xs font-bold bg-[#EA5B3C] hover:bg-[#333333] text-white px-4 py-2 rounded-lg shadow-sm transition-all flex items-center gap-1.5 disabled:opacity-60 disabled:cursor-not-allowed"
+                    className="h-9 w-9 rounded-lg bg-[#EA5B3C] text-xs font-bold text-white shadow-sm transition-all flex items-center justify-center hover:bg-[#333333] disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto sm:px-4 sm:py-2 sm:gap-1.5"
+                    title={ocrLoading ? '匯入中' : '匯入 JSON'}
+                    aria-label={ocrLoading ? '匯入中' : '匯入 JSON'}
                   >
                     <i className="ti ti-file-import"></i>
-                    {ocrLoading ? '匯入中...' : '匯入 JSON'}
+                    <span className="hidden sm:inline">{ocrLoading ? '匯入中...' : '匯入 JSON'}</span>
                   </button>
                   <button
                     type="button"
                     onClick={handleCopyJsonExample}
-                    className="text-xs font-bold border border-[#EAE8E4] text-[#333333] hover:text-[#EA5B3C] hover:border-[#EA5B3C] px-4 py-2 rounded-lg bg-white transition-all flex items-center gap-1.5"
+                    className="h-9 w-9 rounded-lg border border-[#EAE8E4] bg-white text-xs font-bold text-[#333333] transition-all flex items-center justify-center hover:border-[#EA5B3C] hover:text-[#EA5B3C] sm:w-auto sm:px-4 sm:py-2 sm:gap-1.5"
+                    title="複製範例"
+                    aria-label="複製範例"
                   >
                     <i className="ti ti-copy"></i>
-                    複製範例
+                    <span className="hidden sm:inline">複製範例</span>
                   </button>
                   {editingRestaurantId && (
                     <>
@@ -506,7 +510,6 @@ export default function RestaurantsPage() {
                     type="text"
                     value={newRestName}
                     onChange={(e) => setNewRestName(e.target.value)}
-                    placeholder="例如: 池上木片便當"
                     className="w-full text-xs px-3 py-2 border border-[#EAE8E4] rounded-lg focus:outline-none focus:border-[#EA5B3C] bg-white font-medium"
                   />
                 </div>
@@ -517,7 +520,6 @@ export default function RestaurantsPage() {
                     type="text"
                     value={newRestPhone}
                     onChange={(e) => setNewRestPhone(e.target.value)}
-                    placeholder="例如: 02-12345678"
                     className="w-full text-xs px-3 py-2 border border-[#EAE8E4] rounded-lg focus:outline-none focus:border-[#EA5B3C] bg-white font-medium"
                   />
                 </div>
@@ -529,7 +531,6 @@ export default function RestaurantsPage() {
                   type="text"
                   value={newRestNote}
                   onChange={(e) => setNewRestNote(e.target.value)}
-                  placeholder="例如: 滿 $300 起送，便當皆附每日例湯"
                   className="w-full text-xs px-3 py-2 border border-[#EAE8E4] rounded-lg focus:outline-none focus:border-[#EA5B3C] bg-white font-medium"
                 />
               </div>
@@ -555,14 +556,14 @@ export default function RestaurantsPage() {
                   </div>
                 ) : (
                   <div className="overflow-x-auto border border-[#EAE8E4] rounded-xl">
-                    <table className="w-full text-left border-collapse text-xs">
+                    <table className="min-w-[760px] w-full text-left border-collapse text-xs">
                       <thead>
                         <tr className="bg-[#F9F8F5] text-[#888888] font-bold border-b border-[#EAE8E4]">
                           <th className="p-3">品項名稱</th>
                           <th className="p-3 w-[120px]">單價 (NT$)</th>
                           <th className="p-3 w-[150px]">類型</th>
                           <th className="p-3 min-w-[220px]">客製化選項</th>
-                          <th className="p-3 w-[60px] text-center">操作</th>
+                          <th className="sticky right-0 z-10 w-[70px] border-l border-[#EAE8E4] bg-[#F9F8F5] p-3 text-center">操作</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-[#EAE8E4] text-[#333333]">
@@ -573,7 +574,6 @@ export default function RestaurantsPage() {
                                 type="text"
                                 value={item.name}
                                 onChange={(e) => handleMenuItemChange(index, 'name', e.target.value)}
-                                placeholder="例如: 酥炸排骨飯"
                                 className="w-full text-xs px-2 py-1.5 border border-[#EAE8E4] rounded focus:outline-none focus:border-[#EA5B3C] bg-white font-medium"
                               />
                             </td>
@@ -590,7 +590,6 @@ export default function RestaurantsPage() {
                                 type="text"
                                 value={item.category || ''}
                                 onChange={(e) => handleMenuItemChange(index, 'category', e.target.value)}
-                                placeholder="例如: 餐盒"
                                 className="w-full text-xs px-2 py-1.5 border border-[#EAE8E4] rounded focus:outline-none focus:border-[#EA5B3C] bg-white font-medium"
                               />
                             </td>
@@ -599,11 +598,10 @@ export default function RestaurantsPage() {
                                 type="text"
                                 value={optionsToInputValue(item.customizationOptions)}
                                 onChange={(e) => handleMenuItemChange(index, 'customizationOptions', normalizeCustomizationOptions(e.target.value))}
-                                placeholder="飯少, 換菜, 換菜+$20"
                                 className="w-full text-xs px-2 py-1.5 border border-[#EAE8E4] rounded focus:outline-none focus:border-[#EA5B3C] bg-white font-medium"
                               />
                             </td>
-                            <td className="p-2 text-center">
+                            <td className="sticky right-0 border-l border-[#EAE8E4] bg-white p-2 text-center">
                               <button
                                 onClick={() => handleRemoveMenuItem(index)}
                                 className="w-7 h-7 text-red-600 hover:bg-red-50 border border-transparent hover:border-red-200 rounded-full flex items-center justify-center transition-all mx-auto"

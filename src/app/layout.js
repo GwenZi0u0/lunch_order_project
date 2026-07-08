@@ -3,7 +3,7 @@ import BackToTopButton from '@/components/BackToTopButton';
 import NotificationCenter from '@/components/NotificationCenter';
 
 export const metadata = {
-  title: '午餐訂購系統 — TSA Lunch',
+  title: '午餐訂購系統 — CatChup Lunch',
   description: '讓訂餐更便利、更有趣！',
 };
 

@@ -62,7 +62,7 @@ export default function LoginPage() {
         {/* Logo and Header */}
         <div className="text-center mb-5 animate-fade-in">
           <div className="inline-flex items-center gap-3 font-bold text-3xl tracking-widest text-[#333333] mb-2">
-            TSA Lunch
+            CatChup Lunch
           </div>
           <p className="text-sm font-bold tracking-[0.2em] text-[#888888] uppercase mb-1">LUNCH ORDER SYSTEM</p>
           <div className="login-cat-scene" aria-label="貓咪叼著便當跑向貓洞動畫">

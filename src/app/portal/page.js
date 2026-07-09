@@ -61,6 +61,22 @@ function getDefaultDateForWeek(weekTab) {
     : formatDate(new Date());
 }
 
+function getSeatAreaFromOrder(order) {
+  if (order?.seatArea) return order.seatArea;
+  const match = (order?.note || '').trim().match(/^([AB])區\b/i);
+  return match ? match[1].toUpperCase() : '';
+}
+
+function getOrderDisplayNumber(order) {
+  const orderNumber = order?.orderNumberDisplay || '-';
+  const seatArea = getSeatAreaFromOrder(order);
+  return seatArea && orderNumber !== '-' ? `${seatArea}${orderNumber}` : orderNumber;
+}
+
+function getDisplayOrderNote(order) {
+  return (order?.note || '').replace(/^([AB])區\s*[;；,，、]?\s*/i, '').trim();
+}
+
 export default function PortalPage() {
   const router = useRouter();
   const [user, setUser] = useState(null);
@@ -394,7 +410,7 @@ export default function PortalPage() {
                       {'\u4eca\u65e5\u8a02\u55ae\u7de8\u865f'}
                     </span>
                     <span className="inline-flex min-w-12 items-center justify-center rounded-full border border-[#EA5B3C]/20 bg-[#FFF3EF] px-3 py-1.5 text-sm font-bold text-[#EA5B3C]">
-                      {todayOrder.orderNumberDisplay || '-'}
+                      {getOrderDisplayNumber(todayOrder)}
                     </span>
                   </div>
                 </div>
@@ -421,9 +437,9 @@ export default function PortalPage() {
                   <span className="text-xl font-bold text-[#EA5B3C]">NT$ {todayOrder.totalAmount}</span>
                 </div>
 
-                {todayOrder.note && (
+                {getDisplayOrderNote(todayOrder) && (
                   <p className="border-t border-[#EAE8E4] bg-white px-4 py-3 text-xs leading-5 text-[#888888]">
-                    備註：{todayOrder.note}
+                    備註：{getDisplayOrderNote(todayOrder)}
                   </p>
                 )}
               </div>

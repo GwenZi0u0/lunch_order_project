@@ -103,6 +103,21 @@ export default function WalletsManagementPage() {
   }, [statusMsg.text]);
 
   useEffect(() => {
+    if (!activeEmailUserId) return;
+
+    const closeEmailPopover = () => setActiveEmailUserId('');
+    document.addEventListener('pointerdown', closeEmailPopover);
+    window.addEventListener('scroll', closeEmailPopover, { passive: true });
+    window.addEventListener('touchmove', closeEmailPopover, { passive: true });
+
+    return () => {
+      document.removeEventListener('pointerdown', closeEmailPopover);
+      window.removeEventListener('scroll', closeEmailPopover);
+      window.removeEventListener('touchmove', closeEmailPopover);
+    };
+  }, [activeEmailUserId]);
+
+  useEffect(() => {
     if (!selectedUser) return;
 
     const originalOverflow = document.body.style.overflow;
@@ -288,6 +303,15 @@ export default function WalletsManagementPage() {
     setTransactionSource(mode === 'topup' ? DEFAULT_TOPUP_SOURCE : DEFAULT_ADJUSTMENT_SOURCE);
     setTransactionNote('');
     setStatusMsg({ text: '', type: '' });
+  };
+
+  const copyEmail = async (email) => {
+    try {
+      await navigator.clipboard.writeText(email);
+      setStatusMsg({ text: `已複製 Email：${email}`, type: 'success' });
+    } catch {
+      setStatusMsg({ text: 'Email 複製失敗，請再試一次。', type: 'error' });
+    }
   };
 
   const renderWalletActionForm = (containerClassName = '') => {
@@ -489,7 +513,140 @@ export default function WalletsManagementPage() {
                 </div>
               </div>
 
-              <div className="max-h-[430px] overflow-auto border border-[#EAE8E4] rounded-xl bg-white kaizen-scrollbar">
+              <div className="md:hidden space-y-3">
+                {filteredUsers.length === 0 ? (
+                  <div className="rounded-lg border border-[#EAE8E4] bg-white px-4 py-8 text-center text-xs font-bold text-[#888888]">
+                    找不到相符的成員。
+                  </div>
+                ) : (
+                  filteredUsers.map(u => {
+                    const displayName = getDisplayName(u.name);
+                    const balance = u.balance;
+                    const pendingHoldAmount = u.pendingHoldAmount || 0;
+                    const availableBalance = u.availableBalance ?? (balance - pendingHoldAmount);
+                    let balanceColor = 'text-[#333333]';
+
+                    if (balance > 0) {
+                      balanceColor = 'text-green-600';
+                    } else if (balance < 0) {
+                      balanceColor = 'text-red-600';
+                    }
+
+                    return (
+                      <div
+                        key={u.id}
+                        onClick={() => handleLedgerUserChange(u.id)}
+                        className={`rounded-lg border bg-white p-3 transition-all ${
+                          selectedLedgerUserId === u.id
+                            ? 'border-[#EA5B3C] bg-[#FFF8F5]'
+                            : 'border-[#EAE8E4]'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="relative min-w-0">
+                            <div className="flex min-w-0 items-center gap-2">
+                              <button
+                                type="button"
+                                onPointerDown={(e) => e.stopPropagation()}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setActiveEmailUserId(prev => prev === u.id ? '' : u.id);
+                                }}
+                                className="max-w-[150px] truncate text-left text-sm font-bold text-[#333333] hover:text-[#EA5B3C] focus:outline-none focus:text-[#EA5B3C]"
+                              >
+                                {displayName}
+                              </button>
+                              {balance < 0 && (
+                                <span className="inline-flex shrink-0 rounded border border-red-200 bg-red-50 px-1.5 py-0.5 text-[10px] font-bold text-red-600">
+                                  欠款
+                                </span>
+                              )}
+                            </div>
+                            {activeEmailUserId === u.id && (
+                              <div
+                                onPointerDown={(e) => e.stopPropagation()}
+                                onClick={(e) => e.stopPropagation()}
+                                className="absolute left-0 top-full z-30 mt-2 flex max-w-[260px] items-center gap-2 rounded-lg border border-[#EAE8E4] bg-white px-3 py-2 shadow-[0_10px_24px_rgba(0,0,0,0.12)]"
+                              >
+                                <span className="min-w-0 truncate text-[10px] font-bold text-[#555555]">
+                                  {u.email}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => copyEmail(u.email)}
+                                  className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-[#EAE8E4] text-[#888888] transition-all hover:border-[#EA5B3C] hover:text-[#EA5B3C]"
+                                  title="複製 Email"
+                                  aria-label={`複製 ${displayName} 的 Email`}
+                                >
+                                  <i className="ti ti-copy text-sm"></i>
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                          <select
+                            value={u.role}
+                            disabled={u.id === user.id}
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={(e) => {
+                              e.stopPropagation();
+                              handleRoleChange(u, e.target.value);
+                            }}
+                            className={`shrink-0 text-[11px] font-bold pl-2.5 pr-7 py-1 rounded-lg border bg-white focus:outline-none focus:border-[#EA5B3C] ${
+                              u.role === 'admin'
+                                ? 'text-orange-700 border-orange-200'
+                                : 'text-gray-700 border-[#EAE8E4]'
+                            } disabled:opacity-60 disabled:cursor-not-allowed`}
+                          >
+                            <option value="admin">管理者</option>
+                            <option value="user">訂購者</option>
+                          </select>
+                        </div>
+
+                        <div className="mt-3 flex items-end justify-between gap-3 border-t border-[#EAE8E4] pt-2.5">
+                          <div>
+                            <div className={`text-base font-bold ${balanceColor}`}>
+                              NT$ {Math.abs(balance)}
+                            </div>
+                            {pendingHoldAmount > 0 && (
+                              <div className="mt-0.5 text-[10px] font-bold text-[#888888]">
+                                預扣後剩餘 {availableBalance < 0 ? '－' : ''}NT$ {Math.abs(availableBalance)}
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openWalletAction(u, 'topup');
+                              }}
+                              className="inline-flex h-[30px] w-[30px] items-center justify-center rounded-lg border border-[#EAE8E4] bg-white text-[#333333] transition-all hover:border-[#EA5B3C] hover:text-[#EA5B3C]"
+                              title="儲值"
+                              aria-label={`為 ${displayName} 儲值`}
+                            >
+                              <i className="ti ti-plus text-base"></i>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openWalletAction(u, 'adjustment');
+                              }}
+                              className="inline-flex h-[30px] w-[30px] items-center justify-center rounded-lg border border-[#EAE8E4] bg-white text-[#333333] transition-all hover:border-[#EA5B3C] hover:text-[#EA5B3C]"
+                              title="異動"
+                              aria-label={`為 ${displayName} 異動`}
+                            >
+                              <i className="ti ti-adjustments-dollar text-base"></i>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              <div className="hidden max-h-[430px] overflow-auto border border-[#EAE8E4] rounded-xl bg-white kaizen-scrollbar md:block">
                 <table className="w-full text-left border-collapse text-xs">
                   <thead className="sticky top-0 z-10">
                     <tr className="bg-[#F9F8F5] text-[#888888] font-bold border-b border-[#EAE8E4]">
@@ -513,17 +670,11 @@ export default function WalletsManagementPage() {
                         const pendingHoldAmount = u.pendingHoldAmount || 0;
                         const availableBalance = u.availableBalance ?? (balance - pendingHoldAmount);
                         let balanceColor = 'text-[#333333] font-bold';
-                        let warningBadge = null;
                         
                         if (balance > 0) {
                           balanceColor = 'text-green-600 font-bold';
                         } else if (balance < 0) {
                           balanceColor = 'text-red-600 font-bold';
-                          warningBadge = (
-                            <span className="text-[9px] text-red-600 bg-red-50 border border-red-200 px-1 rounded ml-1 animate-pulse font-normal">
-                              欠款
-                            </span>
-                          );
                         }
 
                         return (
@@ -533,7 +684,7 @@ export default function WalletsManagementPage() {
                             className={`hover:bg-[#F9F8F5]/30 cursor-pointer ${selectedLedgerUserId === u.id ? 'bg-orange-50/50' : ''}`}
                           >
                             <td className="py-3 pl-6 pr-3 font-bold">
-                              <span className="relative inline-flex group">
+                              <span className="relative inline-flex items-center gap-2 group">
                                 <button
                                   type="button"
                                   onPointerDown={(e) => e.stopPropagation()}
@@ -546,6 +697,11 @@ export default function WalletsManagementPage() {
                                 >
                                   {displayName}
                                 </button>
+                                {balance < 0 && (
+                                  <span className="text-[9px] text-red-600 bg-red-50 border border-red-200 px-1 rounded font-normal">
+                                    欠款
+                                  </span>
+                                )}
                                 <span
                                   className={`pointer-events-none absolute left-0 top-full z-[999] mt-2 whitespace-nowrap rounded-lg border border-[#EAE8E4] bg-white px-2.5 py-1.5 text-[10px] font-bold text-[#555555] shadow-[0_8px_20px_rgba(0,0,0,0.08)] transition-opacity sm:left-full sm:top-1/2 sm:ml-2 sm:mt-0 sm:-translate-y-1/2 ${
                                     activeEmailUserId === u.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
@@ -576,8 +732,8 @@ export default function WalletsManagementPage() {
                             </td>
                             <td className="p-3 text-right font-bold text-sm">
                               <div className="flex flex-col items-end gap-0.5">
-                                <span className={balanceColor}>
-                                  <span className="hidden sm:inline">{balance > 0 ? '＋' : balance < 0 ? '－' : ''}</span>NT$ {Math.abs(balance)}
+                                  <span className={balanceColor}>
+                                  NT$ {Math.abs(balance)}
                                 </span>
                                 {pendingHoldAmount > 0 && (
                                   <span className="text-[10px] font-bold text-[#888888]">
@@ -585,7 +741,6 @@ export default function WalletsManagementPage() {
                                   </span>
                                 )}
                               </div>
-                              {warningBadge}
                             </td>
                             <td className="p-3 text-center">
                               <div className="flex items-center justify-center gap-1.5">

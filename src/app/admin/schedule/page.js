@@ -150,6 +150,7 @@ export default function AdminDashboard() {
   const [historySchedule, setHistorySchedule] = useState(null);
   const [historyMessage, setHistoryMessage] = useState('');
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [activeInfoTooltip, setActiveInfoTooltip] = useState('');
 
   useEffect(() => {
     // Check authentication and role
@@ -191,6 +192,19 @@ export default function AdminDashboard() {
       document.body.style.overflow = originalOverflow;
     };
   }, [selectedOrderDetail]);
+
+  useEffect(() => {
+    if (!activeInfoTooltip) return;
+
+    const closeInfoTooltip = () => setActiveInfoTooltip('');
+    window.addEventListener('scroll', closeInfoTooltip, { passive: true });
+    window.addEventListener('touchmove', closeInfoTooltip, { passive: true });
+
+    return () => {
+      window.removeEventListener('scroll', closeInfoTooltip);
+      window.removeEventListener('touchmove', closeInfoTooltip);
+    };
+  }, [activeInfoTooltip]);
 
   const fetchRestaurants = () => {
     fetch('/api/restaurants?active=true')
@@ -1065,34 +1079,33 @@ export default function AdminDashboard() {
               )}
 
               <div className="space-y-4">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-[#888888]">供餐日期</label>
-                  <input
-                    type="text"
-                    disabled={true}
-                    value={selectedDate}
-                    className="w-full text-xs px-3 py-2 border border-[#EAE8E4] rounded-lg bg-[#F9F8F5] font-bold"
-                  />
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => setIsHoliday(prev => !prev)}
-                  disabled={isPastSelectedDate}
-                  className={`w-full flex items-center justify-between px-3 py-3 rounded-lg border text-xs font-bold transition-all ${
-                    isHoliday
-                      ? 'border-[#EA5B3C] bg-[#FFF3EF] text-[#EA5B3C]'
-                      : 'border-[#EAE8E4] bg-white text-[#333333] hover:border-[#D6D1CA]'
-                  } disabled:cursor-not-allowed disabled:opacity-50`}
-                >
-                  <span className="flex items-center gap-2">
+                <div className="flex items-end gap-2">
+                  <div className="min-w-0 flex-1 space-y-1.5">
+                    <label className="text-xs font-bold text-[#888888]">供餐日期</label>
+                    <input
+                      type="text"
+                      disabled={true}
+                      value={selectedDate}
+                      className="w-full text-xs px-3 py-2 border border-[#EAE8E4] rounded-lg bg-[#F9F8F5] font-bold"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsHoliday(prev => !prev)}
+                    disabled={isPastSelectedDate}
+                    className={`shrink-0 flex items-center gap-2 px-3 py-2.5 rounded-lg border text-xs font-bold transition-all ${
+                      isHoliday
+                        ? 'border-[#EA5B3C] bg-[#FFF3EF] text-[#EA5B3C]'
+                        : 'border-[#EAE8E4] bg-white text-[#333333] hover:border-[#D6D1CA]'
+                    } disabled:cursor-not-allowed disabled:opacity-50`}
+                  >
                     <i className={isHoliday ? 'ti ti-toggle-right text-lg' : 'ti ti-toggle-left text-lg'}></i>
-                    {'\u5047\u671f'}
-                  </span>
-                  <span className="text-[10px] text-[#888888]">
-                    {isHoliday ? '\u4e0d\u958b\u653e\u8a02\u9910' : '\u958b\u653e\u6392\u9910'}
-                  </span>
-                </button>
+                    <span>{'\u5047\u671f'}</span>
+                    <span className="hidden text-[10px] text-[#888888] sm:inline">
+                      {isHoliday ? '\u4e0d\u958b\u653e' : '\u958b\u653e'}
+                    </span>
+                  </button>
+                </div>
 
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-[#888888]">指定當日餐廳</label>
@@ -1100,7 +1113,7 @@ export default function AdminDashboard() {
                     value={selectedRestaurantId}
                     onChange={(e) => setSelectedRestaurantId(e.target.value)}
                     disabled={isHoliday || isPastSelectedDate}
-                    className="w-full text-xs px-3 py-2 border border-[#EAE8E4] rounded-lg focus:outline-none focus:border-[#EA5B3C] bg-white font-medium disabled:bg-[#F9F8F5] disabled:text-[#B8B2AA] disabled:cursor-not-allowed"
+                    className="w-full text-xs pl-3 pr-5 py-2 border border-[#EAE8E4] rounded-lg focus:outline-none focus:border-[#EA5B3C] bg-white font-medium disabled:bg-[#F9F8F5] disabled:text-[#B8B2AA] disabled:cursor-not-allowed"
                   >
                     <option value="">-- 請選擇餐廳 --</option>
                     {restaurants.map(rest => (
@@ -1109,15 +1122,24 @@ export default function AdminDashboard() {
                   </select>
                 </div>
 
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-[#888888]">訂單截止時間</label>
-                  <input
-                    type="time"
-                    value={orderDeadline}
-                    onChange={(e) => setOrderDeadline(e.target.value)}
-                    disabled={isPastSelectedDate}
-                    className="w-full text-xs px-3 py-2 border border-[#EAE8E4] rounded-lg focus:outline-none focus:border-[#EA5B3C] bg-white font-medium disabled:bg-[#F9F8F5] disabled:text-[#B8B2AA] disabled:cursor-not-allowed"
-                  />
+                <div className="flex items-end gap-2">
+                  <div className="min-w-0 flex-1 space-y-1.5">
+                    <label className="text-xs font-bold text-[#888888]">訂單截止時間</label>
+                    <input
+                      type="time"
+                      value={orderDeadline}
+                      onChange={(e) => setOrderDeadline(e.target.value)}
+                      disabled={isPastSelectedDate}
+                      className="w-full text-xs px-3 py-2 border border-[#EAE8E4] rounded-lg focus:outline-none focus:border-[#EA5B3C] bg-white font-medium disabled:bg-[#F9F8F5] disabled:text-[#B8B2AA] disabled:cursor-not-allowed"
+                    />
+                  </div>
+                  <button
+                    onClick={handleSaveSchedule}
+                    disabled={isPastSelectedDate || isUpdatingSchedule || (!isHoliday && !selectedRestaurantId)}
+                    className="shrink-0 px-4 py-3 text-xs font-bold bg-[#EA5B3C] text-white rounded-xl shadow-sm hover:bg-[#333333] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isUpdatingSchedule ? '儲存中' : '儲存設定'}
+                  </button>
                 </div>
 
                 {isPastSelectedDate && (
@@ -1125,19 +1147,35 @@ export default function AdminDashboard() {
                     供餐日期已過，無法進行設定。
                   </div>
                 )}
-
-                <button
-                  onClick={handleSaveSchedule}
-                  disabled={isPastSelectedDate || isUpdatingSchedule || (!isHoliday && !selectedRestaurantId)}
-                  className="w-full py-3 text-xs font-bold bg-[#EA5B3C] text-white rounded-xl shadow-sm hover:bg-[#333333] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {isUpdatingSchedule ? '正在儲存...' : '儲存排程設定'}
-                </button>
               </div>
 
               {activeSchedule && (
                 <div className="border-t border-[#EAE8E4] pt-4 space-y-4">
-                  <h4 className="text-xs font-bold text-[#888888] tracking-widest uppercase">出餐結算控制</h4>
+                  <h4 className="text-xs font-bold text-[#888888] tracking-widest uppercase flex items-center gap-1.5">
+                    出餐結算控制
+                    <span
+                      className="relative inline-flex"
+                      onMouseEnter={() => setActiveInfoTooltip('delivery')}
+                      onMouseLeave={() => setActiveInfoTooltip('')}
+                    >
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setActiveInfoTooltip(prev => prev === 'delivery' ? '' : 'delivery');
+                        }}
+                        className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-[#D6D1CA] bg-white text-[10px] font-bold normal-case tracking-normal text-[#888888] focus:outline-none focus:border-[#EA5B3C] focus:text-[#EA5B3C]"
+                        aria-label="出餐結算說明"
+                      >
+                        i
+                      </button>
+                      <span className={`pointer-events-none absolute left-0 top-full z-20 mt-2 w-56 rounded-lg border border-[#EAE8E4] bg-white px-3 py-2 text-[11px] font-bold leading-5 tracking-normal text-[#555555] shadow-[0_10px_24px_rgba(0,0,0,0.12)] transition-opacity ${
+                        activeInfoTooltip === 'delivery' ? 'opacity-100' : 'opacity-0'
+                      }`}>
+                        中午餐點送達後，請確認清點便當數量無誤，並點擊下方按鈕觸發錢包扣款。
+                      </span>
+                    </span>
+                  </h4>
                   
                   {activeSchedule.deliveredAt ? (
                     <div className="p-4 rounded-xl bg-green-50 border border-green-200 text-green-700 text-xs font-bold flex flex-col gap-1 items-center text-center">
@@ -1149,9 +1187,6 @@ export default function AdminDashboard() {
                     </div>
                   ) : (
                     <div className="space-y-3">
-                      <p className="text-[11px] text-[#888888] leading-tight">
-                        中午餐點送達後，請確認清點便當數量無誤，並點擊下方按鈕觸發錢包扣款。
-                      </p>
                       <button
                         onClick={handleConfirmDelivery}
                         disabled={isProcessingDelivery || totalQuantity === 0}
@@ -1168,6 +1203,28 @@ export default function AdminDashboard() {
                 <h4 className="text-xs font-bold text-[#888888] tracking-widest uppercase flex items-center gap-1.5">
                   <i className="ti ti-bell"></i>
                   Windows 通知
+                  <span
+                    className="relative inline-flex"
+                    onMouseEnter={() => setActiveInfoTooltip('windows')}
+                    onMouseLeave={() => setActiveInfoTooltip('')}
+                  >
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setActiveInfoTooltip(prev => prev === 'windows' ? '' : 'windows');
+                      }}
+                      className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-[#D6D1CA] bg-white text-[10px] font-bold normal-case tracking-normal text-[#888888] focus:outline-none focus:border-[#EA5B3C] focus:text-[#EA5B3C]"
+                      aria-label="Windows 通知說明"
+                    >
+                      i
+                    </button>
+                    <span className={`pointer-events-none absolute left-0 top-full z-20 mt-2 w-56 rounded-lg border border-[#EAE8E4] bg-white px-3 py-2 text-[11px] font-bold leading-5 tracking-normal text-[#555555] shadow-[0_10px_24px_rgba(0,0,0,0.12)] transition-opacity ${
+                      activeInfoTooltip === 'windows' ? 'opacity-100' : 'opacity-0'
+                    }`}>
+                      成員需先點選右下角「啟用通知」，並保持網站開啟，才會收到 Windows 右下角通知。
+                    </span>
+                  </span>
                 </h4>
                 <textarea
                   value={manualNotification}
@@ -1184,9 +1241,6 @@ export default function AdminDashboard() {
                 >
                   {isSendingNotification ? '發送中...' : '手動通知所有人'}
                 </button>
-                <p className="text-[11px] text-[#888888] leading-5">
-                  成員需先點選右下角「啟用通知」，並保持網站開啟，才會收到 Windows 右下角通知。
-                </p>
               </div>
             </div>
           </div>
@@ -1248,7 +1302,7 @@ export default function AdminDashboard() {
                     ) : (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         {itemSummaries.map(item => (
-                          <div key={`${item.name}-${item.note || 'default'}`} className="p-4 bg-[#F9F8F5] border border-[#EAE8E4] rounded-xl flex justify-between items-center">
+                          <div key={`${item.name}-${item.note || 'default'}`} className="p-4 bg-[#F9F8F5] border border-[#EAE8E4] rounded-lg flex justify-between items-center">
                             <div>
                               <span className="font-bold text-sm text-[#333333]">{item.name}</span>
                               <span className="text-xs text-[#888888] block mt-1">單價: NT$ {item.price}</span>
@@ -1387,7 +1441,7 @@ export default function AdminDashboard() {
                         {'\u627e\u4e0d\u5230\u7b26\u5408\u641c\u5c0b\u689d\u4ef6\u7684\u8a02\u55ae\u3002'}
                       </div>
                     ) : (
-                      <div className="overflow-x-auto border border-[#EAE8E4] rounded-xl bg-white">
+                      <div className="overflow-x-auto border border-[#EAE8E4] rounded-lg bg-white">
                         <table className="w-full text-left border-collapse text-xs">
                           <thead>
                             <tr className="bg-[#F9F8F5] text-[#888888] font-bold border-b border-[#EAE8E4]">

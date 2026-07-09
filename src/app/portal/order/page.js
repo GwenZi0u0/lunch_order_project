@@ -100,8 +100,8 @@ function getDefaultDateForWeek(weekTab) {
 
 function getSeatAreaFromOrder(order) {
   if (order?.seatArea) return order.seatArea;
-  const match = (order?.note || '').trim().match(/^([AB])區\b/i);
-  return match ? match[1].toUpperCase() : '';
+  const match = (order?.note || '').trim().match(/^([AB])區(?:\s|$|[;；,，、])/i);
+  return match ? match[1].toUpperCase() : 'A';
 }
 
 function getOrderDisplayNumber(order) {
@@ -136,6 +136,7 @@ export default function PortalPage() {
   const [orderError, setOrderError] = useState('');
   const [orderSuccess, setOrderSuccess] = useState('');
   const [isCumulativeTipOpen, setIsCumulativeTipOpen] = useState(false);
+  const [isOrderNoteTipOpen, setIsOrderNoteTipOpen] = useState(false);
   
   // Current system date/time check
   const [currentDateTime, setCurrentDateTime] = useState({ dateStr: '', timeStr: '' });
@@ -178,16 +179,27 @@ export default function PortalPage() {
   }, []);
 
   useEffect(() => {
-    if (!isCumulativeTipOpen) return;
+    if (!isCumulativeTipOpen && !isOrderNoteTipOpen) return;
 
     const handlePointerDown = (event) => {
       if (event.target.closest('[data-cumulative-tip]')) return;
+      if (event.target.closest('[data-order-note-tip]')) return;
       setIsCumulativeTipOpen(false);
+      setIsOrderNoteTipOpen(false);
+    };
+
+    const handleScroll = () => {
+      setIsCumulativeTipOpen(false);
+      setIsOrderNoteTipOpen(false);
     };
 
     document.addEventListener('pointerdown', handlePointerDown);
-    return () => document.removeEventListener('pointerdown', handlePointerDown);
-  }, [isCumulativeTipOpen]);
+    window.addEventListener('scroll', handleScroll, true);
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown);
+      window.removeEventListener('scroll', handleScroll, true);
+    };
+  }, [isCumulativeTipOpen, isOrderNoteTipOpen]);
 
   const updateTime = () => {
     const now = new Date();
@@ -233,7 +245,6 @@ export default function PortalPage() {
   };
 
   const removeSeatAreaFromNote = (value) => (value || '').replace(/(^|\s)(A區|B區)(?=\s|$)/g, ' ').replace(/\s+/g, ' ').trim();
-  const applySeatAreaToNote = (area, value) => [area ? `${area}區` : '', removeSeatAreaFromNote(value)].filter(Boolean).join(' ');
 
   // Find schedule details for selected date
   const activeSchedule = schedules.find(s => s.date === selectedDate);
@@ -272,13 +283,13 @@ export default function PortalPage() {
       setEditingMenuItemId('');
       setEditingMenuItemDraft({ quantity: 0, note: '', options: [] });
       setOrderNote('');
-      setSeatArea('');
+      setSeatArea('A');
       setUseSavedOrderNote(false);
       setSaveOrderPreference(false);
       return;
     }
 
-    const userOrderSeatArea = schedule.userOrder?.seatArea || '';
+    const userOrderSeatArea = schedule.userOrder?.seatArea || 'A';
     const quantities = {};
     const notes = {};
     const customOptions = {};
@@ -340,7 +351,7 @@ export default function PortalPage() {
     setEditingMenuItemId(item.id);
     setEditingMenuItemDraft({
       quantity: orderQuantities[item.id] || 1,
-      note: itemNotes[item.id] || '',
+      note: '',
       options: itemCustomOptions[item.id] || []
     });
   };
@@ -368,12 +379,6 @@ export default function PortalPage() {
     });
   };
 
-  const composeEditingItemNote = () => {
-    const selectedOptions = editingMenuItemDraft.options || [];
-    const freeNote = normalizeOrderText(editingMenuItemDraft.note);
-    return [...selectedOptions, freeNote].filter(Boolean).join('; ');
-  };
-
   const applyMenuItemDialog = () => {
     if (!editingMenuItem) return;
 
@@ -381,6 +386,21 @@ export default function PortalPage() {
     setItemNotes(prev => ({ ...prev, [editingMenuItem.id]: editingMenuItemDraft.note || '' }));
     setItemCustomOptions(prev => ({ ...prev, [editingMenuItem.id]: editingMenuItemDraft.options || [] }));
     closeMenuItemDialog();
+  };
+
+  const removeOrderItem = (menuItemId) => {
+    setOrderQuantities(prev => ({ ...prev, [menuItemId]: 0 }));
+    setItemNotes(prev => ({ ...prev, [menuItemId]: '' }));
+    setItemCustomOptions(prev => ({ ...prev, [menuItemId]: [] }));
+  };
+
+  const updateOrderItemQuantity = (menuItemId, delta) => {
+    const next = Math.max(0, (orderQuantities[menuItemId] || 0) + delta);
+    setOrderQuantities(prev => ({ ...prev, [menuItemId]: next }));
+    if (next === 0) {
+      setItemNotes(prev => ({ ...prev, [menuItemId]: '' }));
+      setItemCustomOptions(prev => ({ ...prev, [menuItemId]: [] }));
+    }
   };
 
   const handleSeatAreaToggle = (area) => {
@@ -430,7 +450,7 @@ export default function PortalPage() {
   const hasOrderChanges = () => {
     if (!activeSchedule?.userOrder) return true;
     if (normalizeOrderText(orderNote) !== normalizeOrderText(removeSeatAreaFromNote(activeSchedule.userOrder.note))) return true;
-    if ((seatArea || '') !== (activeSchedule.userOrder.seatArea || '')) return true;
+    if ((seatArea || '') !== getSeatAreaFromOrder(activeSchedule.userOrder)) return true;
     if (saveOrderPreference) return true;
 
     const currentItems = getCurrentOrderItems();
@@ -490,7 +510,7 @@ export default function PortalPage() {
         body: JSON.stringify({
           scheduleId: activeSchedule.id,
           items,
-          note: applySeatAreaToNote(seatArea, orderNote),
+          note: removeSeatAreaFromNote(orderNote),
           seatArea,
           saveOrderPreference
         })
@@ -534,7 +554,7 @@ export default function PortalPage() {
       setOrderQuantities({});
       setItemNotes({});
       setOrderNote('');
-      setSeatArea('');
+      setSeatArea('A');
       setUseSavedOrderNote(false);
       setSaveOrderPreference(false);
       fetchSchedules();
@@ -971,16 +991,51 @@ export default function PortalPage() {
                     {activeRestaurant.menuItems.map(item => {
                       const qty = orderQuantities[item.id] || 0;
                       if (qty === 0) return null;
+                      const itemNoteParts = composeItemNote(item.id)
+                        .split(';')
+                        .map(note => note.trim())
+                        .filter(Boolean);
                       return (
                         <div key={item.id} className="space-y-2 rounded-lg border border-[#EAE8E4] bg-[#F9F8F5] p-3 text-xs">
                           <div className="flex items-center justify-between gap-2">
                             <span className="text-[#333333] font-bold truncate">{item.name}</span>
-                            <span className="text-[#888888] shrink-0">x {qty}</span>
+                            <div className="flex shrink-0 items-center gap-1 rounded-full border border-[#EAE8E4] bg-white px-1 py-0.5">
+                              <button
+                                type="button"
+                                onClick={() => updateOrderItemQuantity(item.id, -1)}
+                                className="flex h-6 w-6 items-center justify-center rounded-full text-[#888888] transition-all hover:bg-[#F9F8F5] hover:text-[#EA5B3C]"
+                                aria-label={`減少 ${item.name} 數量`}
+                              >
+                                <i className="ti ti-minus text-xs"></i>
+                              </button>
+                              <span className="min-w-4 text-center text-xs font-bold text-[#333333]">{qty}</span>
+                              <button
+                                type="button"
+                                onClick={() => updateOrderItemQuantity(item.id, 1)}
+                                className="flex h-6 w-6 items-center justify-center rounded-full text-[#888888] transition-all hover:bg-[#F9F8F5] hover:text-[#EA5B3C]"
+                                aria-label={`增加 ${item.name} 數量`}
+                              >
+                                <i className="ti ti-plus text-xs"></i>
+                              </button>
+                            </div>
                             <span className="text-[#333333] font-bold shrink-0">NT$ {getItemUnitPrice(item) * qty}</span>
+                            <button
+                              type="button"
+                              onClick={() => removeOrderItem(item.id)}
+                              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-[#EAE8E4] bg-white text-[#888888] transition-all hover:border-red-200 hover:text-red-600"
+                              aria-label={`刪除 ${item.name}`}
+                              title="刪除餐點"
+                            >
+                              <i className="ti ti-trash text-sm"></i>
+                            </button>
                           </div>
-                          {composeItemNote(item.id) && (
-                            <div className="rounded-lg border border-[#EAE8E4] bg-white px-3 py-2 text-xs font-bold text-[#888888]">
-                              備註：{composeItemNote(item.id)}
+                          {itemNoteParts.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5">
+                              {itemNoteParts.map(note => (
+                                <span key={note} className="rounded-full border border-[#EAE8E4] bg-white px-2.5 py-1 text-[11px] font-bold text-[#888888]">
+                                  {note}
+                                </span>
+                              ))}
                             </div>
                           )}
                         </div>
@@ -1014,7 +1069,7 @@ export default function PortalPage() {
                         {activeSchedule.userOrder.orderNumberDisplay && (
                           <div className="flex justify-between">
                             <span className="text-[#888888]">{'\u8a02\u55ae\u7de8\u865f'}</span>
-                            <span className="font-bold text-[#EA5B3C]">{activeSchedule.userOrder.orderNumberDisplay}</span>
+                            <span className="font-bold text-[#EA5B3C]">{getOrderDisplayNumber(activeSchedule.userOrder)}</span>
                           </div>
                         )}
                         <div className="flex justify-between">
@@ -1067,7 +1122,24 @@ export default function PortalPage() {
 
                       <div className="space-y-1.5">
                         <div className="flex items-center justify-between gap-2">
-                          <label className="text-xs font-bold text-[#888888]">備註</label>
+                          <span className="relative inline-flex items-center gap-1 text-xs font-bold text-[#888888]" data-order-note-tip>
+                            <label>備註</label>
+                            <button
+                              type="button"
+                              onClick={() => setIsOrderNoteTipOpen(prev => !prev)}
+                              onMouseEnter={() => setIsOrderNoteTipOpen(true)}
+                              onFocus={() => setIsOrderNoteTipOpen(true)}
+                              className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-[#D6D1CA] bg-white text-[10px] font-bold text-[#888888] transition-all hover:border-[#EA5B3C] hover:text-[#EA5B3C]"
+                              aria-label="備註欄說明"
+                            >
+                              i
+                            </button>
+                            {isOrderNoteTipOpen && (
+                              <span className="absolute left-0 top-full z-20 mt-2 w-[min(18rem,calc(100vw-3rem))] rounded-lg border border-[#EAE8E4] bg-white p-3 text-left text-[11px] font-bold leading-relaxed text-[#555555] shadow-lg">
+                                可填寫其他無法在餐點選項中選到的備註。
+                              </span>
+                            )}
+                          </span>
                           <div className="flex items-center gap-1 text-[11px] font-bold">
                             <button
                               type="button"
@@ -1209,29 +1281,6 @@ export default function PortalPage() {
               </div>
 
               <div className="space-y-5 px-5 py-5">
-                <div className="flex items-center justify-between rounded-xl border border-[#EAE8E4] bg-[#F9F8F5] p-4">
-                  <span className="text-sm font-bold text-[#333333]">數量</span>
-                  <div className="flex items-center gap-4">
-                    <button
-                      type="button"
-                      onClick={() => handleDialogQtyChange(-1)}
-                      className="flex h-10 w-10 items-center justify-center rounded-full border border-[#EAE8E4] bg-white text-[#888888] transition-all hover:border-[#EA5B3C] hover:text-[#EA5B3C]"
-                      aria-label="減少數量"
-                    >
-                      <i className="ti ti-minus text-sm"></i>
-                    </button>
-                    <span className="min-w-8 text-center text-lg font-bold text-[#333333]">{editingMenuItemQty}</span>
-                    <button
-                      type="button"
-                      onClick={() => handleDialogQtyChange(1)}
-                      className="flex h-10 w-10 items-center justify-center rounded-full border border-[#EAE8E4] bg-white text-[#888888] transition-all hover:border-[#EA5B3C] hover:text-[#EA5B3C]"
-                      aria-label="增加數量"
-                    >
-                      <i className="ti ti-plus text-sm"></i>
-                    </button>
-                  </div>
-                </div>
-
                 <div className="space-y-2">
                   <div className="flex flex-wrap gap-2">
                     {editingMenuItemOptions.map(option => {
@@ -1254,46 +1303,36 @@ export default function PortalPage() {
                   </div>
                 </div>
 
-                <div className="space-y-2">
-                  <label className="text-xs font-bold tracking-widest text-[#888888]" htmlFor="menu-item-note">
-                    備註
-                  </label>
-                  <textarea
-                    id="menu-item-note"
-                    value={editingMenuItemDraft.note || ''}
-                    onChange={(e) => setEditingMenuItemDraft(prev => ({ ...prev, note: e.target.value }))}
-                    placeholder="例如：不要辣、醬另外放"
-                    rows={3}
-                    className="w-full resize-none rounded-lg border border-[#EAE8E4] bg-white px-3 py-2 text-sm font-medium text-[#333333] placeholder:text-[#B8B2AA] focus:border-[#EA5B3C] focus:outline-none"
-                  />
-                </div>
-
-                {composeEditingItemNote() && (
-                  <div className="rounded-xl border border-[#EAE8E4] bg-[#F9F8F5] px-3 py-2 text-xs font-bold text-[#888888]">
-                    目前備註：{composeEditingItemNote()}
-                  </div>
-                )}
               </div>
 
               <div className="flex gap-2 border-t border-[#EAE8E4] bg-[#F9F8F5] px-5 py-4">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setOrderQuantities(prev => ({ ...prev, [editingMenuItem.id]: 0 }));
-                    setItemNotes(prev => ({ ...prev, [editingMenuItem.id]: '' }));
-                    setItemCustomOptions(prev => ({ ...prev, [editingMenuItem.id]: [] }));
-                    closeMenuItemDialog();
-                  }}
-                  className="flex-1 rounded-xl border border-[#EAE8E4] bg-white py-3 text-xs font-bold text-[#888888] transition-all hover:border-red-200 hover:text-red-600"
-                >
-                  清除此餐點
-                </button>
+                <div className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-[#EAE8E4] bg-white px-3 py-2">
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleDialogQtyChange(-1)}
+                      className="flex h-8 w-8 items-center justify-center rounded-full border border-[#EAE8E4] bg-white text-[#888888] transition-all hover:border-[#EA5B3C] hover:text-[#EA5B3C]"
+                      aria-label="減少數量"
+                    >
+                      <i className="ti ti-minus text-xs"></i>
+                    </button>
+                    <span className="min-w-5 text-center text-sm font-bold text-[#333333]">{editingMenuItemQty}</span>
+                    <button
+                      type="button"
+                      onClick={() => handleDialogQtyChange(1)}
+                      className="flex h-8 w-8 items-center justify-center rounded-full border border-[#EAE8E4] bg-white text-[#888888] transition-all hover:border-[#EA5B3C] hover:text-[#EA5B3C]"
+                      aria-label="增加數量"
+                    >
+                      <i className="ti ti-plus text-xs"></i>
+                    </button>
+                  </div>
+                </div>
                 <button
                   type="button"
                   onClick={applyMenuItemDialog}
                   className="flex-[1.5] rounded-xl bg-[#EA5B3C] py-3 text-xs font-bold text-white shadow-sm transition-all hover:bg-[#333333]"
                 >
-                  完成
+                  加入訂購清單
                 </button>
               </div>
             </div>

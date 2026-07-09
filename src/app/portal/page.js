@@ -63,8 +63,8 @@ function getDefaultDateForWeek(weekTab) {
 
 function getSeatAreaFromOrder(order) {
   if (order?.seatArea) return order.seatArea;
-  const match = (order?.note || '').trim().match(/^([AB])區\b/i);
-  return match ? match[1].toUpperCase() : '';
+  const match = (order?.note || '').trim().match(/^([AB])區(?:\s|$|[;；,，、])/i);
+  return match ? match[1].toUpperCase() : 'A';
 }
 
 function getOrderDisplayNumber(order) {
@@ -781,7 +781,7 @@ export default function PortalPage() {
                         {activeSchedule.userOrder.orderNumberDisplay && (
                           <div className="flex justify-between">
                             <span className="text-[#888888]">{'\u8a02\u55ae\u7de8\u865f'}</span>
-                            <span className="font-bold text-[#EA5B3C]">{activeSchedule.userOrder.orderNumberDisplay}</span>
+                            <span className="font-bold text-[#EA5B3C]">{getOrderDisplayNumber(activeSchedule.userOrder)}</span>
                           </div>
                         )}
                         <div className="flex justify-between">

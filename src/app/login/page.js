@@ -102,7 +102,7 @@ export default function LoginPage() {
           )}
 
           {/* Tabs */}
-          <div className="flex border-b border-[#EAE8E4] mb-8">
+          <div className="flex border-b border-[#EAE8E4] mb-5">
             <button
               onClick={() => setActiveTab('dev')}
               className={`flex-1 pb-4 text-sm font-bold border-b-2 transition-all duration-300 ${
@@ -125,13 +125,13 @@ export default function LoginPage() {
             </button>
           </div>
 
+          <p className="mb-7 rounded-lg bg-[#F9F8F5] px-4 py-3 text-center text-[11px] font-bold leading-5 text-[#888888]">
+            CatChup Lunch 協助團隊快速完成午餐訂購、餐點排程與儲值扣款管理。
+          </p>
+
           {/* Tab Content */}
           {activeTab === 'dev' && (
-            <div className="space-y-6">
-              <div className="text-xs text-[#888888] leading-relaxed mb-4">
-                💡 <b>說明</b>：為了方便您在本地無痛測試，此模式免去配置 Google API Console 的流程。請點選以下角色模擬登入，觀察系統對不同餘額與權限的視覺回應：
-              </div>
-
+            <div className="space-y-5">
               {/* Admin Button */}
               <button
                 disabled={loading}
@@ -144,14 +144,12 @@ export default function LoginPage() {
                   </div>
                   <div>
                     <h4 className="font-bold text-[#333333] group-hover:text-[#EA5B3C] transition-colors">管理者 Admin</h4>
-                    <p className="text-xs text-[#888888] mt-1">排定菜單、手動儲值、OCR 掃描、扣款</p>
                   </div>
                 </div>
                 <i className="ti ti-chevron-right text-[#888888] group-hover:translate-x-1 transition-transform"></i>
               </button>
 
               <div className="h-px bg-[#EAE8E4] my-2"></div>
-              <p className="text-xs font-bold text-[#888888] tracking-wider mb-2">訂購者 User (三種餘額情境)</p>
 
               {/* User - Positive */}
               <button

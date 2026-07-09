@@ -389,12 +389,14 @@ export default function PortalPage() {
   };
 
   const removeOrderItem = (menuItemId) => {
+    if (isClosed() || isSubmitting) return;
     setOrderQuantities(prev => ({ ...prev, [menuItemId]: 0 }));
     setItemNotes(prev => ({ ...prev, [menuItemId]: '' }));
     setItemCustomOptions(prev => ({ ...prev, [menuItemId]: [] }));
   };
 
   const updateOrderItemQuantity = (menuItemId, delta) => {
+    if (isClosed() || isSubmitting) return;
     const next = Math.max(0, (orderQuantities[menuItemId] || 0) + delta);
     setOrderQuantities(prev => ({ ...prev, [menuItemId]: next }));
     if (next === 0) {
@@ -404,6 +406,7 @@ export default function PortalPage() {
   };
 
   const handleSeatAreaToggle = (area) => {
+    if (isClosed() || isSubmitting) return;
     setSeatArea(area);
   };
 
@@ -1002,8 +1005,9 @@ export default function PortalPage() {
                             <div className="flex shrink-0 items-center gap-1 rounded-full border border-[#EAE8E4] bg-white px-1 py-0.5">
                               <button
                                 type="button"
+                                disabled={isClosed() || isSubmitting}
                                 onClick={() => updateOrderItemQuantity(item.id, -1)}
-                                className="flex h-6 w-6 items-center justify-center rounded-full text-[#888888] transition-all hover:bg-[#F9F8F5] hover:text-[#EA5B3C]"
+                                className="flex h-6 w-6 items-center justify-center rounded-full text-[#888888] transition-all hover:bg-[#F9F8F5] hover:text-[#EA5B3C] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-[#888888]"
                                 aria-label={`減少 ${item.name} 數量`}
                               >
                                 <i className="ti ti-minus text-xs"></i>
@@ -1011,8 +1015,9 @@ export default function PortalPage() {
                               <span className="min-w-4 text-center text-xs font-bold text-[#333333]">{qty}</span>
                               <button
                                 type="button"
+                                disabled={isClosed() || isSubmitting}
                                 onClick={() => updateOrderItemQuantity(item.id, 1)}
-                                className="flex h-6 w-6 items-center justify-center rounded-full text-[#888888] transition-all hover:bg-[#F9F8F5] hover:text-[#EA5B3C]"
+                                className="flex h-6 w-6 items-center justify-center rounded-full text-[#888888] transition-all hover:bg-[#F9F8F5] hover:text-[#EA5B3C] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-[#888888]"
                                 aria-label={`增加 ${item.name} 數量`}
                               >
                                 <i className="ti ti-plus text-xs"></i>
@@ -1021,8 +1026,9 @@ export default function PortalPage() {
                             <span className="text-[#333333] font-bold shrink-0">NT$ {getItemUnitPrice(item) * qty}</span>
                             <button
                               type="button"
+                              disabled={isClosed() || isSubmitting}
                               onClick={() => removeOrderItem(item.id)}
-                              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-[#EAE8E4] bg-white text-[#888888] transition-all hover:border-red-200 hover:text-red-600"
+                              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-[#EAE8E4] bg-white text-[#888888] transition-all hover:border-red-200 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-[#EAE8E4] disabled:hover:text-[#888888]"
                               aria-label={`刪除 ${item.name}`}
                               title="刪除餐點"
                             >
@@ -1143,8 +1149,9 @@ export default function PortalPage() {
                           <div className="flex items-center gap-1 text-[11px] font-bold">
                             <button
                               type="button"
+                              disabled={isClosed() || isSubmitting}
                               onClick={() => setUseSavedOrderNote(prev => !prev)}
-                              className={`rounded px-1.5 py-0.5 transition-all ${
+                              className={`rounded px-1.5 py-0.5 transition-all disabled:cursor-not-allowed disabled:opacity-50 ${
                                 useSavedOrderNote
                                   ? 'bg-[#FFF3EF] text-[#EA5B3C] underline decoration-[#EA5B3C] underline-offset-4'
                                   : 'text-[#888888] hover:bg-white hover:text-[#EA5B3C]'

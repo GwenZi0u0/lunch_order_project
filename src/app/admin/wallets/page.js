@@ -120,6 +120,9 @@ export default function WalletsManagementPage() {
   useEffect(() => {
     if (!selectedUser) return;
 
+    const shouldLockScroll = window.matchMedia('(max-width: 1023px)').matches;
+    if (!shouldLockScroll) return;
+
     const originalOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
 
@@ -646,14 +649,14 @@ export default function WalletsManagementPage() {
                 )}
               </div>
 
-              <div className="hidden max-h-[430px] overflow-auto border border-[#EAE8E4] rounded-xl bg-white kaizen-scrollbar md:block">
+              <div className="hidden max-h-[430px] overflow-y-auto overflow-x-hidden border border-[#EAE8E4] rounded-xl bg-white kaizen-scrollbar [scrollbar-gutter:stable] md:block">
                 <table className="w-full text-left border-collapse text-xs">
                   <thead className="sticky top-0 z-10">
                     <tr className="bg-[#F9F8F5] text-[#888888] font-bold border-b border-[#EAE8E4]">
                       <th className="py-3 pl-6 pr-3">姓名</th>
                       <th className="p-3">角色</th>
                       <th className="p-3 text-right">當前餘額</th>
-                      <th className="p-3 text-center">帳務操作</th>
+                      <th className="py-3 pl-3 pr-5 text-center">帳務操作</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#EAE8E4] text-[#333333]">
@@ -742,7 +745,7 @@ export default function WalletsManagementPage() {
                                 )}
                               </div>
                             </td>
-                            <td className="p-3 text-center">
+                            <td className="py-3 pl-3 pr-5 text-center">
                               <div className="flex items-center justify-center gap-1.5">
                                 <button
                                   type="button"

@@ -363,10 +363,10 @@ export default function RestaurantsPage() {
             <i className="ti ti-building-store text-2xl text-[#EA5B3C]"></i> 餐廳與菜單管理
           </h2>
           <button
-            onClick={() => router.push('/admin')}
+            onClick={() => router.push('/admin/schedule')}
             className="text-xs font-bold border border-[#EAE8E4] px-4 py-2 bg-white rounded-lg hover:border-[#EA5B3C] hover:text-[#EA5B3C] transition-all"
           >
-            返回排程總覽
+            供餐排程
           </button>
         </div>
 
@@ -552,7 +552,7 @@ export default function RestaurantsPage() {
                 {menuItems.length === 0 ? (
                   <div className="text-center py-10 border border-dashed border-[#D6D1CA] rounded-xl text-xs text-[#888888] space-y-2">
                     <i className="ti ti-clipboard-list text-3xl"></i>
-                    <p>尚無任何餐點項目。請手動點擊「新增品項」或上傳菜單圖片進行「AI 辨識」。</p>
+                    <p>尚無任何餐點項目。</p>
                   </div>
                 ) : (
                   <div className="overflow-x-auto border border-[#EAE8E4] rounded-xl">

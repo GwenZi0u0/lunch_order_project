@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Navbar from '@/components/Navbar';
 
@@ -57,6 +57,7 @@ export default function HistoryPage() {
   const [isLedgerCalendarOpen, setIsLedgerCalendarOpen] = useState(false);
   const [ledgerCalendarMonth, setLedgerCalendarMonth] = useState(() => new Date());
   const [selectedTransaction, setSelectedTransaction] = useState(null);
+  const ledgerCalendarRef = useRef(null);
 
   useEffect(() => {
     // Check authentication
@@ -85,6 +86,19 @@ export default function HistoryPage() {
       document.body.style.overflow = originalOverflow;
     };
   }, [selectedTransaction]);
+
+  useEffect(() => {
+    if (!isLedgerCalendarOpen) return;
+
+    const handlePointerDown = (event) => {
+      if (ledgerCalendarRef.current && !ledgerCalendarRef.current.contains(event.target)) {
+        setIsLedgerCalendarOpen(false);
+      }
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown);
+    return () => document.removeEventListener('pointerdown', handlePointerDown);
+  }, [isLedgerCalendarOpen]);
 
   const fetchTransactions = ({
     startDate = ledgerStartDate,
@@ -178,7 +192,7 @@ export default function HistoryPage() {
   };
 
   const wallet = getWalletStyles();
-  const walletAmount = `${user.balance < 0 ? '－' : ''}NT$ ${Math.abs(user.balance)}`;
+  const walletAmount = `NT$ ${Math.abs(user.balance)}`;
   const pendingHoldAmount = user.pendingHoldAmount || 0;
   const availableBalance = user.availableBalance ?? (user.balance - pendingHoldAmount);
 
@@ -204,13 +218,13 @@ export default function HistoryPage() {
         <section className="bg-white rounded-xl border border-[#EAE8E4] p-6 shadow-sm">
           <div className={`p-5 bg-[#F9F8F5] rounded-xl border ${wallet.cardBorder}`}>
             <span className="text-xs font-bold text-[#888888] tracking-widest uppercase mb-2 block">{wallet.label}</span>
-            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+            <div className="flex flex-col items-start gap-1">
               <span className={`text-3xl font-bold ${wallet.valueColor}`}>
                 {walletAmount}
               </span>
               {pendingHoldAmount > 0 && (
                 <span className="text-xs font-bold text-[#888888]">
-                  預扣後剩餘 {availableBalance < 0 ? '－' : ''}NT$ {Math.abs(availableBalance)}
+                  預扣後剩餘 NT$ {Math.abs(availableBalance)}
                 </span>
               )}
             </div>
@@ -224,7 +238,7 @@ export default function HistoryPage() {
               個人歷史訂單與扣款紀錄
             </h3>
 
-            <div className="space-y-1.5 relative w-full md:w-[240px]">
+            <div ref={ledgerCalendarRef} className="space-y-1.5 relative w-full md:w-[240px]">
               <div className="h-4 flex items-center justify-between gap-2">
                 <label className="text-xs font-bold text-[#888888]">日期</label>
                 {(ledgerStartDate || ledgerEndDate) && (
@@ -334,7 +348,7 @@ export default function HistoryPage() {
                           {formatTransactionTime(tx.createdAt)}
                         </td>
                         <td className={`py-4 font-bold text-sm ${tx.amount >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                          {tx.amount >= 0 ? '＋' : '－'}NT$ {Math.abs(tx.amount)}
+                          NT$ {Math.abs(tx.amount)}
                         </td>
                         <td className="py-4 text-[#555555]">
                           {tx.source || (tx.type === 'charge' ? '訂單扣款' : '-')}

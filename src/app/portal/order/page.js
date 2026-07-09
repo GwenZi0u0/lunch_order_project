@@ -1264,7 +1264,7 @@ export default function PortalPage() {
                     onChange={(e) => setEditingMenuItemDraft(prev => ({ ...prev, note: e.target.value }))}
                     placeholder="例如：不要辣、醬另外放"
                     rows={3}
-                    className="w-full resize-none rounded-xl border border-[#EAE8E4] bg-white px-3 py-2 text-sm font-medium text-[#333333] placeholder:text-[#B8B2AA] focus:border-[#EA5B3C] focus:outline-none"
+                    className="w-full resize-none rounded-lg border border-[#EAE8E4] bg-white px-3 py-2 text-sm font-medium text-[#333333] placeholder:text-[#B8B2AA] focus:border-[#EA5B3C] focus:outline-none"
                   />
                 </div>
 

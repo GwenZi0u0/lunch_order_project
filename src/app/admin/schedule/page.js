@@ -128,7 +128,7 @@ export default function AdminDashboard() {
   const [selectedRestaurantId, setSelectedRestaurantId] = useState('');
   const [orderDeadline, setOrderDeadline] = useState('09:40');
   const [isHoliday, setIsHoliday] = useState(false);
-  const [isUpdatingSchedule, setIsUpdatingSchedule] = useState(false);
+  const [savingScheduleSection, setSavingScheduleSection] = useState('');
   const [orderEditor, setOrderEditor] = useState(null);
   const [selectedOrderDetail, setSelectedOrderDetail] = useState(null);
   const [isSavingOrder, setIsSavingOrder] = useState(false);
@@ -319,6 +319,12 @@ export default function AdminDashboard() {
 
   const handleToggleNextWeekMenu = async () => {
     const nextValue = !allowNextWeekMenu;
+    const confirmMessage = nextValue
+      ? '確認要開啟訂購者下週菜單閱覽嗎？'
+      : '確認要關閉訂購者下週菜單閱覽嗎？';
+
+    if (!window.confirm(confirmMessage)) return;
+
     setIsSavingOrderSettings(true);
     setOrderSettingsMessage('');
 
@@ -335,7 +341,11 @@ export default function AdminDashboard() {
       }
 
       setAllowNextWeekMenu(data.allowNextWeekMenu);
-      setOrderSettingsMessage('訂購者下週菜單查閱設定已更新。');
+      setOrderSettingsMessage(
+        data.allowNextWeekMenu
+          ? '訂購者下週菜單閱覽已開啟。'
+          : '訂購者下週菜單閱覽已關閉。'
+      );
       setTimeout(() => setOrderSettingsMessage(''), 3000);
     } catch (err) {
       setOrderSettingsMessage(err.message);
@@ -359,7 +369,45 @@ export default function AdminDashboard() {
     setOrderEditor(null);
   }, [selectedDate, activeSchedule]);
 
-  const handleSaveSchedule = async () => {
+  const persistScheduleSettings = async ({
+    restaurantId,
+    orderDeadlineValue,
+    isOpenValue,
+    clearOrdersOnRestaurantChange,
+    successMessage,
+    savingSection
+  }) => {
+    setSavingScheduleSection(savingSection);
+    setMessage({ text: '', type: '' });
+
+    try {
+      const res = await fetch('/api/schedule', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          date: selectedDate,
+          restaurantId,
+          orderDeadline: orderDeadlineValue,
+          isOpen: isOpenValue,
+          clearOrdersOnRestaurantChange
+        })
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || '排程儲存失敗');
+      }
+
+      setMessage({ text: successMessage, type: 'success' });
+      fetchSchedules();
+    } catch (err) {
+      setMessage({ text: err.message, type: 'error' });
+    } finally {
+      setSavingScheduleSection('');
+    }
+  };
+
+  const handleSaveRestaurantSetting = async () => {
     if (isPastSelectedDate) {
       setMessage({ text: '供餐日期已過，無法進行設定。', type: 'error' });
       return;
@@ -370,44 +418,49 @@ export default function AdminDashboard() {
       return;
     }
 
+    const currentRestaurantId = activeSchedule?.restaurantId || '';
     const nextRestaurantId = isHoliday ? null : selectedRestaurantId;
+    const selectedRestaurantChanged = Boolean(activeSchedule)
+      && currentRestaurantId !== (selectedRestaurantId || '');
     const activeOrderCount = activeSchedule?.orders?.filter(order => order.status !== 'cancelled').length || 0;
-    const isRestaurantChanging = Boolean(activeSchedule)
-      && activeSchedule.restaurantId !== nextRestaurantId;
-    const shouldClearOrders = isRestaurantChanging && activeOrderCount > 0;
+    const shouldClearOrders = selectedRestaurantChanged && activeOrderCount > 0;
 
     if (shouldClearOrders && !confirm('\u6b64\u65e5\u671f\u5df2\u6709\u8a02\u8cfc\u8005\u8a02\u9910\uff0c\u78ba\u8a8d\u8b8a\u66f4\u9910\u5ef3\u55ce\uff1f\u78ba\u8a8d\u5f8c\u5c07\u6e05\u9664\u7576\u65e5\u6240\u6709\u5df2\u8a02\u8cfc\u9910\u9ede\uff0c\u4e26\u8acb\u8a02\u8cfc\u8005\u91cd\u65b0\u8a02\u9910\u3002')) {
       return;
     }
 
-    setIsUpdatingSchedule(true);
-    setMessage({ text: '', type: '' });
+    await persistScheduleSettings({
+      restaurantId: nextRestaurantId,
+      orderDeadlineValue: activeSchedule?.orderDeadline || orderDeadline || '09:40',
+      isOpenValue: !isHoliday,
+      clearOrdersOnRestaurantChange: shouldClearOrders,
+      successMessage: '餐廳設定已成功儲存！',
+      savingSection: 'restaurant'
+    });
+  };
 
-    try {
-      const res = await fetch('/api/schedule', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          date: selectedDate,
-          restaurantId: nextRestaurantId,
-          orderDeadline,
-          isOpen: !isHoliday,
-          clearOrdersOnRestaurantChange: shouldClearOrders
-        })
-      });
-
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || '排程儲存失敗');
-      }
-
-      setMessage({ text: '排程設定已成功儲存！', type: 'success' });
-      fetchSchedules();
-    } catch (err) {
-      setMessage({ text: err.message, type: 'error' });
-    } finally {
-      setIsUpdatingSchedule(false);
+  const handleSaveDeadlineSetting = async () => {
+    if (isPastSelectedDate) {
+      setMessage({ text: '供餐日期已過，無法進行設定。', type: 'error' });
+      return;
     }
+
+    const savedIsOpen = activeSchedule ? activeSchedule.isOpen : !isHoliday;
+    const savedRestaurantId = activeSchedule?.restaurantId || selectedRestaurantId || null;
+
+    if (savedIsOpen && !savedRestaurantId) {
+      setMessage({ text: '請先儲存當日餐廳，再設定訂單截止時間。', type: 'error' });
+      return;
+    }
+
+    await persistScheduleSettings({
+      restaurantId: savedIsOpen ? savedRestaurantId : null,
+      orderDeadlineValue: orderDeadline || '09:40',
+      isOpenValue: savedIsOpen,
+      clearOrdersOnRestaurantChange: false,
+      successMessage: '訂單截止時間已成功儲存！',
+      savingSection: 'deadline'
+    });
   };
 
   // Deliver and deduct balance API trigger
@@ -1052,7 +1105,7 @@ export default function AdminDashboard() {
                 </div>
               )}
 
-              {activeWeekTab !== 'previous' && (
+              {activeWeekTab === 'current' && (
                 <div className="space-y-2 border-b border-[#EAE8E4] pb-4">
                   <button
                     type="button"
@@ -1107,19 +1160,29 @@ export default function AdminDashboard() {
                   </button>
                 </div>
 
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-[#888888]">指定當日餐廳</label>
-                  <select
-                    value={selectedRestaurantId}
-                    onChange={(e) => setSelectedRestaurantId(e.target.value)}
-                    disabled={isHoliday || isPastSelectedDate}
-                    className="w-full text-xs pl-3 pr-5 py-2 border border-[#EAE8E4] rounded-lg focus:outline-none focus:border-[#EA5B3C] bg-white font-medium disabled:bg-[#F9F8F5] disabled:text-[#B8B2AA] disabled:cursor-not-allowed"
+                <div className="flex items-end gap-2">
+                  <div className="min-w-0 flex-1 space-y-1.5">
+                    <label className="text-xs font-bold text-[#888888]">指定當日餐廳</label>
+                    <select
+                      value={selectedRestaurantId}
+                      onChange={(e) => setSelectedRestaurantId(e.target.value)}
+                      disabled={isHoliday || isPastSelectedDate}
+                      className="w-full text-xs pl-3 pr-5 py-2 border border-[#EAE8E4] rounded-lg focus:outline-none focus:border-[#EA5B3C] bg-white font-medium disabled:bg-[#F9F8F5] disabled:text-[#B8B2AA] disabled:cursor-not-allowed"
+                    >
+                      <option value="">-- 請選擇餐廳 --</option>
+                      {restaurants.map(rest => (
+                        <option key={rest.id} value={rest.id}>{rest.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleSaveRestaurantSetting}
+                    disabled={isPastSelectedDate || Boolean(savingScheduleSection) || (!isHoliday && !selectedRestaurantId)}
+                    className="shrink-0 px-4 py-3 text-xs font-bold bg-[#EA5B3C] text-white rounded-xl shadow-sm hover:bg-[#333333] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    <option value="">-- 請選擇餐廳 --</option>
-                    {restaurants.map(rest => (
-                      <option key={rest.id} value={rest.id}>{rest.name}</option>
-                    ))}
-                  </select>
+                    {savingScheduleSection === 'restaurant' ? '儲存中' : '儲存'}
+                  </button>
                 </div>
 
                 <div className="flex items-end gap-2">
@@ -1134,11 +1197,12 @@ export default function AdminDashboard() {
                     />
                   </div>
                   <button
-                    onClick={handleSaveSchedule}
-                    disabled={isPastSelectedDate || isUpdatingSchedule || (!isHoliday && !selectedRestaurantId)}
+                    type="button"
+                    onClick={handleSaveDeadlineSetting}
+                    disabled={isPastSelectedDate || Boolean(savingScheduleSection)}
                     className="shrink-0 px-4 py-3 text-xs font-bold bg-[#EA5B3C] text-white rounded-xl shadow-sm hover:bg-[#333333] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    {isUpdatingSchedule ? '儲存中' : '儲存設定'}
+                    {savingScheduleSection === 'deadline' ? '儲存中' : '儲存'}
                   </button>
                 </div>
 

@@ -471,14 +471,17 @@ export default function PortalPage() {
   const shouldShowModifyShortcut = Boolean(
     activeSchedule?.userOrder && activeRestaurant && !isClosed() && hasOrderChanges()
   );
+  const shouldShowConfirmOrderShortcut = Boolean(
+    activeRestaurant && !activeSchedule?.userOrder && !isClosed() && calculateTotal() > 0
+  );
 
   useEffect(() => {
-    document.body.classList.toggle('has-bottom-order-shortcut', shouldShowModifyShortcut);
+    document.body.classList.toggle('has-bottom-order-shortcut', shouldShowModifyShortcut || shouldShowConfirmOrderShortcut);
 
     return () => {
       document.body.classList.remove('has-bottom-order-shortcut');
     };
-  }, [shouldShowModifyShortcut]);
+  }, [shouldShowModifyShortcut, shouldShowConfirmOrderShortcut]);
 
   const handlePlaceOrder = async () => {
     if (isClosed()) return;
@@ -486,7 +489,7 @@ export default function PortalPage() {
     if (activeSchedule.userOrder && !hasOrderChanges()) return;
 
     if (projectedAvailableBalance < MIN_AVAILABLE_BALANCE) {
-      setOrderError('預扣後金額不可低於 -$200，請調整餐點或聯絡管理員。');
+      setOrderError('可用金額不可低於 -$200，請調整餐點或聯絡管理員。');
       return;
     }
 
@@ -627,13 +630,13 @@ export default function PortalPage() {
             {/* Wallet Info */}
             <div className={`p-5 bg-[#F9F8F5] rounded-xl border ${wallet.cardBorder} flex flex-col justify-between h-full`}>
               <span className="text-xs font-bold text-[#888888] tracking-widest uppercase mb-2">{wallet.label}</span>
-              <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 mb-2">
+              <div className="mb-2 space-y-1">
                 <span className={`text-3xl font-bold ${wallet.valueColor}`}>
                   {walletAmount}
                 </span>
                 {pendingHoldAmount > 0 && (
-                  <span className="text-xs font-bold text-[#888888]">
-                    預扣後剩餘 {availableBalance < 0 ? '－' : ''}NT$ {Math.abs(availableBalance)}
+                  <span className="block text-xs font-bold text-[#888888]">
+                    可用金額 {availableBalance < 0 ? '－' : ''}NT$ {Math.abs(availableBalance)}
                   </span>
                 )}
               </div>
@@ -1191,12 +1194,12 @@ export default function PortalPage() {
                       {/* Total & Action Buttons */}
                       <div className="space-y-1.5">
                         <div className="text-right text-[11px] font-bold text-[#888888]">
-                          預扣後金額 {projectedAvailableBalance < 0 ? '－' : ''}${Math.abs(projectedAvailableBalance)}
+                          可用金額 {projectedAvailableBalance < 0 ? '－' : ''}${Math.abs(projectedAvailableBalance)}
                           {isBelowAvailableLimit && (
                             <span className="ml-1 text-red-600">不可低於 -$200</span>
                           )}
                           <span className="px-1.5 text-[#C9C3BB]">|</span>
-                          目前儲值金 {user.balance < 0 ? '－' : ''}${Math.abs(user.balance)}
+                          儲值金 {user.balance < 0 ? '－' : ''}${Math.abs(user.balance)}
                         </div>
                         <div className="flex justify-between items-center font-bold text-[#333333] text-sm">
                           <span>總計金額</span>
@@ -1221,7 +1224,7 @@ export default function PortalPage() {
                             onClick={handlePlaceOrder}
                             className="flex-[2] py-3 text-xs font-bold bg-[#EA5B3C] text-white rounded-xl shadow-sm hover:bg-[#333333] hover:shadow-md transition-all disabled:opacity-50 disabled:cursor-not-allowed text-center"
                           >
-                            {isSubmitting ? '處理中...' : activeSchedule.userOrder ? '修改並送出訂單' : '送出訂購'}
+                            {isSubmitting ? '處理中...' : activeSchedule.userOrder ? '修改並送出訂單' : '送出訂單'}
                           </button>
                         </div>
                         {activeSchedule.userOrder && !isClosed() && (
@@ -1247,6 +1250,19 @@ export default function PortalPage() {
           </div>
 
         </section>
+
+        {shouldShowConfirmOrderShortcut && (
+          <div className="fixed inset-x-0 bottom-3 z-40 px-6 lg:hidden">
+            <button
+              type="button"
+              onClick={scrollToOrderSummary}
+              className="flex w-full items-center justify-center gap-2 rounded-full bg-[#EA5B3C] px-4 py-3 text-sm font-bold text-white shadow-lg shadow-[#EA5B3C]/25 transition-all active:scale-[0.98]"
+            >
+              <i className="ti ti-clipboard-check text-base"></i>
+              請確認訂單
+            </button>
+          </div>
+        )}
 
         {shouldShowModifyShortcut && (
           <div className="fixed inset-x-0 bottom-4 z-40 px-6 lg:hidden">

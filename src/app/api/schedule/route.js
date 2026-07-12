@@ -175,6 +175,8 @@ export async function POST(request) {
       });
 
       const restaurantChanged = existingSchedule
+        && existingSchedule.restaurantId
+        && normalizedRestaurantId
         && existingSchedule.restaurantId !== normalizedRestaurantId;
       const hasActiveOrders = (existingSchedule?.orders?.length || 0) > 0;
 

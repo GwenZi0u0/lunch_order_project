@@ -72,6 +72,7 @@ export default function AdminDashboard() {
   const [editingAnnouncementId, setEditingAnnouncementId] = useState('');
   const [announcementDrafts, setAnnouncementDrafts] = useState({});
   const [announcementMessage, setAnnouncementMessage] = useState('');
+  const [copiedItemSummary, setCopiedItemSummary] = useState(false);
 
   useEffect(() => {
     // Check authentication and role
@@ -480,6 +481,38 @@ export default function AdminDashboard() {
     if (a.name !== b.name) return a.name.localeCompare(b.name, 'zh-Hant');
     return (a.note || '').localeCompare(b.note || '', 'zh-Hant');
   });
+  const todayDateObject = new Date(`${todayDate}T00:00:00`);
+  const isTodayWeekend = todayDateObject.getDay() === 0 || todayDateObject.getDay() === 6;
+  const isTodayHoliday = Boolean(todaySchedule && !todaySchedule.isOpen) || isTodayWeekend;
+  const todayRestaurantLabel = todaySchedule?.restaurant?.name || (isTodayHoliday ? '休假' : '未排定');
+  const todayTotalQuantity = todayItems.reduce((sum, item) => sum + item.qty, 0);
+  const formatTodayItemSummaryText = () => {
+    if (todayItems.length === 0) {
+      return `${todayDate} 品項總計\n今日尚無訂餐內容。`;
+    }
+
+    const itemLines = todayItems.map(item => {
+      const noteText = item.note ? `（${item.note}）` : '';
+      return `${item.name}${noteText} x ${item.qty}`;
+    });
+
+    return [
+      `${todayDate} 品項總計`,
+      `本日餐廳：${todayRestaurantLabel}`,
+      ...itemLines,
+      `總份數：${todayTotalQuantity}`,
+      `總金額：NT$ ${todayTotalAmount}`
+    ].join('\n');
+  };
+  const copyTodayItemSummary = async () => {
+    try {
+      await navigator.clipboard.writeText(formatTodayItemSummaryText());
+      setCopiedItemSummary(true);
+      setTimeout(() => setCopiedItemSummary(false), 1600);
+    } catch (err) {
+      console.error('Failed to copy item summary:', err);
+    }
+  };
   const getSeatArea = (order) => {
     const directArea = (order.seatArea || '').trim().toUpperCase();
     if (directArea === 'A' || directArea === 'B') return directArea;
@@ -559,7 +592,7 @@ export default function AdminDashboard() {
               <div className="bg-[#F9F8F5] border border-[#EAE8E4] rounded-lg p-4">
                 <p className="text-xs text-[#888888] font-bold mb-1">本日餐廳</p>
                 <p className="text-base font-bold text-[#333333] truncate">
-                  {todaySchedule?.restaurant?.name || '未排定'}
+                  {todayRestaurantLabel}
                 </p>
               </div>
               <div className="bg-[#F9F8F5] border border-[#EAE8E4] rounded-lg p-4">
@@ -574,9 +607,25 @@ export default function AdminDashboard() {
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
               <div className="space-y-3">
-                <h4 className="text-sm font-bold text-[#333333] flex items-center gap-2">
-                  <i className="ti ti-list-check text-[#EA5B3C]"></i> 品項總計
-                </h4>
+                <div className="flex items-center justify-between gap-3">
+                  <h4 className="text-sm font-bold text-[#333333] flex items-center gap-2">
+                    <i className="ti ti-list-check text-[#EA5B3C]"></i> 品項總計
+                  </h4>
+                  <div className="flex items-center gap-2">
+                    {copiedItemSummary && (
+                      <span className="text-[11px] font-bold text-green-600">已複製</span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={copyTodayItemSummary}
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[#EAE8E4] bg-white text-[#888888] transition-all hover:border-[#EA5B3C] hover:text-[#EA5B3C]"
+                      title="複製統計結果"
+                      aria-label="複製品項統計結果"
+                    >
+                      <i className="ti ti-copy text-sm"></i>
+                    </button>
+                  </div>
+                </div>
                 <div className="max-h-[240px] overflow-y-auto pr-1 space-y-2 kaizen-scrollbar">
                   {todayItems.length > 0 ? todayItems.map(item => (
                     <div key={`${item.name}-${item.note || 'no-note'}`} className="flex items-center justify-between gap-3 rounded-lg border border-[#EAE8E4] px-3 py-2 text-xs">

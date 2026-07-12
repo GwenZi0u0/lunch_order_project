@@ -395,13 +395,13 @@ export default function PortalPage() {
             {/* Wallet Info */}
             <div className={`p-5 bg-[#F9F8F5] rounded-xl border ${wallet.cardBorder} flex flex-col justify-between h-full`}>
               <span className="text-xs font-bold text-[#888888] tracking-widest uppercase mb-2">{wallet.label}</span>
-              <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 mb-2">
+              <div className="mb-2 space-y-1">
                 <span className={`text-3xl font-bold ${wallet.valueColor}`}>
                   {walletAmount}
                 </span>
                 {pendingHoldAmount > 0 && (
-                  <span className="text-xs font-bold text-[#888888]">
-                    預扣後剩餘 {availableBalance < 0 ? '－' : ''}NT$ {Math.abs(availableBalance)}
+                  <span className="block text-xs font-bold text-[#888888]">
+                    可用金額 {availableBalance < 0 ? '－' : ''}NT$ {Math.abs(availableBalance)}
                   </span>
                 )}
               </div>

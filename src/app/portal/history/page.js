@@ -224,7 +224,7 @@ export default function HistoryPage() {
               </span>
               {pendingHoldAmount > 0 && (
                 <span className="text-xs font-bold text-[#888888]">
-                  預扣後剩餘 NT$ {Math.abs(availableBalance)}
+                  可用金額 {availableBalance < 0 ? '－' : ''}NT$ {Math.abs(availableBalance)}
                 </span>
               )}
             </div>

@@ -4,6 +4,43 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Navbar from '@/components/Navbar';
 
+const DEFAULT_CUSTOMIZATION_OPTIONS = ['\u98ef\u5c11', '\u63db\u83dc', '\u63db\u83dc+$20'];
+const MIN_AVAILABLE_BALANCE = -200;
+
+function parseCustomizationOptions(value) {
+  if (Array.isArray(value)) {
+    return value.map(option => String(option).trim()).filter(Boolean);
+  }
+
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) {
+        return parsed.map(option => String(option).trim()).filter(Boolean);
+      }
+    } catch {
+      return value.split(/[\r\n,;|]+/).map(option => option.trim()).filter(Boolean);
+    }
+  }
+
+  return DEFAULT_CUSTOMIZATION_OPTIONS;
+}
+
+function splitExistingItemNote(menuItem, note) {
+  const options = parseCustomizationOptions(menuItem?.customizationOptions);
+  const selectedOptions = options.filter(option => (note || '').includes(option));
+  const cleanedNote = selectedOptions.reduce((current, option) => {
+    return current.split(option).join(' ');
+  }, note || '').replace(/[;,\s]+/g, ' ').trim();
+
+  return { selectedOptions, note: cleanedNote };
+}
+
+function getCustomizationExtraAmount(value) {
+  const matches = String(value || '').matchAll(/\+\s*(?:NT\$|\$)?\s*(\d+)/gi);
+  return Array.from(matches).reduce((sum, match) => sum + (parseInt(match[1], 10) || 0), 0);
+}
+
 function formatDate(date) {
   const d = new Date(date);
   let month = '' + (d.getMonth() + 1);
@@ -61,6 +98,22 @@ function getDefaultDateForWeek(weekTab) {
     : formatDate(new Date());
 }
 
+function getSeatAreaFromOrder(order) {
+  if (order?.seatArea) return order.seatArea;
+  const match = (order?.note || '').trim().match(/^([AB])區(?:\s|$|[;；,，、])/i);
+  return match ? match[1].toUpperCase() : 'A';
+}
+
+function getOrderDisplayNumber(order) {
+  const orderNumber = order?.orderNumberDisplay || '-';
+  const seatArea = getSeatAreaFromOrder(order);
+  return seatArea && orderNumber !== '-' ? `${seatArea}${orderNumber}` : orderNumber;
+}
+
+function getDisplayOrderNote(order) {
+  return (order?.note || '').replace(/^([AB])區\s*[;；,，、]?\s*/i, '').trim();
+}
+
 export default function PortalPage() {
   const router = useRouter();
   const [user, setUser] = useState(null);
@@ -72,6 +125,9 @@ export default function PortalPage() {
   // Order state
   const [orderQuantities, setOrderQuantities] = useState({}); // { menuItemId: quantity }
   const [itemNotes, setItemNotes] = useState({}); // { menuItemId: note }
+  const [itemCustomOptions, setItemCustomOptions] = useState({}); // { menuItemId: string[] }
+  const [editingMenuItemId, setEditingMenuItemId] = useState('');
+  const [editingMenuItemDraft, setEditingMenuItemDraft] = useState({ quantity: 0, note: '', options: [] });
   const [orderNote, setOrderNote] = useState('');
   const [seatArea, setSeatArea] = useState('');
   const [useSavedOrderNote, setUseSavedOrderNote] = useState(false);
@@ -80,6 +136,7 @@ export default function PortalPage() {
   const [orderError, setOrderError] = useState('');
   const [orderSuccess, setOrderSuccess] = useState('');
   const [isCumulativeTipOpen, setIsCumulativeTipOpen] = useState(false);
+  const [isOrderNoteTipOpen, setIsOrderNoteTipOpen] = useState(false);
   
   // Current system date/time check
   const [currentDateTime, setCurrentDateTime] = useState({ dateStr: '', timeStr: '' });
@@ -122,16 +179,27 @@ export default function PortalPage() {
   }, []);
 
   useEffect(() => {
-    if (!isCumulativeTipOpen) return;
+    if (!isCumulativeTipOpen && !isOrderNoteTipOpen) return;
 
     const handlePointerDown = (event) => {
       if (event.target.closest('[data-cumulative-tip]')) return;
+      if (event.target.closest('[data-order-note-tip]')) return;
       setIsCumulativeTipOpen(false);
+      setIsOrderNoteTipOpen(false);
+    };
+
+    const handleScroll = () => {
+      setIsCumulativeTipOpen(false);
+      setIsOrderNoteTipOpen(false);
     };
 
     document.addEventListener('pointerdown', handlePointerDown);
-    return () => document.removeEventListener('pointerdown', handlePointerDown);
-  }, [isCumulativeTipOpen]);
+    window.addEventListener('scroll', handleScroll, true);
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown);
+      window.removeEventListener('scroll', handleScroll, true);
+    };
+  }, [isCumulativeTipOpen, isOrderNoteTipOpen]);
 
   const updateTime = () => {
     const now = new Date();
@@ -177,7 +245,6 @@ export default function PortalPage() {
   };
 
   const removeSeatAreaFromNote = (value) => (value || '').replace(/(^|\s)(A區|B區)(?=\s|$)/g, ' ').replace(/\s+/g, ' ').trim();
-  const applySeatAreaToNote = (area, value) => [area ? `${area}區` : '', removeSeatAreaFromNote(value)].filter(Boolean).join(' ');
 
   // Find schedule details for selected date
   const activeSchedule = schedules.find(s => s.date === selectedDate);
@@ -204,7 +271,7 @@ export default function PortalPage() {
   useEffect(() => {
     if (!useSavedOrderNote || !user) return;
     const defaultSeatArea = user.defaultSeatArea || '';
-    setOrderNote(applySeatAreaToNote(defaultSeatArea, user.defaultOrderNote || ''));
+    setOrderNote(removeSeatAreaFromNote(user.defaultOrderNote || ''));
     setSeatArea(defaultSeatArea);
   }, [useSavedOrderNote, user]);
 
@@ -212,30 +279,40 @@ export default function PortalPage() {
     if (!schedule) {
       setOrderQuantities({});
       setItemNotes({});
+      setItemCustomOptions({});
+      setEditingMenuItemId('');
+      setEditingMenuItemDraft({ quantity: 0, note: '', options: [] });
       setOrderNote('');
-      setSeatArea('');
+      setSeatArea('A');
       setUseSavedOrderNote(false);
       setSaveOrderPreference(false);
       return;
     }
 
-    const userOrderSeatArea = schedule.userOrder?.seatArea || '';
+    const userOrderSeatArea = schedule.userOrder?.seatArea || 'A';
     const quantities = {};
     const notes = {};
+    const customOptions = {};
 
     if (schedule.userOrder) {
       schedule.userOrder.items.forEach(item => {
+        const menuItem = schedule.restaurant?.menuItems?.find(mi => mi.id === item.menuItemId);
+        const parsedNote = splitExistingItemNote(menuItem, item.note || '');
         quantities[item.menuItemId] = item.quantity;
-        notes[item.menuItemId] = item.note || '';
+        notes[item.menuItemId] = parsedNote.note;
+        customOptions[item.menuItemId] = parsedNote.selectedOptions;
       });
     }
 
-    setOrderNote(applySeatAreaToNote(userOrderSeatArea, schedule.userOrder?.note || ''));
+    setOrderNote(removeSeatAreaFromNote(schedule.userOrder?.note || ''));
     setSeatArea(userOrderSeatArea);
     setUseSavedOrderNote(false);
     setSaveOrderPreference(false);
     setOrderQuantities(quantities);
     setItemNotes(notes);
+    setItemCustomOptions(customOptions);
+    setEditingMenuItemId('');
+    setEditingMenuItemDraft({ quantity: 0, note: '', options: [] });
   };
 
   const handleCancelDraftModification = () => {
@@ -251,17 +328,86 @@ export default function PortalPage() {
     setOrderSuccess('');
   }, [selectedDate, activeSchedule]);
 
-  const handleQtyChange = (menuItemId, delta) => {
-    setOrderQuantities(prev => {
-      const current = prev[menuItemId] || 0;
-      const next = Math.max(0, current + delta);
-      return { ...prev, [menuItemId]: next };
+  const getMenuItemById = (menuItemId) => activeRestaurant?.menuItems.find(item => item.id === menuItemId);
+
+  const composeItemNote = (menuItemId) => {
+    const selectedOptions = itemCustomOptions[menuItemId] || [];
+    const freeNote = normalizeOrderText(itemNotes[menuItemId]);
+    return [...selectedOptions, freeNote].filter(Boolean).join('; ');
+  };
+
+  const getItemExtraAmount = (menuItemId) => {
+    return (itemCustomOptions[menuItemId] || []).reduce((sum, option) => {
+      return sum + getCustomizationExtraAmount(option);
+    }, 0);
+  };
+
+  const getItemUnitPrice = (item) => {
+    return item.price + getItemExtraAmount(item.id);
+  };
+
+  const openMenuItemDialog = (item) => {
+    if (isClosed()) return;
+    setEditingMenuItemId(item.id);
+    setEditingMenuItemDraft({
+      quantity: orderQuantities[item.id] || 1,
+      note: '',
+      options: itemCustomOptions[item.id] || []
     });
   };
 
+  const closeMenuItemDialog = () => {
+    setEditingMenuItemId('');
+    setEditingMenuItemDraft({ quantity: 0, note: '', options: [] });
+  };
+
+  const handleDialogQtyChange = (delta) => {
+    setEditingMenuItemDraft(prev => ({
+      ...prev,
+      quantity: Math.max(0, (prev.quantity || 0) + delta)
+    }));
+  };
+
+  const handleCustomOptionToggle = (option) => {
+    setEditingMenuItemDraft(prev => {
+      const current = prev.options || [];
+      const next = current.includes(option)
+        ? current.filter(item => item !== option)
+        : [...current, option];
+
+      return { ...prev, options: next };
+    });
+  };
+
+  const applyMenuItemDialog = () => {
+    if (!editingMenuItem) return;
+
+    setOrderQuantities(prev => ({ ...prev, [editingMenuItem.id]: editingMenuItemDraft.quantity || 0 }));
+    setItemNotes(prev => ({ ...prev, [editingMenuItem.id]: editingMenuItemDraft.note || '' }));
+    setItemCustomOptions(prev => ({ ...prev, [editingMenuItem.id]: editingMenuItemDraft.options || [] }));
+    closeMenuItemDialog();
+  };
+
+  const removeOrderItem = (menuItemId) => {
+    if (isClosed() || isSubmitting) return;
+    setOrderQuantities(prev => ({ ...prev, [menuItemId]: 0 }));
+    setItemNotes(prev => ({ ...prev, [menuItemId]: '' }));
+    setItemCustomOptions(prev => ({ ...prev, [menuItemId]: [] }));
+  };
+
+  const updateOrderItemQuantity = (menuItemId, delta) => {
+    if (isClosed() || isSubmitting) return;
+    const next = Math.max(0, (orderQuantities[menuItemId] || 0) + delta);
+    setOrderQuantities(prev => ({ ...prev, [menuItemId]: next }));
+    if (next === 0) {
+      setItemNotes(prev => ({ ...prev, [menuItemId]: '' }));
+      setItemCustomOptions(prev => ({ ...prev, [menuItemId]: [] }));
+    }
+  };
+
   const handleSeatAreaToggle = (area) => {
+    if (isClosed() || isSubmitting) return;
     setSeatArea(area);
-    setOrderNote(prev => applySeatAreaToNote(area, prev));
   };
 
   const scrollToOrderSummary = () => {
@@ -289,7 +435,7 @@ export default function PortalPage() {
     if (!activeRestaurant) return 0;
     return activeRestaurant.menuItems.reduce((sum, item) => {
       const qty = orderQuantities[item.id] || 0;
-      return sum + item.price * qty;
+      return sum + getItemUnitPrice(item) * qty;
     }, 0);
   };
 
@@ -300,14 +446,14 @@ export default function PortalPage() {
     .map(([menuItemId, qty]) => ({
       menuItemId,
       quantity: qty,
-      note: normalizeOrderText(itemNotes[menuItemId])
+      note: composeItemNote(menuItemId)
     }))
     .sort((a, b) => a.menuItemId.localeCompare(b.menuItemId));
 
   const hasOrderChanges = () => {
     if (!activeSchedule?.userOrder) return true;
-    if (normalizeOrderText(orderNote) !== normalizeOrderText(activeSchedule.userOrder.note)) return true;
-    if ((seatArea || '') !== (activeSchedule.userOrder.seatArea || '')) return true;
+    if (normalizeOrderText(orderNote) !== normalizeOrderText(removeSeatAreaFromNote(activeSchedule.userOrder.note))) return true;
+    if ((seatArea || '') !== getSeatAreaFromOrder(activeSchedule.userOrder)) return true;
     if (saveOrderPreference) return true;
 
     const currentItems = getCurrentOrderItems();
@@ -325,19 +471,27 @@ export default function PortalPage() {
   const shouldShowModifyShortcut = Boolean(
     activeSchedule?.userOrder && activeRestaurant && !isClosed() && hasOrderChanges()
   );
+  const shouldShowConfirmOrderShortcut = Boolean(
+    activeRestaurant && !activeSchedule?.userOrder && !isClosed() && calculateTotal() > 0
+  );
 
   useEffect(() => {
-    document.body.classList.toggle('has-bottom-order-shortcut', shouldShowModifyShortcut);
+    document.body.classList.toggle('has-bottom-order-shortcut', shouldShowModifyShortcut || shouldShowConfirmOrderShortcut);
 
     return () => {
       document.body.classList.remove('has-bottom-order-shortcut');
     };
-  }, [shouldShowModifyShortcut]);
+  }, [shouldShowModifyShortcut, shouldShowConfirmOrderShortcut]);
 
   const handlePlaceOrder = async () => {
     if (isClosed()) return;
     
     if (activeSchedule.userOrder && !hasOrderChanges()) return;
+
+    if (projectedAvailableBalance < MIN_AVAILABLE_BALANCE) {
+      setOrderError('可用金額不可低於 -$200，請調整餐點或聯絡管理員。');
+      return;
+    }
 
     const items = getCurrentOrderItems();
 
@@ -362,7 +516,7 @@ export default function PortalPage() {
         body: JSON.stringify({
           scheduleId: activeSchedule.id,
           items,
-          note: applySeatAreaToNote(seatArea, orderNote),
+          note: removeSeatAreaFromNote(orderNote),
           seatArea,
           saveOrderPreference
         })
@@ -406,7 +560,7 @@ export default function PortalPage() {
       setOrderQuantities({});
       setItemNotes({});
       setOrderNote('');
-      setSeatArea('');
+      setSeatArea('A');
       setUseSavedOrderNote(false);
       setSaveOrderPreference(false);
       fetchSchedules();
@@ -454,6 +608,15 @@ export default function PortalPage() {
 
   const wallet = getWalletStyles();
   const walletAmount = `${user.balance < 0 ? '－' : ''}NT$ ${Math.abs(user.balance)}`;
+  const pendingHoldAmount = user.pendingHoldAmount || 0;
+  const availableBalance = user.availableBalance ?? (user.balance - pendingHoldAmount);
+  const currentOrderHoldAmount = activeSchedule?.userOrder?.totalAmount || 0;
+  const projectedHoldAmount = Math.max(0, pendingHoldAmount - currentOrderHoldAmount + calculateTotal());
+  const projectedAvailableBalance = user.balance - projectedHoldAmount;
+  const isBelowAvailableLimit = projectedAvailableBalance < MIN_AVAILABLE_BALANCE;
+  const editingMenuItem = getMenuItemById(editingMenuItemId);
+  const editingMenuItemQty = editingMenuItem ? editingMenuItemDraft.quantity || 0 : 0;
+  const editingMenuItemOptions = editingMenuItem ? parseCustomizationOptions(editingMenuItem.customizationOptions) : [];
 
   return (
     <>
@@ -467,8 +630,15 @@ export default function PortalPage() {
             {/* Wallet Info */}
             <div className={`p-5 bg-[#F9F8F5] rounded-xl border ${wallet.cardBorder} flex flex-col justify-between h-full`}>
               <span className="text-xs font-bold text-[#888888] tracking-widest uppercase mb-2">{wallet.label}</span>
-              <div className={`text-3xl font-bold ${wallet.valueColor} mb-2`}>
-                {walletAmount}
+              <div className="mb-2 space-y-1">
+                <span className={`text-3xl font-bold ${wallet.valueColor}`}>
+                  {walletAmount}
+                </span>
+                {pendingHoldAmount > 0 && (
+                  <span className="block text-xs font-bold text-[#888888]">
+                    可用金額 {availableBalance < 0 ? '－' : ''}NT$ {Math.abs(availableBalance)}
+                  </span>
+                )}
               </div>
             </div>
 
@@ -489,7 +659,7 @@ export default function PortalPage() {
                         {'\u4eca\u65e5\u8a02\u55ae\u7de8\u865f'}
                       </span>
                       <span className="inline-flex min-w-12 items-center justify-center rounded-full border border-[#EA5B3C]/20 bg-[#FFF3EF] px-3 py-1.5 text-sm font-bold text-[#EA5B3C]">
-                        {todayOrder.orderNumberDisplay || '-'}
+                        {getOrderDisplayNumber(todayOrder)}
                       </span>
                     </div>
                   </div>
@@ -516,14 +686,9 @@ export default function PortalPage() {
                     <span className="text-xl font-bold text-[#EA5B3C]">NT$ {todayOrder.totalAmount}</span>
                   </div>
 
-                  {todayOrder.note && (
+                  {getDisplayOrderNote(todayOrder) && (
                     <p className="border-t border-[#EAE8E4] bg-white px-4 py-3 text-xs leading-5 text-[#888888]">
-                      備註：{todayOrder.note}
-                    </p>
-                  )}
-                  {todayOrder.seatArea && (
-                    <p className="border-t border-[#EAE8E4] bg-white px-4 py-3 text-xs leading-5 text-[#888888]">
-                      座位區：{todayOrder.seatArea}區
+                      備註：{getDisplayOrderNote(todayOrder)}
                     </p>
                   )}
                 </div>
@@ -748,35 +913,39 @@ export default function PortalPage() {
                             {items.map(item => {
                               const qty = orderQuantities[item.id] || 0;
                               return (
-                                <div 
+                                <button
+                                  type="button"
                                   key={item.id}
-                                  className={`p-4 border rounded-xl flex items-center justify-between transition-all ${
+                                  disabled={isClosed()}
+                                  onClick={() => openMenuItemDialog(item)}
+                                  className={`w-full p-4 border rounded-xl flex items-center justify-between text-left transition-all disabled:cursor-not-allowed disabled:opacity-60 ${
                                     qty > 0 ? 'border-[#EA5B3C] bg-orange-[0.005]' : 'border-[#EAE8E4]'
                                   }`}
                                 >
-                                  <div>
+                                  <div className="min-w-0">
                                     <div className="font-bold text-[#333333] text-sm">{item.name}</div>
-                                    <div className="text-xs text-[#EA5B3C] font-bold mt-1">NT$ {item.price}</div>
+                                    <div className="text-xs text-[#EA5B3C] font-bold mt-1">
+                                      NT$ {getItemUnitPrice(item)}
+                                      {getItemExtraAmount(item.id) > 0 && (
+                                        <span className="ml-1 text-[11px] text-[#888888]">
+                                          (含加價 +{getItemExtraAmount(item.id)})
+                                        </span>
+                                      )}
+                                    </div>
+                                    {composeItemNote(item.id) && (
+                                      <div className="mt-1 truncate text-[11px] font-bold text-[#888888]">
+                                        備註：{composeItemNote(item.id)}
+                                      </div>
+                                    )}
                                   </div>
 
-                                  <div className="flex items-center gap-3">
-                                    <button
-                                      disabled={isClosed()}
-                                      onClick={() => handleQtyChange(item.id, -1)}
-                                      className="w-8 h-8 rounded-full border border-[#EAE8E4] flex items-center justify-center text-[#888888] hover:text-[#EA5B3C] hover:border-[#EA5B3C] disabled:opacity-50 disabled:cursor-not-allowed bg-white"
-                                    >
-                                      <i className="ti ti-minus text-xs"></i>
-                                    </button>
-                                    <span className="w-6 text-center font-bold text-sm text-[#333333]">{qty}</span>
-                                    <button
-                                      disabled={isClosed()}
-                                      onClick={() => handleQtyChange(item.id, 1)}
-                                      className="w-8 h-8 rounded-full border border-[#EAE8E4] flex items-center justify-center text-[#888888] hover:text-[#EA5B3C] hover:border-[#EA5B3C] disabled:opacity-50 disabled:cursor-not-allowed bg-white"
-                                    >
-                                      <i className="ti ti-plus text-xs"></i>
-                                    </button>
+                                  <div className="flex shrink-0 items-center gap-2">
+                                    <span className="inline-flex h-9 min-w-9 items-center justify-center rounded-full border border-[#EAE8E4] bg-white px-3 text-sm font-bold text-[#333333]">
+                                      {qty}
+                                    </span>
+                                    <i className="ti ti-chevron-right text-lg text-[#C9C3BB]"></i>
                                   </div>
-                                </div>
+                                </button>
                               );
                             })}
                           </div>
@@ -828,21 +997,56 @@ export default function PortalPage() {
                     {activeRestaurant.menuItems.map(item => {
                       const qty = orderQuantities[item.id] || 0;
                       if (qty === 0) return null;
+                      const itemNoteParts = composeItemNote(item.id)
+                        .split(';')
+                        .map(note => note.trim())
+                        .filter(Boolean);
                       return (
                         <div key={item.id} className="space-y-2 rounded-lg border border-[#EAE8E4] bg-[#F9F8F5] p-3 text-xs">
                           <div className="flex items-center justify-between gap-2">
                             <span className="text-[#333333] font-bold truncate">{item.name}</span>
-                            <span className="text-[#888888] shrink-0">x {qty}</span>
-                            <span className="text-[#333333] font-bold shrink-0">NT$ {item.price * qty}</span>
+                            <div className="flex shrink-0 items-center gap-1 rounded-full border border-[#EAE8E4] bg-white px-1 py-0.5">
+                              <button
+                                type="button"
+                                disabled={isClosed() || isSubmitting}
+                                onClick={() => updateOrderItemQuantity(item.id, -1)}
+                                className="flex h-6 w-6 items-center justify-center rounded-full text-[#888888] transition-all hover:bg-[#F9F8F5] hover:text-[#EA5B3C] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-[#888888]"
+                                aria-label={`減少 ${item.name} 數量`}
+                              >
+                                <i className="ti ti-minus text-xs"></i>
+                              </button>
+                              <span className="min-w-4 text-center text-xs font-bold text-[#333333]">{qty}</span>
+                              <button
+                                type="button"
+                                disabled={isClosed() || isSubmitting}
+                                onClick={() => updateOrderItemQuantity(item.id, 1)}
+                                className="flex h-6 w-6 items-center justify-center rounded-full text-[#888888] transition-all hover:bg-[#F9F8F5] hover:text-[#EA5B3C] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-[#888888]"
+                                aria-label={`增加 ${item.name} 數量`}
+                              >
+                                <i className="ti ti-plus text-xs"></i>
+                              </button>
+                            </div>
+                            <span className="text-[#333333] font-bold shrink-0">NT$ {getItemUnitPrice(item) * qty}</span>
+                            <button
+                              type="button"
+                              disabled={isClosed() || isSubmitting}
+                              onClick={() => removeOrderItem(item.id)}
+                              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-[#EAE8E4] bg-white text-[#888888] transition-all hover:border-red-200 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-[#EAE8E4] disabled:hover:text-[#888888]"
+                              aria-label={`刪除 ${item.name}`}
+                              title="刪除餐點"
+                            >
+                              <i className="ti ti-trash text-sm"></i>
+                            </button>
                           </div>
-                          <input
-                            type="text"
-                            disabled={isClosed() || isSubmitting}
-                            value={itemNotes[item.id] || ''}
-                            onChange={(e) => setItemNotes(prev => ({ ...prev, [item.id]: e.target.value }))}
-                            placeholder="此餐點備註，例如飯少、換菜"
-                            className="w-full rounded-lg border border-[#EAE8E4] bg-white px-3 py-2 text-xs font-medium text-[#333333] placeholder:text-[#B8B2AA] focus:border-[#EA5B3C] focus:outline-none disabled:bg-[#F2EFEA]"
-                          />
+                          {itemNoteParts.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5">
+                              {itemNoteParts.map(note => (
+                                <span key={note} className="rounded-full border border-[#EAE8E4] bg-white px-2.5 py-1 text-[11px] font-bold text-[#888888]">
+                                  {note}
+                                </span>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       );
                     })}
@@ -874,7 +1078,7 @@ export default function PortalPage() {
                         {activeSchedule.userOrder.orderNumberDisplay && (
                           <div className="flex justify-between">
                             <span className="text-[#888888]">{'\u8a02\u55ae\u7de8\u865f'}</span>
-                            <span className="font-bold text-[#EA5B3C]">{activeSchedule.userOrder.orderNumberDisplay}</span>
+                            <span className="font-bold text-[#EA5B3C]">{getOrderDisplayNumber(activeSchedule.userOrder)}</span>
                           </div>
                         )}
                         <div className="flex justify-between">
@@ -927,12 +1131,30 @@ export default function PortalPage() {
 
                       <div className="space-y-1.5">
                         <div className="flex items-center justify-between gap-2">
-                          <label className="text-xs font-bold text-[#888888]">備註</label>
+                          <span className="relative inline-flex items-center gap-1 text-xs font-bold text-[#888888]" data-order-note-tip>
+                            <label>備註</label>
+                            <button
+                              type="button"
+                              onClick={() => setIsOrderNoteTipOpen(prev => !prev)}
+                              onMouseEnter={() => setIsOrderNoteTipOpen(true)}
+                              onFocus={() => setIsOrderNoteTipOpen(true)}
+                              className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-[#D6D1CA] bg-white text-[10px] font-bold text-[#888888] transition-all hover:border-[#EA5B3C] hover:text-[#EA5B3C]"
+                              aria-label="備註欄說明"
+                            >
+                              i
+                            </button>
+                            {isOrderNoteTipOpen && (
+                              <span className="absolute left-0 top-full z-20 mt-2 w-[min(18rem,calc(100vw-3rem))] rounded-lg border border-[#EAE8E4] bg-white p-3 text-left text-[11px] font-bold leading-relaxed text-[#555555] shadow-lg">
+                                可填寫其他無法在餐點選項中選到的備註。
+                              </span>
+                            )}
+                          </span>
                           <div className="flex items-center gap-1 text-[11px] font-bold">
                             <button
                               type="button"
+                              disabled={isClosed() || isSubmitting}
                               onClick={() => setUseSavedOrderNote(prev => !prev)}
-                              className={`rounded px-1.5 py-0.5 transition-all ${
+                              className={`rounded px-1.5 py-0.5 transition-all disabled:cursor-not-allowed disabled:opacity-50 ${
                                 useSavedOrderNote
                                   ? 'bg-[#FFF3EF] text-[#EA5B3C] underline decoration-[#EA5B3C] underline-offset-4'
                                   : 'text-[#888888] hover:bg-white hover:text-[#EA5B3C]'
@@ -960,7 +1182,7 @@ export default function PortalPage() {
                           disabled={isClosed() || isSubmitting}
                           value={orderNote}
                           onChange={(e) => {
-                            setOrderNote(seatArea ? applySeatAreaToNote(seatArea, e.target.value) : e.target.value);
+                            setOrderNote(e.target.value);
                             setUseSavedOrderNote(false);
                           }}
                           className="w-full rounded-lg border border-[#EAE8E4] bg-white px-3 py-2 text-xs font-medium text-[#333333] placeholder:text-[#B8B2AA] focus:border-[#EA5B3C] focus:outline-none disabled:bg-[#F2EFEA]"
@@ -970,9 +1192,19 @@ export default function PortalPage() {
 
                     <div className="sticky bottom-0 z-10 space-y-2 bg-white pt-3">
                       {/* Total & Action Buttons */}
-                      <div className="flex justify-between items-center font-bold text-[#333333] text-sm">
-                        <span>總計金額</span>
-                        <span className="text-xl text-[#EA5B3C] font-bold">NT$ {calculateTotal()}</span>
+                      <div className="space-y-1.5">
+                        <div className="text-right text-[11px] font-bold text-[#888888]">
+                          可用金額 {projectedAvailableBalance < 0 ? '－' : ''}${Math.abs(projectedAvailableBalance)}
+                          {isBelowAvailableLimit && (
+                            <span className="ml-1 text-red-600">不可低於 -$200</span>
+                          )}
+                          <span className="px-1.5 text-[#C9C3BB]">|</span>
+                          儲值金 {user.balance < 0 ? '－' : ''}${Math.abs(user.balance)}
+                        </div>
+                        <div className="flex justify-between items-center font-bold text-[#333333] text-sm">
+                          <span>總計金額</span>
+                          <span className="text-xl text-[#EA5B3C] font-bold">NT$ {calculateTotal()}</span>
+                        </div>
                       </div>
 
                       <div className="space-y-2 pt-2">
@@ -988,11 +1220,11 @@ export default function PortalPage() {
                           )}
                           
                           <button
-                            disabled={isClosed() || isSubmitting || calculateTotal() === 0 || !seatArea || (activeSchedule.userOrder && !hasOrderChanges())}
+                            disabled={isClosed() || isSubmitting || calculateTotal() === 0 || !seatArea || isBelowAvailableLimit || (activeSchedule.userOrder && !hasOrderChanges())}
                             onClick={handlePlaceOrder}
                             className="flex-[2] py-3 text-xs font-bold bg-[#EA5B3C] text-white rounded-xl shadow-sm hover:bg-[#333333] hover:shadow-md transition-all disabled:opacity-50 disabled:cursor-not-allowed text-center"
                           >
-                            {isSubmitting ? '處理中...' : activeSchedule.userOrder ? '修改並送出訂單' : '送出訂購'}
+                            {isSubmitting ? '處理中...' : activeSchedule.userOrder ? '修改並送出訂單' : '送出訂單'}
                           </button>
                         </div>
                         {activeSchedule.userOrder && !isClosed() && (
@@ -1019,6 +1251,19 @@ export default function PortalPage() {
 
         </section>
 
+        {shouldShowConfirmOrderShortcut && (
+          <div className="fixed inset-x-0 bottom-3 z-40 px-6 lg:hidden">
+            <button
+              type="button"
+              onClick={scrollToOrderSummary}
+              className="flex w-full items-center justify-center gap-2 rounded-full bg-[#EA5B3C] px-4 py-3 text-sm font-bold text-white shadow-lg shadow-[#EA5B3C]/25 transition-all active:scale-[0.98]"
+            >
+              <i className="ti ti-clipboard-check text-base"></i>
+              請確認訂單
+            </button>
+          </div>
+        )}
+
         {shouldShowModifyShortcut && (
           <div className="fixed inset-x-0 bottom-4 z-40 px-6 lg:hidden">
             <div className="mx-auto flex w-full max-w-sm gap-2">
@@ -1036,6 +1281,83 @@ export default function PortalPage() {
               >
                 修改訂單內容
               </button>
+            </div>
+          </div>
+        )}
+
+        {editingMenuItem && (
+          <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 px-4 py-4 sm:items-center">
+            <div className="w-full max-w-[520px] overflow-hidden rounded-xl border border-[#EAE8E4] bg-white shadow-2xl">
+              <div className="flex items-start justify-between gap-4 border-b border-[#EAE8E4] px-5 py-4">
+                <div className="min-w-0">
+                  <h3 className="truncate text-base font-bold text-[#333333]">{editingMenuItem.name}</h3>
+                  <div className="mt-1 text-xs font-bold text-[#EA5B3C]">NT$ {editingMenuItem.price}</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={closeMenuItemDialog}
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#EAE8E4] text-[#888888] transition-all hover:border-[#EA5B3C] hover:text-[#EA5B3C]"
+                  aria-label="關閉"
+                >
+                  <i className="ti ti-x"></i>
+                </button>
+              </div>
+
+              <div className="space-y-5 px-5 py-5">
+                <div className="space-y-2">
+                  <div className="flex flex-wrap gap-2">
+                    {editingMenuItemOptions.map(option => {
+                      const selected = (editingMenuItemDraft.options || []).includes(option);
+                      return (
+                        <button
+                          key={option}
+                          type="button"
+                          onClick={() => handleCustomOptionToggle(option)}
+                          className={`rounded-full border px-3 py-2 text-xs font-bold transition-all ${
+                            selected
+                              ? 'border-[#EA5B3C] bg-[#FFF3EF] text-[#EA5B3C]'
+                              : 'border-[#EAE8E4] bg-white text-[#888888] hover:border-[#EA5B3C] hover:text-[#EA5B3C]'
+                          }`}
+                        >
+                          {option}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+              </div>
+
+              <div className="flex gap-2 border-t border-[#EAE8E4] bg-[#F9F8F5] px-5 py-4">
+                <div className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-[#EAE8E4] bg-white px-3 py-2">
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleDialogQtyChange(-1)}
+                      className="flex h-8 w-8 items-center justify-center rounded-full border border-[#EAE8E4] bg-white text-[#888888] transition-all hover:border-[#EA5B3C] hover:text-[#EA5B3C]"
+                      aria-label="減少數量"
+                    >
+                      <i className="ti ti-minus text-xs"></i>
+                    </button>
+                    <span className="min-w-5 text-center text-sm font-bold text-[#333333]">{editingMenuItemQty}</span>
+                    <button
+                      type="button"
+                      onClick={() => handleDialogQtyChange(1)}
+                      className="flex h-8 w-8 items-center justify-center rounded-full border border-[#EAE8E4] bg-white text-[#888888] transition-all hover:border-[#EA5B3C] hover:text-[#EA5B3C]"
+                      aria-label="增加數量"
+                    >
+                      <i className="ti ti-plus text-xs"></i>
+                    </button>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={applyMenuItemDialog}
+                  className="flex-[1.5] rounded-xl bg-[#EA5B3C] py-3 text-xs font-bold text-white shadow-sm transition-all hover:bg-[#333333]"
+                >
+                  加入訂購清單
+                </button>
+              </div>
             </div>
           </div>
         )}

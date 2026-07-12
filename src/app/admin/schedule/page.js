@@ -25,6 +25,20 @@ function getWeeklyDates() {
   // Get Monday of current week
   const monday = new Date(now);
   monday.setDate(now.getDate() - (day === 0 ? 6 : day - 1));
+
+  // Previous week Mon-Sun
+  const previousMonday = new Date(monday);
+  previousMonday.setDate(monday.getDate() - 7);
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(previousMonday);
+    d.setDate(previousMonday.getDate() + i);
+    dates.push({
+      dateStr: formatDate(d),
+      label: weekdayLabels[i],
+      isWeekend: i >= 5,
+      week: 'previous'
+    });
+  }
   
   // Current week Mon-Sun
   for (let i = 0; i < 7; i++) {
@@ -34,7 +48,7 @@ function getWeeklyDates() {
       dateStr: formatDate(d),
       label: weekdayLabels[i],
       isWeekend: i >= 5,
-      isNextWeek: false
+      week: 'current'
     });
   }
   
@@ -48,7 +62,7 @@ function getWeeklyDates() {
       dateStr: formatDate(d),
       label: weekdayLabels[i],
       isWeekend: i >= 5,
-      isNextWeek: true
+      week: 'next'
     });
   }
   return dates;
@@ -56,9 +70,13 @@ function getWeeklyDates() {
 
 function getDefaultDateForWeek(weekTab) {
   const dates = getWeeklyDates();
-  return weekTab === 'next'
-    ? dates.find(d => d.isNextWeek)?.dateStr || formatDate(new Date())
-    : formatDate(new Date());
+  if (weekTab === 'previous') {
+    return dates.find(d => d.week === 'previous')?.dateStr || formatDate(new Date());
+  }
+  if (weekTab === 'next') {
+    return dates.find(d => d.week === 'next')?.dateStr || formatDate(new Date());
+  }
+  return formatDate(new Date());
 }
 
 function isWeekendDate(dateStr) {
@@ -101,7 +119,7 @@ export default function AdminDashboard() {
   const [members, setMembers] = useState([]);
   const [schedules, setSchedules] = useState([]);
   const [selectedDate, setSelectedDate] = useState('');
-  const [activeWeekTab, setActiveWeekTab] = useState('current'); // 'current' or 'next'
+  const [activeWeekTab, setActiveWeekTab] = useState('current'); // 'previous', 'current', or 'next'
   const [allowNextWeekMenu, setAllowNextWeekMenu] = useState(true);
   const [isSavingOrderSettings, setIsSavingOrderSettings] = useState(false);
   const [orderSettingsMessage, setOrderSettingsMessage] = useState('');
@@ -110,7 +128,7 @@ export default function AdminDashboard() {
   const [selectedRestaurantId, setSelectedRestaurantId] = useState('');
   const [orderDeadline, setOrderDeadline] = useState('09:40');
   const [isHoliday, setIsHoliday] = useState(false);
-  const [isUpdatingSchedule, setIsUpdatingSchedule] = useState(false);
+  const [savingScheduleSection, setSavingScheduleSection] = useState('');
   const [orderEditor, setOrderEditor] = useState(null);
   const [selectedOrderDetail, setSelectedOrderDetail] = useState(null);
   const [isSavingOrder, setIsSavingOrder] = useState(false);
@@ -132,6 +150,7 @@ export default function AdminDashboard() {
   const [historySchedule, setHistorySchedule] = useState(null);
   const [historyMessage, setHistoryMessage] = useState('');
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [activeInfoTooltip, setActiveInfoTooltip] = useState('');
 
   useEffect(() => {
     // Check authentication and role
@@ -174,6 +193,19 @@ export default function AdminDashboard() {
     };
   }, [selectedOrderDetail]);
 
+  useEffect(() => {
+    if (!activeInfoTooltip) return;
+
+    const closeInfoTooltip = () => setActiveInfoTooltip('');
+    window.addEventListener('scroll', closeInfoTooltip, { passive: true });
+    window.addEventListener('touchmove', closeInfoTooltip, { passive: true });
+
+    return () => {
+      window.removeEventListener('scroll', closeInfoTooltip);
+      window.removeEventListener('touchmove', closeInfoTooltip);
+    };
+  }, [activeInfoTooltip]);
+
   const fetchRestaurants = () => {
     fetch('/api/restaurants?active=true')
       .then(res => res.json())
@@ -197,7 +229,12 @@ export default function AdminDashboard() {
   };
 
   const fetchSchedules = () => {
-    fetch('/api/schedule')
+    const dates = getWeeklyDates();
+    const startDate = dates[0]?.dateStr;
+    const endDate = dates[dates.length - 1]?.dateStr;
+    const query = startDate && endDate ? `?startDate=${startDate}&endDate=${endDate}` : '';
+
+    fetch(`/api/schedule${query}`)
       .then(res => res.json())
       .then(data => {
         if (Array.isArray(data)) {
@@ -269,6 +306,7 @@ export default function AdminDashboard() {
 
   const activeSchedule = schedules.find(s => s.date === selectedDate);
   const todayDate = formatDate(new Date());
+  const isPastSelectedDate = selectedDate < todayDate;
   const todaySchedule = schedules.find(s => s.date === todayDate);
   const weeklyDates = getWeeklyDates();
   const selectedDateIsHoliday = activeSchedule ? !activeSchedule.isOpen && !activeSchedule.deliveredAt : isHoliday;
@@ -281,6 +319,12 @@ export default function AdminDashboard() {
 
   const handleToggleNextWeekMenu = async () => {
     const nextValue = !allowNextWeekMenu;
+    const confirmMessage = nextValue
+      ? '確認要開啟訂購者下週菜單閱覽嗎？'
+      : '確認要關閉訂購者下週菜單閱覽嗎？';
+
+    if (!window.confirm(confirmMessage)) return;
+
     setIsSavingOrderSettings(true);
     setOrderSettingsMessage('');
 
@@ -297,7 +341,11 @@ export default function AdminDashboard() {
       }
 
       setAllowNextWeekMenu(data.allowNextWeekMenu);
-      setOrderSettingsMessage('訂購者下週菜單查閱設定已更新。');
+      setOrderSettingsMessage(
+        data.allowNextWeekMenu
+          ? '訂購者下週菜單閱覽已開啟。'
+          : '訂購者下週菜單閱覽已關閉。'
+      );
       setTimeout(() => setOrderSettingsMessage(''), 3000);
     } catch (err) {
       setOrderSettingsMessage(err.message);
@@ -321,23 +369,15 @@ export default function AdminDashboard() {
     setOrderEditor(null);
   }, [selectedDate, activeSchedule]);
 
-  const handleSaveSchedule = async () => {
-    if (!isHoliday && !selectedRestaurantId) {
-      setMessage({ text: '請選擇一個餐廳！', type: 'error' });
-      return;
-    }
-
-    const nextRestaurantId = isHoliday ? null : selectedRestaurantId;
-    const activeOrderCount = activeSchedule?.orders?.filter(order => order.status !== 'cancelled').length || 0;
-    const isRestaurantChanging = Boolean(activeSchedule)
-      && activeSchedule.restaurantId !== nextRestaurantId;
-    const shouldClearOrders = isRestaurantChanging && activeOrderCount > 0;
-
-    if (shouldClearOrders && !confirm('\u6b64\u65e5\u671f\u5df2\u6709\u8a02\u8cfc\u8005\u8a02\u9910\uff0c\u78ba\u8a8d\u8b8a\u66f4\u9910\u5ef3\u55ce\uff1f\u78ba\u8a8d\u5f8c\u5c07\u6e05\u9664\u7576\u65e5\u6240\u6709\u5df2\u8a02\u8cfc\u9910\u9ede\uff0c\u4e26\u8acb\u8a02\u8cfc\u8005\u91cd\u65b0\u8a02\u9910\u3002')) {
-      return;
-    }
-
-    setIsUpdatingSchedule(true);
+  const persistScheduleSettings = async ({
+    restaurantId,
+    orderDeadlineValue,
+    isOpenValue,
+    clearOrdersOnRestaurantChange,
+    successMessage,
+    savingSection
+  }) => {
+    setSavingScheduleSection(savingSection);
     setMessage({ text: '', type: '' });
 
     try {
@@ -346,10 +386,10 @@ export default function AdminDashboard() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           date: selectedDate,
-          restaurantId: nextRestaurantId,
-          orderDeadline,
-          isOpen: !isHoliday,
-          clearOrdersOnRestaurantChange: shouldClearOrders
+          restaurantId,
+          orderDeadline: orderDeadlineValue,
+          isOpen: isOpenValue,
+          clearOrdersOnRestaurantChange
         })
       });
 
@@ -358,13 +398,69 @@ export default function AdminDashboard() {
         throw new Error(data.error || '排程儲存失敗');
       }
 
-      setMessage({ text: '排程設定已成功儲存！', type: 'success' });
+      setMessage({ text: successMessage, type: 'success' });
       fetchSchedules();
     } catch (err) {
       setMessage({ text: err.message, type: 'error' });
     } finally {
-      setIsUpdatingSchedule(false);
+      setSavingScheduleSection('');
     }
+  };
+
+  const handleSaveRestaurantSetting = async () => {
+    if (isPastSelectedDate) {
+      setMessage({ text: '供餐日期已過，無法進行設定。', type: 'error' });
+      return;
+    }
+
+    if (!isHoliday && !selectedRestaurantId) {
+      setMessage({ text: '請選擇一個餐廳！', type: 'error' });
+      return;
+    }
+
+    const currentRestaurantId = activeSchedule?.restaurantId || '';
+    const nextRestaurantId = isHoliday ? null : selectedRestaurantId;
+    const selectedRestaurantChanged = Boolean(activeSchedule)
+      && currentRestaurantId !== (selectedRestaurantId || '');
+    const activeOrderCount = activeSchedule?.orders?.filter(order => order.status !== 'cancelled').length || 0;
+    const shouldClearOrders = selectedRestaurantChanged && activeOrderCount > 0;
+
+    if (shouldClearOrders && !confirm('\u6b64\u65e5\u671f\u5df2\u6709\u8a02\u8cfc\u8005\u8a02\u9910\uff0c\u78ba\u8a8d\u8b8a\u66f4\u9910\u5ef3\u55ce\uff1f\u78ba\u8a8d\u5f8c\u5c07\u6e05\u9664\u7576\u65e5\u6240\u6709\u5df2\u8a02\u8cfc\u9910\u9ede\uff0c\u4e26\u8acb\u8a02\u8cfc\u8005\u91cd\u65b0\u8a02\u9910\u3002')) {
+      return;
+    }
+
+    await persistScheduleSettings({
+      restaurantId: nextRestaurantId,
+      orderDeadlineValue: activeSchedule?.orderDeadline || orderDeadline || '09:40',
+      isOpenValue: !isHoliday,
+      clearOrdersOnRestaurantChange: shouldClearOrders,
+      successMessage: '餐廳設定已成功儲存！',
+      savingSection: 'restaurant'
+    });
+  };
+
+  const handleSaveDeadlineSetting = async () => {
+    if (isPastSelectedDate) {
+      setMessage({ text: '供餐日期已過，無法進行設定。', type: 'error' });
+      return;
+    }
+
+    const savedIsOpen = activeSchedule ? activeSchedule.isOpen : !isHoliday;
+    const savedRestaurantId = activeSchedule?.restaurantId || selectedRestaurantId || null;
+
+    if (savedIsOpen && !savedRestaurantId) {
+      setMessage({ text: '請先儲存當日餐廳，再設定訂單截止時間。', type: 'error' });
+      return;
+    }
+
+    await persistScheduleSettings({
+      restaurantId: savedIsOpen ? savedRestaurantId : null,
+      orderDeadlineValue: orderDeadline || '09:40',
+      isOpenValue: savedIsOpen,
+      clearOrdersOnRestaurantChange: false,
+      successMessage: '訂單截止時間已成功儲存！',
+      savingSection: 'deadline'
+    });
   };
 
   // Deliver and deduct balance API trigger
@@ -772,8 +868,7 @@ export default function AdminDashboard() {
         <section id="weekly-schedule" className="scroll-mt-24 space-y-6">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 border-b border-[#EAE8E4] pb-4">
             <div>
-              <p className="text-xs font-bold text-[#888888] tracking-widest uppercase">週菜單排程</p>
-              <h2 className="text-xl font-bold text-[#333333] flex items-center gap-2 mt-1">
+              <h2 className="text-xl font-bold text-[#333333] flex items-center gap-2">
                 <i className="ti ti-calendar-week text-2xl text-[#EA5B3C]"></i> 週菜單排程
               </h2>
             </div>
@@ -789,6 +884,14 @@ export default function AdminDashboard() {
             
             {/* Week Tab Switcher */}
             <div className="inline-flex bg-[#F9F8F5] border border-[#EAE8E4] p-1 rounded-xl">
+              <button
+                onClick={() => handleWeekTabChange('previous')}
+                className={`px-5 py-2 text-xs font-bold rounded-md transition-all ${
+                  activeWeekTab === 'previous' ? 'bg-[#EA5B3C] text-white' : 'text-[#888888] hover:text-[#333333]'
+                }`}
+              >
+                上週日程
+              </button>
               <button
                 onClick={() => handleWeekTabChange('current')}
                 className={`px-5 py-2 text-xs font-bold rounded-md transition-all ${
@@ -810,7 +913,7 @@ export default function AdminDashboard() {
 
           <div className="grid grid-cols-7 gap-1 md:gap-3">
             {weeklyDates
-              .filter(d => (activeWeekTab === 'current' ? !d.isNextWeek : d.isNextWeek))
+              .filter(d => d.week === activeWeekTab)
               .map(d => {
                 const sched = schedules.find(s => s.date === d.dateStr);
                 const isSelected = selectedDate === d.dateStr;
@@ -1002,96 +1105,141 @@ export default function AdminDashboard() {
                 </div>
               )}
 
-              <div className="space-y-2 border-b border-[#EAE8E4] pb-4">
-                <button
-                  type="button"
-                  onClick={handleToggleNextWeekMenu}
-                  disabled={isSavingOrderSettings}
-                  className={`w-full flex items-center justify-between px-3 py-3 rounded-lg border text-xs font-bold transition-all disabled:opacity-60 disabled:cursor-not-allowed ${
-                    allowNextWeekMenu
-                      ? 'border-[#EA5B3C] bg-[#FFF3EF] text-[#EA5B3C]'
-                      : 'border-[#EAE8E4] bg-white text-[#333333] hover:border-[#D6D1CA]'
-                  }`}
-                >
-                  <span className="flex items-center gap-2">
-                    <i className={allowNextWeekMenu ? 'ti ti-toggle-right text-lg' : 'ti ti-toggle-left text-lg'}></i>
-                    訂購者下週菜單查閱
-                  </span>
-                  <span className="text-[10px] text-[#888888]">
-                    {allowNextWeekMenu ? '已開放' : '已關閉'}
-                  </span>
-                </button>
-                {orderSettingsMessage && (
-                  <p className="text-[11px] font-bold text-[#888888]">{orderSettingsMessage}</p>
-                )}
-              </div>
+              {activeWeekTab === 'current' && (
+                <div className="space-y-2 border-b border-[#EAE8E4] pb-4">
+                  <button
+                    type="button"
+                    onClick={handleToggleNextWeekMenu}
+                    disabled={isSavingOrderSettings}
+                    className={`w-full flex items-center justify-between px-3 py-3 rounded-lg border text-xs font-bold transition-all disabled:opacity-60 disabled:cursor-not-allowed ${
+                      allowNextWeekMenu
+                        ? 'border-[#EA5B3C] bg-[#FFF3EF] text-[#EA5B3C]'
+                        : 'border-[#EAE8E4] bg-white text-[#333333] hover:border-[#D6D1CA]'
+                    }`}
+                  >
+                    <span className="flex items-center gap-2">
+                      <i className={allowNextWeekMenu ? 'ti ti-toggle-right text-lg' : 'ti ti-toggle-left text-lg'}></i>
+                      訂購者下週菜單查閱
+                    </span>
+                    <span className="text-[10px] text-[#888888]">
+                      {allowNextWeekMenu ? '已開放' : '已關閉'}
+                    </span>
+                  </button>
+                  {orderSettingsMessage && (
+                    <p className="text-[11px] font-bold text-[#888888]">{orderSettingsMessage}</p>
+                  )}
+                </div>
+              )}
 
               <div className="space-y-4">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-[#888888]">供餐日期</label>
-                  <input
-                    type="text"
-                    disabled={true}
-                    value={selectedDate}
-                    className="w-full text-xs px-3 py-2 border border-[#EAE8E4] rounded-lg bg-[#F9F8F5] font-bold"
-                  />
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => setIsHoliday(prev => !prev)}
-                  className={`w-full flex items-center justify-between px-3 py-3 rounded-lg border text-xs font-bold transition-all ${
-                    isHoliday
-                      ? 'border-[#EA5B3C] bg-[#FFF3EF] text-[#EA5B3C]'
-                      : 'border-[#EAE8E4] bg-white text-[#333333] hover:border-[#D6D1CA]'
-                  }`}
-                >
-                  <span className="flex items-center gap-2">
-                    <i className={isHoliday ? 'ti ti-toggle-right text-lg' : 'ti ti-toggle-left text-lg'}></i>
-                    {'\u5047\u671f'}
-                  </span>
-                  <span className="text-[10px] text-[#888888]">
-                    {isHoliday ? '\u4e0d\u958b\u653e\u8a02\u9910' : '\u958b\u653e\u6392\u9910'}
-                  </span>
-                </button>
-
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-[#888888]">指定當日餐廳</label>
-                  <select
-                    value={selectedRestaurantId}
-                    onChange={(e) => setSelectedRestaurantId(e.target.value)}
-                    disabled={isHoliday}
-                    className="w-full text-xs px-3 py-2 border border-[#EAE8E4] rounded-lg focus:outline-none focus:border-[#EA5B3C] bg-white font-medium disabled:bg-[#F9F8F5] disabled:text-[#B8B2AA] disabled:cursor-not-allowed"
+                <div className="flex items-end gap-2">
+                  <div className="min-w-0 flex-1 space-y-1.5">
+                    <label className="text-xs font-bold text-[#888888]">供餐日期</label>
+                    <input
+                      type="text"
+                      disabled={true}
+                      value={selectedDate}
+                      className="w-full text-xs px-3 py-2 border border-[#EAE8E4] rounded-lg bg-[#F9F8F5] font-bold"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsHoliday(prev => !prev)}
+                    disabled={isPastSelectedDate}
+                    className={`shrink-0 flex items-center gap-2 px-3 py-2.5 rounded-lg border text-xs font-bold transition-all ${
+                      isHoliday
+                        ? 'border-[#EA5B3C] bg-[#FFF3EF] text-[#EA5B3C]'
+                        : 'border-[#EAE8E4] bg-white text-[#333333] hover:border-[#D6D1CA]'
+                    } disabled:cursor-not-allowed disabled:opacity-50`}
                   >
-                    <option value="">-- 請選擇餐廳 --</option>
-                    {restaurants.map(rest => (
-                      <option key={rest.id} value={rest.id}>{rest.name}</option>
-                    ))}
-                  </select>
+                    <i className={isHoliday ? 'ti ti-toggle-right text-lg' : 'ti ti-toggle-left text-lg'}></i>
+                    <span>{'\u5047\u671f'}</span>
+                    <span className="hidden text-[10px] text-[#888888] sm:inline">
+                      {isHoliday ? '\u4e0d\u958b\u653e' : '\u958b\u653e'}
+                    </span>
+                  </button>
                 </div>
 
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-[#888888]">訂單截止時間</label>
-                  <input
-                    type="time"
-                    value={orderDeadline}
-                    onChange={(e) => setOrderDeadline(e.target.value)}
-                    className="w-full text-xs px-3 py-2 border border-[#EAE8E4] rounded-lg focus:outline-none focus:border-[#EA5B3C] bg-white font-medium"
-                  />
+                <div className="flex items-end gap-2">
+                  <div className="min-w-0 flex-1 space-y-1.5">
+                    <label className="text-xs font-bold text-[#888888]">指定當日餐廳</label>
+                    <select
+                      value={selectedRestaurantId}
+                      onChange={(e) => setSelectedRestaurantId(e.target.value)}
+                      disabled={isHoliday || isPastSelectedDate}
+                      className="w-full text-xs pl-3 pr-5 py-2 border border-[#EAE8E4] rounded-lg focus:outline-none focus:border-[#EA5B3C] bg-white font-medium disabled:bg-[#F9F8F5] disabled:text-[#B8B2AA] disabled:cursor-not-allowed"
+                    >
+                      <option value="">-- 請選擇餐廳 --</option>
+                      {restaurants.map(rest => (
+                        <option key={rest.id} value={rest.id}>{rest.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleSaveRestaurantSetting}
+                    disabled={isPastSelectedDate || Boolean(savingScheduleSection) || (!isHoliday && !selectedRestaurantId)}
+                    className="shrink-0 px-4 py-3 text-xs font-bold bg-[#EA5B3C] text-white rounded-xl shadow-sm hover:bg-[#333333] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {savingScheduleSection === 'restaurant' ? '儲存中' : '儲存'}
+                  </button>
                 </div>
 
-                <button
-                  onClick={handleSaveSchedule}
-                  disabled={isUpdatingSchedule || (!isHoliday && !selectedRestaurantId)}
-                  className="w-full py-3 text-xs font-bold bg-[#EA5B3C] text-white rounded-xl shadow-sm hover:bg-[#333333] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {isUpdatingSchedule ? '正在儲存...' : '儲存排程設定'}
-                </button>
+                <div className="flex items-end gap-2">
+                  <div className="min-w-0 flex-1 space-y-1.5">
+                    <label className="text-xs font-bold text-[#888888]">訂單截止時間</label>
+                    <input
+                      type="time"
+                      value={orderDeadline}
+                      onChange={(e) => setOrderDeadline(e.target.value)}
+                      disabled={isPastSelectedDate}
+                      className="w-full text-xs px-3 py-2 border border-[#EAE8E4] rounded-lg focus:outline-none focus:border-[#EA5B3C] bg-white font-medium disabled:bg-[#F9F8F5] disabled:text-[#B8B2AA] disabled:cursor-not-allowed"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleSaveDeadlineSetting}
+                    disabled={isPastSelectedDate || Boolean(savingScheduleSection)}
+                    className="shrink-0 px-4 py-3 text-xs font-bold bg-[#EA5B3C] text-white rounded-xl shadow-sm hover:bg-[#333333] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {savingScheduleSection === 'deadline' ? '儲存中' : '儲存'}
+                  </button>
+                </div>
+
+                {isPastSelectedDate && (
+                  <div className="rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-xs font-bold text-orange-700">
+                    供餐日期已過，無法進行設定。
+                  </div>
+                )}
               </div>
 
               {activeSchedule && (
                 <div className="border-t border-[#EAE8E4] pt-4 space-y-4">
-                  <h4 className="text-xs font-bold text-[#888888] tracking-widest uppercase">出餐結算控制</h4>
+                  <h4 className="text-xs font-bold text-[#888888] tracking-widest uppercase flex items-center gap-1.5">
+                    出餐結算控制
+                    <span
+                      className="relative inline-flex"
+                      onMouseEnter={() => setActiveInfoTooltip('delivery')}
+                      onMouseLeave={() => setActiveInfoTooltip('')}
+                    >
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setActiveInfoTooltip(prev => prev === 'delivery' ? '' : 'delivery');
+                        }}
+                        className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-[#D6D1CA] bg-white text-[10px] font-bold normal-case tracking-normal text-[#888888] focus:outline-none focus:border-[#EA5B3C] focus:text-[#EA5B3C]"
+                        aria-label="出餐結算說明"
+                      >
+                        i
+                      </button>
+                      <span className={`pointer-events-none absolute left-0 top-full z-20 mt-2 w-56 rounded-lg border border-[#EAE8E4] bg-white px-3 py-2 text-[11px] font-bold leading-5 tracking-normal text-[#555555] shadow-[0_10px_24px_rgba(0,0,0,0.12)] transition-opacity ${
+                        activeInfoTooltip === 'delivery' ? 'opacity-100' : 'opacity-0'
+                      }`}>
+                        中午餐點送達後，請確認清點便當數量無誤，並點擊下方按鈕觸發錢包扣款。
+                      </span>
+                    </span>
+                  </h4>
                   
                   {activeSchedule.deliveredAt ? (
                     <div className="p-4 rounded-xl bg-green-50 border border-green-200 text-green-700 text-xs font-bold flex flex-col gap-1 items-center text-center">
@@ -1103,9 +1251,6 @@ export default function AdminDashboard() {
                     </div>
                   ) : (
                     <div className="space-y-3">
-                      <p className="text-[11px] text-[#888888] leading-tight">
-                        中午餐點送達後，請確認清點便當數量無誤，並點擊下方按鈕觸發錢包扣款。
-                      </p>
                       <button
                         onClick={handleConfirmDelivery}
                         disabled={isProcessingDelivery || totalQuantity === 0}
@@ -1122,6 +1267,28 @@ export default function AdminDashboard() {
                 <h4 className="text-xs font-bold text-[#888888] tracking-widest uppercase flex items-center gap-1.5">
                   <i className="ti ti-bell"></i>
                   Windows 通知
+                  <span
+                    className="relative inline-flex"
+                    onMouseEnter={() => setActiveInfoTooltip('windows')}
+                    onMouseLeave={() => setActiveInfoTooltip('')}
+                  >
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setActiveInfoTooltip(prev => prev === 'windows' ? '' : 'windows');
+                      }}
+                      className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-[#D6D1CA] bg-white text-[10px] font-bold normal-case tracking-normal text-[#888888] focus:outline-none focus:border-[#EA5B3C] focus:text-[#EA5B3C]"
+                      aria-label="Windows 通知說明"
+                    >
+                      i
+                    </button>
+                    <span className={`pointer-events-none absolute left-0 top-full z-20 mt-2 w-56 rounded-lg border border-[#EAE8E4] bg-white px-3 py-2 text-[11px] font-bold leading-5 tracking-normal text-[#555555] shadow-[0_10px_24px_rgba(0,0,0,0.12)] transition-opacity ${
+                      activeInfoTooltip === 'windows' ? 'opacity-100' : 'opacity-0'
+                    }`}>
+                      成員需先點選右下角「啟用通知」，並保持網站開啟，才會收到 Windows 右下角通知。
+                    </span>
+                  </span>
                 </h4>
                 <textarea
                   value={manualNotification}
@@ -1138,9 +1305,6 @@ export default function AdminDashboard() {
                 >
                   {isSendingNotification ? '發送中...' : '手動通知所有人'}
                 </button>
-                <p className="text-[11px] text-[#888888] leading-5">
-                  成員需先點選右下角「啟用通知」，並保持網站開啟，才會收到 Windows 右下角通知。
-                </p>
               </div>
             </div>
           </div>
@@ -1202,7 +1366,7 @@ export default function AdminDashboard() {
                     ) : (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         {itemSummaries.map(item => (
-                          <div key={`${item.name}-${item.note || 'default'}`} className="p-4 bg-[#F9F8F5] border border-[#EAE8E4] rounded-xl flex justify-between items-center">
+                          <div key={`${item.name}-${item.note || 'default'}`} className="p-4 bg-[#F9F8F5] border border-[#EAE8E4] rounded-lg flex justify-between items-center">
                             <div>
                               <span className="font-bold text-sm text-[#333333]">{item.name}</span>
                               <span className="text-xs text-[#888888] block mt-1">單價: NT$ {item.price}</span>
@@ -1341,7 +1505,7 @@ export default function AdminDashboard() {
                         {'\u627e\u4e0d\u5230\u7b26\u5408\u641c\u5c0b\u689d\u4ef6\u7684\u8a02\u55ae\u3002'}
                       </div>
                     ) : (
-                      <div className="overflow-x-auto border border-[#EAE8E4] rounded-xl bg-white">
+                      <div className="overflow-x-auto border border-[#EAE8E4] rounded-lg bg-white">
                         <table className="w-full text-left border-collapse text-xs">
                           <thead>
                             <tr className="bg-[#F9F8F5] text-[#888888] font-bold border-b border-[#EAE8E4]">

@@ -39,7 +39,7 @@ export default function BackToTopButton() {
       title="回到頂端"
       aria-label="回到頂端"
       className={`fixed right-6 z-50 flex h-11 w-11 items-center justify-center rounded-full border border-[#EAE8E4] bg-white text-[#EA5B3C] shadow-lg shadow-black/5 transition-all duration-300 hover:-translate-y-0.5 hover:border-[#EA5B3C] hover:bg-[#EA5B3C] hover:text-white focus:outline-none focus:ring-2 focus:ring-[#EA5B3C]/30 ${
-        shouldLift ? 'bottom-24 md:bottom-6' : 'bottom-6'
+        shouldLift ? 'bottom-28 md:bottom-6' : 'bottom-6'
       } ${
         isVisible ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'
       }`}

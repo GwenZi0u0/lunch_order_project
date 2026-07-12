@@ -61,6 +61,22 @@ function getDefaultDateForWeek(weekTab) {
     : formatDate(new Date());
 }
 
+function getSeatAreaFromOrder(order) {
+  if (order?.seatArea) return order.seatArea;
+  const match = (order?.note || '').trim().match(/^([AB])區(?:\s|$|[;；,，、])/i);
+  return match ? match[1].toUpperCase() : 'A';
+}
+
+function getOrderDisplayNumber(order) {
+  const orderNumber = order?.orderNumberDisplay || '-';
+  const seatArea = getSeatAreaFromOrder(order);
+  return seatArea && orderNumber !== '-' ? `${seatArea}${orderNumber}` : orderNumber;
+}
+
+function getDisplayOrderNote(order) {
+  return (order?.note || '').replace(/^([AB])區\s*[;；,，、]?\s*/i, '').trim();
+}
+
 export default function PortalPage() {
   const router = useRouter();
   const [user, setUser] = useState(null);
@@ -76,6 +92,7 @@ export default function PortalPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [orderError, setOrderError] = useState('');
   const [orderSuccess, setOrderSuccess] = useState('');
+  const [copiedOrderNumber, setCopiedOrderNumber] = useState('');
   
   // Current system date/time check
   const [currentDateTime, setCurrentDateTime] = useState({ dateStr: '', timeStr: '' });
@@ -158,6 +175,19 @@ export default function PortalPage() {
         }
       })
       .catch(err => console.error('Failed to load order settings:', err));
+  };
+
+  const copyOrderNumber = async (order) => {
+    const orderNumber = getOrderDisplayNumber(order);
+    if (!orderNumber || orderNumber === '-') return;
+
+    try {
+      await navigator.clipboard.writeText(orderNumber);
+      setCopiedOrderNumber(orderNumber);
+      setTimeout(() => setCopiedOrderNumber(''), 1600);
+    } catch (err) {
+      console.error('Failed to copy order number:', err);
+    }
   };
 
   const refreshUser = () => {
@@ -350,6 +380,8 @@ export default function PortalPage() {
 
   const wallet = getWalletStyles();
   const walletAmount = `${user.balance < 0 ? '－' : ''}NT$ ${Math.abs(user.balance)}`;
+  const pendingHoldAmount = user.pendingHoldAmount || 0;
+  const availableBalance = user.availableBalance ?? (user.balance - pendingHoldAmount);
 
   return (
     <>
@@ -363,8 +395,15 @@ export default function PortalPage() {
             {/* Wallet Info */}
             <div className={`p-5 bg-[#F9F8F5] rounded-xl border ${wallet.cardBorder} flex flex-col justify-between h-full`}>
               <span className="text-xs font-bold text-[#888888] tracking-widest uppercase mb-2">{wallet.label}</span>
-              <div className={`text-3xl font-bold ${wallet.valueColor} mb-2`}>
-                {walletAmount}
+              <div className="mb-2 space-y-1">
+                <span className={`text-3xl font-bold ${wallet.valueColor}`}>
+                  {walletAmount}
+                </span>
+                {pendingHoldAmount > 0 && (
+                  <span className="block text-xs font-bold text-[#888888]">
+                    可用金額 {availableBalance < 0 ? '－' : ''}NT$ {Math.abs(availableBalance)}
+                  </span>
+                )}
               </div>
             </div>
 
@@ -384,9 +423,23 @@ export default function PortalPage() {
                     <span className="block text-[11px] font-bold tracking-widest text-[#888888]">
                       {'\u4eca\u65e5\u8a02\u55ae\u7de8\u865f'}
                     </span>
-                    <span className="inline-flex min-w-12 items-center justify-center rounded-full border border-[#EA5B3C]/20 bg-[#FFF3EF] px-3 py-1.5 text-sm font-bold text-[#EA5B3C]">
-                      {todayOrder.orderNumberDisplay || '-'}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="inline-flex min-w-12 items-center justify-center rounded-full border border-[#EA5B3C]/20 bg-[#FFF3EF] px-3 py-1.5 text-sm font-bold text-[#EA5B3C]">
+                        {getOrderDisplayNumber(todayOrder)}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => copyOrderNumber(todayOrder)}
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[#EAE8E4] bg-white text-[#888888] transition-all hover:border-[#EA5B3C] hover:text-[#EA5B3C]"
+                        title="複製訂單編號"
+                        aria-label={`複製訂單編號 ${getOrderDisplayNumber(todayOrder)}`}
+                      >
+                        <i className="ti ti-copy text-sm"></i>
+                      </button>
+                      {copiedOrderNumber === getOrderDisplayNumber(todayOrder) && (
+                        <span className="text-[11px] font-bold text-green-600">已複製</span>
+                      )}
+                    </div>
                   </div>
                 </div>
 
@@ -412,9 +465,9 @@ export default function PortalPage() {
                   <span className="text-xl font-bold text-[#EA5B3C]">NT$ {todayOrder.totalAmount}</span>
                 </div>
 
-                {todayOrder.note && (
+                {getDisplayOrderNote(todayOrder) && (
                   <p className="border-t border-[#EAE8E4] bg-white px-4 py-3 text-xs leading-5 text-[#888888]">
-                    備註：{todayOrder.note}
+                    備註：{getDisplayOrderNote(todayOrder)}
                   </p>
                 )}
               </div>
@@ -756,7 +809,7 @@ export default function PortalPage() {
                         {activeSchedule.userOrder.orderNumberDisplay && (
                           <div className="flex justify-between">
                             <span className="text-[#888888]">{'\u8a02\u55ae\u7de8\u865f'}</span>
-                            <span className="font-bold text-[#EA5B3C]">{activeSchedule.userOrder.orderNumberDisplay}</span>
+                            <span className="font-bold text-[#EA5B3C]">{getOrderDisplayNumber(activeSchedule.userOrder)}</span>
                           </div>
                         )}
                         <div className="flex justify-between">

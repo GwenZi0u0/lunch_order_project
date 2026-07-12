@@ -156,6 +156,11 @@ export async function POST(request) {
       return NextResponse.json({ error: 'Date and Restaurant ID are required' }, { status: 400 });
     }
 
+    const today = formatDate(new Date());
+    if (date < today) {
+      return NextResponse.json({ error: '供餐日期已過，無法進行設定。' }, { status: 400 });
+    }
+
     const schedule = await prisma.$transaction(async (tx) => {
       const existingSchedule = await tx.weeklySchedule.findUnique({
         where: { date },
@@ -170,6 +175,8 @@ export async function POST(request) {
       });
 
       const restaurantChanged = existingSchedule
+        && existingSchedule.restaurantId
+        && normalizedRestaurantId
         && existingSchedule.restaurantId !== normalizedRestaurantId;
       const hasActiveOrders = (existingSchedule?.orders?.length || 0) > 0;
 

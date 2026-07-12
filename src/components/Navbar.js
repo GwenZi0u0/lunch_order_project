@@ -73,7 +73,13 @@ export default function Navbar({ user }) {
             onClick={() => navigateTo(logoHref)}
             className="font-bold text-xl tracking-wider text-[#333333] cursor-pointer flex items-center gap-2 whitespace-nowrap"
           >
-            TSA Lunch
+            <img
+              src="/CatChupLunchLogo.png"
+              alt=""
+              className="h-8 w-auto shrink-0 object-contain"
+              aria-hidden="true"
+            />
+            CatChup Lunch
           </div>
 
           {user && (

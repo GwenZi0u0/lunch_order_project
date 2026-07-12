@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/db';
 import { signJWT, getCurrentUser } from '@/lib/auth';
+import { getPendingHoldAmount, withWalletHold } from '@/lib/wallet';
 
 export async function GET(request) {
   try {
@@ -18,7 +19,12 @@ export async function GET(request) {
       return NextResponse.json({ authenticated: false }, { status: 401 });
     }
 
-    return NextResponse.json({ authenticated: true, user: dbUser });
+    const pendingHoldAmount = await getPendingHoldAmount(prisma, dbUser.id);
+
+    return NextResponse.json({
+      authenticated: true,
+      user: withWalletHold(dbUser, pendingHoldAmount)
+    });
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
@@ -59,7 +65,7 @@ export async function POST(request) {
           avatarUrl = 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&h=100&fit=crop&crop=faces';
         } else if (userType === 'negative') {
           email = 'datong@kaizen.com';
-          name = '王大同 (欠款警示)';
+          name = '王大同';
           initialBalance = -80;
           avatarUrl = 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&h=100&fit=crop&crop=faces';
         } else {

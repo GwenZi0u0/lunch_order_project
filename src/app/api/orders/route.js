@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/db';
 import { getCurrentUser } from '@/lib/auth';
+import { getPendingHoldAmount, MIN_AVAILABLE_BALANCE } from '@/lib/wallet';
 
 // Helper to get current Taipei/system date and time info
 function getCurrentDateTime() {
@@ -60,6 +61,11 @@ async function allocateOrderNumber(tx, scheduleDate) {
   });
 
   return `${scheduleDate.replaceAll('-', '')}${String(sequence.lastNumber).padStart(3, '0')}`;
+}
+
+function getCustomizationExtraAmount(value) {
+  const matches = String(value || '').matchAll(/\+\s*(?:NT\$|\$)?\s*(\d+)/gi);
+  return Array.from(matches).reduce((sum, match) => sum + (parseInt(match[1], 10) || 0), 0);
 }
 
 export async function GET(request) {
@@ -205,7 +211,8 @@ export async function POST(request) {
     let totalAmount = 0;
     const orderItemsData = items.map(item => {
       const dbItem = menuItems.find(mi => mi.id === item.menuItemId);
-      const price = dbItem.price;
+      const note = typeof item.note === 'string' ? item.note.trim() : '';
+      const price = dbItem.price + getCustomizationExtraAmount(note);
       const quantity = parseInt(item.quantity, 10) || 1;
       totalAmount += price * quantity;
       
@@ -213,7 +220,7 @@ export async function POST(request) {
         menuItemId: item.menuItemId,
         quantity,
         unitPrice: price, // Snapshot price
-        note: typeof item.note === 'string' ? item.note.trim() : null
+        note: note || null
       };
     });
 
@@ -227,6 +234,21 @@ export async function POST(request) {
           status: { not: 'cancelled' }
         }
       });
+
+      if (!isAdminOverride) {
+        const dbUser = await tx.user.findUnique({
+          where: { id: orderUserId },
+          select: { balance: true }
+        });
+        const pendingHoldAmount = await getPendingHoldAmount(tx, orderUserId, {
+          excludeOrderId: existingOrder?.id
+        });
+        const projectedAvailableBalance = (dbUser?.balance || 0) - pendingHoldAmount - totalAmount;
+
+        if (projectedAvailableBalance < MIN_AVAILABLE_BALANCE) {
+          throw new Error('儲值金不夠，請聯絡管理員。');
+        }
+      }
 
       if (existingOrder) {
         const orderNumber = existingOrder.orderNumber || await allocateOrderNumber(tx, schedule.date);

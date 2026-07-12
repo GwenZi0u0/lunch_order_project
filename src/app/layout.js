@@ -5,6 +5,11 @@ import NotificationCenter from '@/components/NotificationCenter';
 export const metadata = {
   title: '午餐訂購系統 — CatChup Lunch',
   description: '讓訂餐更便利、更有趣！',
+  icons: {
+    icon: '/CatChupLunchLogo.png',
+    shortcut: '/CatChupLunchLogo.png',
+    apple: '/CatChupLunchLogo.png',
+  },
 };
 
 export default function RootLayout({ children }) {

@@ -7,21 +7,24 @@ const DEFAULT_CUSTOMIZATION_OPTIONS = ['\u98ef\u5c11', '\u63db\u83dc', '\u63db\u
 function normalizeCustomizationOptions(value) {
   if (Array.isArray(value)) {
     const options = value.map(option => String(option).trim()).filter(Boolean);
-    return options.length > 0 ? options : DEFAULT_CUSTOMIZATION_OPTIONS;
+    return options;
   }
 
   if (typeof value === 'string') {
-    if (!value.trim()) return DEFAULT_CUSTOMIZATION_OPTIONS;
+    if (!value.trim()) return [];
 
     try {
       const parsed = JSON.parse(value);
       if (Array.isArray(parsed)) {
         const options = parsed.map(option => String(option).trim()).filter(Boolean);
-        return options.length > 0 ? options : DEFAULT_CUSTOMIZATION_OPTIONS;
+        return options;
+      }
+      if (typeof parsed === 'string') {
+        return normalizeCustomizationOptions(parsed);
       }
     } catch {
       const options = value.split(/[\r\n,;|]+/).map(option => option.trim()).filter(Boolean);
-      return options.length > 0 ? options : DEFAULT_CUSTOMIZATION_OPTIONS;
+      return options;
     }
   }
 

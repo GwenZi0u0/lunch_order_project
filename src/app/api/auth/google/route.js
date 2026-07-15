@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 
 const GOOGLE_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
 
+export const dynamic = 'force-dynamic';
+
 function getBaseUrl(request) {
   return process.env.NEXT_PUBLIC_APP_URL || new URL(request.url).origin;
 }
@@ -27,6 +29,7 @@ export async function GET(request) {
   authUrl.searchParams.set('state', state);
 
   const response = NextResponse.redirect(authUrl);
+  response.headers.set('Cache-Control', 'no-store');
   response.cookies.set('google-oauth-state', state, {
     path: '/',
     httpOnly: true,

@@ -5,6 +5,8 @@ import { signJWT } from '@/lib/auth';
 const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const GOOGLE_USERINFO_URL = 'https://www.googleapis.com/oauth2/v3/userinfo';
 
+export const dynamic = 'force-dynamic';
+
 function getBaseUrl(request) {
   return process.env.NEXT_PUBLIC_APP_URL || new URL(request.url).origin;
 }
@@ -12,7 +14,9 @@ function getBaseUrl(request) {
 function redirectToLogin(request, message) {
   const url = new URL('/login', request.url);
   url.searchParams.set('error', message);
-  return NextResponse.redirect(url);
+  const response = NextResponse.redirect(url);
+  response.headers.set('Cache-Control', 'no-store');
+  return response;
 }
 
 async function exchangeCodeForToken({ code, redirectUri }) {
@@ -101,6 +105,7 @@ export async function GET(request) {
     });
 
     const response = NextResponse.redirect(new URL('/', request.url));
+    response.headers.set('Cache-Control', 'no-store');
     response.cookies.set('session-token', sessionToken, {
       path: '/',
       httpOnly: true,

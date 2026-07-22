@@ -628,7 +628,7 @@ export default function PortalPage() {
         <section className="bg-white rounded-xl border border-[#EAE8E4] p-6 shadow-sm">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-center">
             {/* Wallet Info */}
-            <div className={`p-5 bg-[#F9F8F5] rounded-xl border ${wallet.cardBorder} flex flex-col justify-between h-full`}>
+            <div className={`self-start p-5 bg-[#F9F8F5] rounded-xl border ${wallet.cardBorder} flex flex-col justify-start`}>
               <span className="text-xs font-bold text-[#888888] tracking-widest uppercase mb-2">{wallet.label}</span>
               <div className="mb-2 space-y-1">
                 <span className={`text-3xl font-bold ${wallet.valueColor}`}>

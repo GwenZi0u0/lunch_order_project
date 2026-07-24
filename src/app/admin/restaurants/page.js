@@ -46,6 +46,40 @@ function optionsToInputValue(value) {
   return normalizeCustomizationOptions(value).join(', ');
 }
 
+function renderNoteWithLinks(value) {
+  const linkPattern = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)|(https?:\/\/[^\s<>()\[\]，。]+)/g;
+  const parts = [];
+  let lastIndex = 0;
+  let match;
+
+  while ((match = linkPattern.exec(value)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push(value.slice(lastIndex, match.index));
+    }
+
+    const href = match[2] || match[3];
+    const label = match[1] || href;
+    parts.push(
+      <a
+        key={`${match.index}-${href}`}
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="font-bold text-[#EA5B3C] underline decoration-[#EA5B3C]/40 underline-offset-2 hover:text-[#333333]"
+      >
+        {label}
+      </a>
+    );
+    lastIndex = linkPattern.lastIndex;
+  }
+
+  if (lastIndex < value.length) {
+    parts.push(value.slice(lastIndex));
+  }
+
+  return parts;
+}
+
 export default function RestaurantsPage() {
   const router = useRouter();
   const [user, setUser] = useState(null);
@@ -152,12 +186,15 @@ export default function RestaurantsPage() {
       setNewRestPhone(parsed.phone);
       setNewRestNote(parsed.note);
       setMenuItems(parsed.menuItems);
-      setJsonDialogOpen(false);
       setStatusMsg({ text: 'JSON 匯入完成！請在下方表格中校對確認項目。', type: 'success' });
     } catch (err) {
-      setStatusMsg({ text: err.message || 'JSON 匯入失敗', type: 'error' });
+      const errorMessage = err instanceof SyntaxError
+        ? 'JSON 格式錯誤，請重新檢查。'
+        : (err.message || 'JSON 匯入失敗');
+      setStatusMsg({ text: errorMessage, type: 'error' });
     } finally {
       setOcrLoading(false);
+      setJsonDialogOpen(false);
     }
   };
 
@@ -378,7 +415,7 @@ export default function RestaurantsPage() {
           </button>
         </div>
 
-        <section className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <section className="grid grid-cols-1 gap-8 lg:grid-cols-[280px_minmax(0,1fr)]">
           
           {/* Active Restaurants List (Col-span 1) */}
           <div className="space-y-6">
@@ -436,7 +473,7 @@ export default function RestaurantsPage() {
           </div>
 
           {/* JSON Import and Add Menu Panel (Col-span 2) */}
-          <div className="lg:col-span-2 space-y-6">
+          <div className="space-y-6">
             <div className="c-box space-y-6">
               <h3 className="font-bold text-base text-[#333333] border-b border-[#EAE8E4] pb-3 flex items-center justify-between">
                 <span className="flex items-center gap-2">
@@ -535,12 +572,21 @@ export default function RestaurantsPage() {
 
               <div className="space-y-1">
                 <label className="text-xs font-bold text-[#888888]">外送規則與備註 (最低消費限制、附湯說明等)</label>
-                <input
-                  type="text"
+                <textarea
+                  rows={3}
                   value={newRestNote}
                   onChange={(e) => setNewRestNote(e.target.value)}
-                  className="w-full text-xs px-3 py-2 border border-[#EAE8E4] rounded-lg focus:outline-none focus:border-[#EA5B3C] bg-white font-medium"
+                  placeholder="可直接貼上網址，或使用 Markdown：[連結文字](https://example.com)"
+                  className="w-full resize-y text-xs px-3 py-2 border border-[#EAE8E4] rounded-lg focus:outline-none focus:border-[#EA5B3C] bg-white font-medium"
                 />
+                {newRestNote.trim() && (
+                  <div className="rounded-lg border border-[#EAE8E4] bg-[#F9F8F5] px-3 py-2">
+                    <div className="mb-1 text-[10px] font-bold tracking-wider text-[#888888]">內容預覽</div>
+                    <div className="whitespace-pre-wrap break-words text-xs leading-5 text-[#555555]">
+                      {renderNoteWithLinks(newRestNote)}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Editable Menu Items Table */}

@@ -92,7 +92,10 @@ export default function PortalPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [orderError, setOrderError] = useState('');
   const [orderSuccess, setOrderSuccess] = useState('');
-  const [copiedOrderNumber, setCopiedOrderNumber] = useState('');
+  const [companyOrdersOpen, setCompanyOrdersOpen] = useState(false);
+  const [companyOrders, setCompanyOrders] = useState([]);
+  const [companyOrdersLoading, setCompanyOrdersLoading] = useState(false);
+  const [companyOrdersError, setCompanyOrdersError] = useState('');
   
   // Current system date/time check
   const [currentDateTime, setCurrentDateTime] = useState({ dateStr: '', timeStr: '' });
@@ -177,16 +180,22 @@ export default function PortalPage() {
       .catch(err => console.error('Failed to load order settings:', err));
   };
 
-  const copyOrderNumber = async (order) => {
-    const orderNumber = getOrderDisplayNumber(order);
-    if (!orderNumber || orderNumber === '-') return;
+  const openCompanyOrders = async () => {
+    if (!todaySchedule?.id) return;
+
+    setCompanyOrdersOpen(true);
+    setCompanyOrdersLoading(true);
+    setCompanyOrdersError('');
 
     try {
-      await navigator.clipboard.writeText(orderNumber);
-      setCopiedOrderNumber(orderNumber);
-      setTimeout(() => setCopiedOrderNumber(''), 1600);
-    } catch (err) {
-      console.error('Failed to copy order number:', err);
+      const response = await fetch(`/api/orders?scheduleId=${todaySchedule.id}&scope=company`);
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || '無法載入大家的訂單');
+      setCompanyOrders(Array.isArray(data) ? data : []);
+    } catch (error) {
+      setCompanyOrdersError(error.message || '無法載入大家的訂單');
+    } finally {
+      setCompanyOrdersLoading(false);
     }
   };
 
@@ -413,7 +422,19 @@ export default function PortalPage() {
               <h3 className="font-bold text-base text-[#333333] flex items-center gap-2">
                 <i className="ti ti-shopping-bag text-lg text-[#EA5B3C]"></i> 今日訂購餐點
               </h3>
-              <span className="text-xs font-bold text-[#888888]">{todayDate}</span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-[#888888]">{todayDate}</span>
+                <button
+                  type="button"
+                  onClick={openCompanyOrders}
+                  disabled={!todaySchedule}
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[#EAE8E4] bg-white text-[#888888] transition-all hover:border-[#EA5B3C] hover:text-[#EA5B3C] disabled:cursor-not-allowed disabled:opacity-40"
+                  title="查看大家點了什麼"
+                  aria-label="查看大家點了什麼"
+                >
+                  <i className="ti ti-users text-base"></i>
+                </button>
+              </div>
             </div>
 
             {todayOrder ? (
@@ -427,18 +448,6 @@ export default function PortalPage() {
                       <span className="inline-flex min-w-12 items-center justify-center rounded-full border border-[#EA5B3C]/20 bg-[#FFF3EF] px-3 py-1.5 text-sm font-bold text-[#EA5B3C]">
                         {getOrderDisplayNumber(todayOrder)}
                       </span>
-                      <button
-                        type="button"
-                        onClick={() => copyOrderNumber(todayOrder)}
-                        className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[#EAE8E4] bg-white text-[#888888] transition-all hover:border-[#EA5B3C] hover:text-[#EA5B3C]"
-                        title="複製訂單編號"
-                        aria-label={`複製訂單編號 ${getOrderDisplayNumber(todayOrder)}`}
-                      >
-                        <i className="ti ti-copy text-sm"></i>
-                      </button>
-                      {copiedOrderNumber === getOrderDisplayNumber(todayOrder) && (
-                        <span className="text-[11px] font-bold text-green-600">已複製</span>
-                      )}
                     </div>
                   </div>
                 </div>
@@ -867,6 +876,77 @@ export default function PortalPage() {
         )}
 
       </main>
+
+      {companyOrdersOpen && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/35 px-5 py-8"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="company-orders-title"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setCompanyOrdersOpen(false);
+          }}
+        >
+          <div className="w-full max-w-lg overflow-hidden rounded-2xl border border-[#EAE8E4] bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-[#EAE8E4] px-5 py-4">
+              <div>
+                <p className="text-[11px] font-bold tracking-widest text-[#888888]">{todayDate}</p>
+                <h2 id="company-orders-title" className="mt-1 text-lg font-bold text-[#333333]">大家點了什麼</h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCompanyOrdersOpen(false)}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#EAE8E4] text-[#888888] transition-colors hover:border-[#EA5B3C] hover:text-[#EA5B3C]"
+                aria-label="關閉大家的訂單"
+              >
+                <i className="ti ti-x text-lg"></i>
+              </button>
+            </div>
+
+            <div className="max-h-[65vh] space-y-3 overflow-y-auto p-5 kaizen-scrollbar">
+              {companyOrdersLoading && (
+                <div className="flex items-center justify-center gap-2 py-10 text-sm font-bold text-[#888888]">
+                  <i className="ti ti-loader-2 animate-spin text-lg text-[#EA5B3C]"></i>
+                  載入中
+                </div>
+              )}
+
+              {!companyOrdersLoading && companyOrdersError && (
+                <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-600">
+                  {companyOrdersError}
+                </p>
+              )}
+
+              {!companyOrdersLoading && !companyOrdersError && companyOrders.length === 0 && (
+                <p className="py-10 text-center text-sm font-bold text-[#888888]">今天還沒有人送出訂單</p>
+              )}
+
+              {!companyOrdersLoading && !companyOrdersError && companyOrders.map(order => {
+                const displayNumber = `${order.seatArea || 'A'}${order.orderNumberDisplay || '--'}`;
+                const orderDetails = order.items.flatMap(item => {
+                  const itemLabel = `${item.name}${item.quantity > 1 ? ` x ${item.quantity}` : ''}`;
+                  return item.note
+                    ? [itemLabel, `備註：${item.note}`]
+                    : [itemLabel];
+                });
+                return (
+                  <div key={order.id} className="rounded-xl border border-[#EAE8E4] bg-[#F9F8F5] px-4 py-3">
+                    <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                      <span className="shrink-0 text-xs font-bold text-[#EA5B3C]">
+                        {displayNumber}
+                      </span>
+                      <span className="shrink-0 text-sm font-bold text-[#333333]">{order.userName}</span>
+                      <span className="min-w-0 text-xs font-bold leading-5 text-[#666666]">
+                        {orderDetails.join('／')}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

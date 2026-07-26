@@ -95,6 +95,15 @@ export default function AdminDashboard() {
   const [announcementMessage, setAnnouncementMessage] = useState('');
   const [copiedItemSummary, setCopiedItemSummary] = useState(false);
   const [copiedTodayOrders, setCopiedTodayOrders] = useState(false);
+  const [messageFormats, setMessageFormats] = useState([]);
+  const [messageFormatDialogOpen, setMessageFormatDialogOpen] = useState(false);
+  const [messageFormatDraft, setMessageFormatDraft] = useState({ id: '', title: '', content: '' });
+  const [messageFormatOriginal, setMessageFormatOriginal] = useState({ id: '', title: '', content: '' });
+  const [discardMessageFormatDialogOpen, setDiscardMessageFormatDialogOpen] = useState(false);
+  const [messageFormatToDelete, setMessageFormatToDelete] = useState(null);
+  const [savingMessageFormats, setSavingMessageFormats] = useState(false);
+  const [copiedMessageFormatId, setCopiedMessageFormatId] = useState('');
+  const [messageFormatMessage, setMessageFormatMessage] = useState('');
 
   useEffect(() => {
     // Check authentication and role
@@ -115,6 +124,7 @@ export default function AdminDashboard() {
             fetchRestaurants();
             fetchSchedules();
             fetchAnnouncement();
+            fetchMessageFormats();
           }
         }
       })
@@ -156,6 +166,15 @@ export default function AdminDashboard() {
         }
       })
       .catch(err => console.error('Failed to load announcement:', err));
+  };
+
+  const fetchMessageFormats = () => {
+    fetch('/api/message-formats')
+      .then(res => res.json())
+      .then(data => {
+        setMessageFormats(Array.isArray(data.messageFormats) ? data.messageFormats : []);
+      })
+      .catch(err => console.error('Failed to load message formats:', err));
   };
 
   const persistAnnouncements = async (nextAnnouncements, savingId, successMessage) => {
@@ -363,6 +382,94 @@ export default function AdminDashboard() {
     persistAnnouncements(nextAnnouncements, id, '公告已刪除。');
     clearAnnouncementDraft(id);
     if (editingAnnouncementId === id) setEditingAnnouncementId('');
+  };
+
+  const persistMessageFormats = async (nextFormats, successMessage) => {
+    setSavingMessageFormats(true);
+    setMessageFormatMessage('');
+
+    try {
+      const res = await fetch('/api/message-formats', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messageFormats: nextFormats }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '訊息格式儲存失敗');
+
+      setMessageFormats(Array.isArray(data.messageFormats) ? data.messageFormats : nextFormats);
+      setMessageFormatMessage(successMessage);
+      setTimeout(() => setMessageFormatMessage(''), 2500);
+      return true;
+    } catch (err) {
+      setMessageFormatMessage(err.message);
+      return false;
+    } finally {
+      setSavingMessageFormats(false);
+    }
+  };
+
+  const openMessageFormatDialog = (format = null) => {
+    const draft = format
+      ? { id: format.id, title: format.title || '', content: format.content || '' }
+      : { id: '', title: '', content: '' };
+    setMessageFormatDraft(draft);
+    setMessageFormatOriginal(draft);
+    setMessageFormatMessage('');
+    setMessageFormatDialogOpen(true);
+  };
+
+  const closeMessageFormatDialog = () => {
+    setMessageFormatDialogOpen(false);
+    setDiscardMessageFormatDialogOpen(false);
+    setMessageFormatDraft({ id: '', title: '', content: '' });
+    setMessageFormatOriginal({ id: '', title: '', content: '' });
+  };
+
+  const cancelMessageFormatEdit = () => {
+    const hasChanges = JSON.stringify(messageFormatDraft) !== JSON.stringify(messageFormatOriginal);
+    if (hasChanges) {
+      setDiscardMessageFormatDialogOpen(true);
+      return;
+    }
+    closeMessageFormatDialog();
+  };
+
+  const saveMessageFormat = async () => {
+    if (!messageFormatDraft.title.trim() || !messageFormatDraft.content.trim()) {
+      setMessageFormatMessage('請填寫主旨與內容。');
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const savedFormat = {
+      id: messageFormatDraft.id || `message-format-${Date.now()}`,
+      title: messageFormatDraft.title.trim(),
+      content: messageFormatDraft.content.trim(),
+      updatedAt: now,
+    };
+    const nextFormats = messageFormatDraft.id
+      ? messageFormats.map(format => format.id === messageFormatDraft.id ? savedFormat : format)
+      : [savedFormat, ...messageFormats];
+    const saved = await persistMessageFormats(nextFormats, '訊息格式已儲存。');
+    if (saved) closeMessageFormatDialog();
+  };
+
+  const copyMessageFormat = async (format) => {
+    try {
+      await writeClipboardText(format.content);
+      setCopiedMessageFormatId(format.id);
+      setTimeout(() => setCopiedMessageFormatId(''), 1600);
+    } catch (err) {
+      setMessageFormatMessage('複製失敗，請再試一次。');
+    }
+  };
+
+  const deleteMessageFormat = async () => {
+    if (!messageFormatToDelete) return;
+    const nextFormats = messageFormats.filter(format => format.id !== messageFormatToDelete.id);
+    const deleted = await persistMessageFormats(nextFormats, '訊息格式已刪除。');
+    if (deleted) setMessageFormatToDelete(null);
   };
 
   const activeSchedule = schedules.find(s => s.date === selectedDate);
@@ -770,6 +877,73 @@ export default function AdminDashboard() {
             </div>
           </div>
 
+          <div className="bg-white border border-[#EAE8E4] rounded-xl shadow-sm p-6 space-y-5">
+            <div className="flex items-center justify-between gap-3 border-b border-[#EAE8E4] pb-4">
+              <div>
+                <p className="text-xs font-bold text-[#888888] tracking-widest">管理者常用內容</p>
+                <h3 className="mt-1 text-lg font-bold text-[#333333]">訊息格式</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => openMessageFormatDialog()}
+                className="inline-flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-full bg-[#EA5B3C] text-white transition-colors hover:bg-[#333333]"
+                aria-label="新增訊息格式"
+                title="新增訊息格式"
+              >
+                <i className="ti ti-plus text-sm"></i>
+              </button>
+            </div>
+
+            {messageFormatMessage && (
+              <div className="rounded-lg border border-[#EAE8E4] bg-[#F9F8F5] px-3 py-2 text-xs font-bold text-[#666666]">
+                {messageFormatMessage}
+              </div>
+            )}
+
+            <div className="space-y-3">
+              {messageFormats.length > 0 ? messageFormats.map(format => (
+                <div key={format.id} className="rounded-xl border border-[#EAE8E4] bg-[#F9F8F5] p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <h4 className="min-w-0 flex-1 break-words text-base font-bold text-[#333333]">{format.title}</h4>
+                    <div className="flex shrink-0 items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => copyMessageFormat(format)}
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#EAE8E4] bg-white text-[#888888] transition-all hover:border-[#EA5B3C] hover:text-[#EA5B3C]"
+                        aria-label={`複製 ${format.title}`}
+                        title="複製"
+                      >
+                        <i className={`ti ${copiedMessageFormatId === format.id ? 'ti-check text-green-600' : 'ti-copy'}`}></i>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => openMessageFormatDialog(format)}
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#EAE8E4] bg-white text-[#888888] transition-all hover:border-[#EA5B3C] hover:text-[#EA5B3C]"
+                        aria-label={`編輯 ${format.title}`}
+                        title="編輯"
+                      >
+                        <i className="ti ti-pencil"></i>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setMessageFormatToDelete(format)}
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-red-200 bg-white text-red-600 transition-all hover:bg-red-50"
+                        aria-label={`刪除 ${format.title}`}
+                        title="刪除"
+                      >
+                        <i className="ti ti-trash"></i>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )) : (
+                <div className="rounded-xl border border-dashed border-[#D6D1CA] bg-[#F9F8F5] px-4 py-10 text-center text-xs text-[#888888]">
+                  尚未建立訊息格式，請點擊右上角新增。
+                </div>
+              )}
+            </div>
+          </div>
+
           <div id="announcement-editor" className="scroll-mt-24 bg-white border border-[#EAE8E4] rounded-xl shadow-sm p-6 space-y-5">
             <div className="flex flex-row items-end justify-between gap-3 border-b border-[#EAE8E4] pb-4">
               <div>
@@ -777,12 +951,13 @@ export default function AdminDashboard() {
                 <h3 className="text-lg font-bold text-[#333333] mt-1">公告欄編輯</h3>
               </div>
               <button
+                type="button"
                 onClick={handleAddAnnouncement}
-                className="shrink-0 inline-flex items-center justify-center gap-1.5 text-xs font-bold bg-[#EA5B3C] text-white px-3 py-2 md:px-4 rounded-lg hover:bg-[#333333] transition-colors"
+                className="inline-flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-full bg-[#EA5B3C] text-white transition-colors hover:bg-[#333333]"
+                aria-label="新增公告"
+                title="新增公告"
               >
-                <span className="md:hidden text-sm leading-none">+</span>
-                <i className="ti ti-plus text-sm hidden md:inline"></i>
-                <span className="hidden md:inline">新增公告</span>
+                <i className="ti ti-plus text-sm"></i>
               </button>
             </div>
 
@@ -794,7 +969,7 @@ export default function AdminDashboard() {
             )}
 
             <div className="space-y-4">
-              {announcements.length > 0 ? announcements.map((item, index) => {
+              {announcements.length > 0 ? announcements.map(item => {
                 const draft = getAnnouncementDraft(item);
                 const isEditing = editingAnnouncementId === item.id;
                 const isDirty = isAnnouncementDirty(item);
@@ -802,11 +977,13 @@ export default function AdminDashboard() {
                 return (
                   <div key={item.id} className="border border-[#EAE8E4] rounded-xl bg-[#F9F8F5] p-4 space-y-3">
                     <div className="flex items-start justify-between gap-3">
-                      <span className="text-xs font-bold text-[#888888] tracking-widest uppercase pt-2">
-                        {item.pinned ? '釘選公告' : `公告 ${index + 1}`}
-                      </span>
+                      {item.pinned && (
+                        <span className="pt-2 text-xs font-bold uppercase tracking-widest text-[#888888]">
+                          釘選公告
+                        </span>
+                      )}
                       {isEditing ? (
-                        <div className="flex items-center gap-2">
+                        <div className="ml-auto flex items-center gap-2">
                           <button
                             onClick={() => handleSaveAnnouncementItem(item.id)}
                             disabled={savingAnnouncementId === item.id || !isDirty}
@@ -831,7 +1008,7 @@ export default function AdminDashboard() {
                           </button>
                         </div>
                       ) : (
-                        <div className="flex items-center gap-2">
+                        <div className="ml-auto flex items-center gap-2">
                           <button
                             onClick={() => handleToggleAnnouncementPinned(item.id)}
                             disabled={savingAnnouncementId === item.id}
@@ -915,6 +1092,161 @@ export default function AdminDashboard() {
 
 
       </main>
+
+      {messageFormatDialogOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 px-4">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="message-format-dialog-title"
+            className="w-full max-w-[600px] overflow-hidden rounded-xl border border-[#EAE8E4] bg-white shadow-2xl"
+          >
+            <div className="flex items-center justify-between border-b border-[#EAE8E4] px-6 py-4">
+              <h3 id="message-format-dialog-title" className="flex items-center gap-2 text-base font-bold text-[#333333]">
+                <i className="ti ti-message-2 text-[#EA5B3C]"></i>
+                {messageFormatDraft.id ? '編輯訊息格式' : '新增訊息格式'}
+              </h3>
+              <button
+                type="button"
+                onClick={cancelMessageFormatEdit}
+                disabled={savingMessageFormats}
+                className="inline-flex h-8 w-8 items-center justify-center rounded-full text-[#888888] transition-all hover:bg-[#F9F8F5] hover:text-[#333333] disabled:opacity-40"
+                aria-label="關閉訊息格式視窗"
+              >
+                <i className="ti ti-x"></i>
+              </button>
+            </div>
+
+            <div className="space-y-5 p-6">
+              {messageFormatMessage && (
+                <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-600">
+                  {messageFormatMessage}
+                </div>
+              )}
+              <label className="block space-y-2">
+                <span className="text-xs font-bold text-[#666666]">主旨：</span>
+                <input
+                  type="text"
+                  value={messageFormatDraft.title}
+                  onChange={(event) => setMessageFormatDraft(prev => ({ ...prev, title: event.target.value }))}
+                  className="w-full rounded-lg border border-[#EAE8E4] bg-white px-4 py-3 text-sm font-bold text-[#333333] focus:border-[#EA5B3C] focus:outline-none"
+                  placeholder="請輸入訊息主旨"
+                />
+              </label>
+              <label className="block space-y-2">
+                <span className="text-xs font-bold text-[#666666]">內容：</span>
+                <textarea
+                  value={messageFormatDraft.content}
+                  onChange={(event) => setMessageFormatDraft(prev => ({ ...prev, content: event.target.value }))}
+                  rows={8}
+                  className="w-full resize-y rounded-lg border border-[#EAE8E4] bg-white px-4 py-3 text-sm leading-7 text-[#333333] focus:border-[#EA5B3C] focus:outline-none"
+                  placeholder="請輸入訊息內容"
+                />
+              </label>
+
+              <div className="flex items-center justify-end gap-2 border-t border-[#EAE8E4] pt-4">
+                <button
+                  type="button"
+                  onClick={cancelMessageFormatEdit}
+                  disabled={savingMessageFormats}
+                  className="rounded-lg border border-[#EAE8E4] bg-white px-4 py-2.5 text-xs font-bold text-[#333333] transition-all hover:border-[#333333] disabled:opacity-50"
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  onClick={saveMessageFormat}
+                  disabled={savingMessageFormats}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-[#EA5B3C] px-5 py-2.5 text-xs font-bold text-white transition-all hover:bg-[#333333] disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <i className={`ti ${savingMessageFormats ? 'ti-loader-2 animate-spin' : 'ti-check'}`}></i>
+                  {savingMessageFormats ? '儲存中...' : '儲存'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {discardMessageFormatDialogOpen && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 px-4">
+          <div
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="discard-message-format-title"
+            className="w-full max-w-[420px] overflow-hidden rounded-xl border border-[#EAE8E4] bg-white shadow-2xl"
+          >
+            <div className="border-b border-[#EAE8E4] px-6 py-4">
+              <h3 id="discard-message-format-title" className="flex items-center gap-2 text-base font-bold text-[#333333]">
+                <i className="ti ti-alert-triangle text-[#EA5B3C]"></i>
+                放棄內容變更？
+              </h3>
+            </div>
+            <div className="space-y-5 p-6">
+              <p className="text-sm leading-7 text-[#666666]">
+                主旨或內容已修改，確定要放棄此次內容變更嗎？
+              </p>
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setDiscardMessageFormatDialogOpen(false)}
+                  className="rounded-lg border border-[#EAE8E4] bg-white px-4 py-2.5 text-xs font-bold text-[#333333] transition-all hover:border-[#333333]"
+                >
+                  繼續編輯
+                </button>
+                <button
+                  type="button"
+                  onClick={closeMessageFormatDialog}
+                  className="rounded-lg bg-[#EA5B3C] px-4 py-2.5 text-xs font-bold text-white transition-all hover:bg-[#333333]"
+                >
+                  放棄變更
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {messageFormatToDelete && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 px-4">
+          <div
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="delete-message-format-title"
+            className="w-full max-w-[420px] overflow-hidden rounded-xl border border-[#EAE8E4] bg-white shadow-2xl"
+          >
+            <div className="border-b border-[#EAE8E4] px-6 py-4">
+              <h3 id="delete-message-format-title" className="flex items-center gap-2 text-base font-bold text-[#333333]">
+                <i className="ti ti-trash text-red-600"></i>
+                刪除訊息格式？
+              </h3>
+            </div>
+            <div className="space-y-5 p-6">
+              <p className="text-sm leading-7 text-[#666666]">
+                確定要刪除「{messageFormatToDelete.title}」嗎？
+              </p>
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setMessageFormatToDelete(null)}
+                  disabled={savingMessageFormats}
+                  className="rounded-lg border border-[#EAE8E4] bg-white px-4 py-2.5 text-xs font-bold text-[#333333] transition-all hover:border-[#333333] disabled:opacity-50"
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  onClick={deleteMessageFormat}
+                  disabled={savingMessageFormats}
+                  className="rounded-lg bg-red-600 px-4 py-2.5 text-xs font-bold text-white transition-all hover:bg-[#333333] disabled:opacity-60"
+                >
+                  {savingMessageFormats ? '刪除中...' : '確認刪除'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

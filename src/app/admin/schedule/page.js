@@ -16,6 +16,12 @@ function formatDate(date) {
   return [year, month, day].join('-');
 }
 
+function formatMonthDay(dateStr) {
+  const [, month, day] = String(dateStr || '').split('-');
+  if (!month || !day) return '';
+  return `${Number(month)}/${Number(day)}`;
+}
+
 function getWeeklyDates() {
   const dates = [];
   const now = new Date();
@@ -809,6 +815,8 @@ export default function AdminDashboard() {
     .filter(item => item.isAlaCarte)
     .reduce((sum, item) => sum + item.qty, 0);
   const orderCopyText = [
+    `日期: ${formatMonthDay(selectedDate)}`,
+    '',
     ...orderCopyItems.map(item => `${item.name}${item.note ? ` ${item.note}` : ''} *${item.qty}`),
     '',
     `共計${copyMealCount}份餐，${copyAlaCarteCount}份單點`,

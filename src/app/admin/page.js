@@ -51,6 +51,27 @@ function getWeeklyDates() {
   return dates;
 }
 
+async function writeClipboardText(text) {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return;
+    } catch {
+      // Fall through to the legacy copy path.
+    }
+  }
+
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.style.position = 'fixed';
+  textarea.style.opacity = '0';
+  document.body.appendChild(textarea);
+  textarea.select();
+  const copied = document.execCommand('copy');
+  document.body.removeChild(textarea);
+  if (!copied) throw new Error('Copy failed');
+}
+
 export default function AdminDashboard() {
   const router = useRouter();
   const [user, setUser] = useState(null);
@@ -73,6 +94,7 @@ export default function AdminDashboard() {
   const [announcementDrafts, setAnnouncementDrafts] = useState({});
   const [announcementMessage, setAnnouncementMessage] = useState('');
   const [copiedItemSummary, setCopiedItemSummary] = useState(false);
+  const [copiedTodayOrders, setCopiedTodayOrders] = useState(false);
 
   useEffect(() => {
     // Check authentication and role
@@ -506,7 +528,7 @@ export default function AdminDashboard() {
   };
   const copyTodayItemSummary = async () => {
     try {
-      await navigator.clipboard.writeText(formatTodayItemSummaryText());
+      await writeClipboardText(formatTodayItemSummaryText());
       setCopiedItemSummary(true);
       setTimeout(() => setCopiedItemSummary(false), 1600);
     } catch (err) {
@@ -544,6 +566,42 @@ export default function AdminDashboard() {
     }
   ].filter(group => group.orders.length > 0);
   const displayUserName = (name) => (name || '未命名成員').replace(/\s*\(欠款警示\)\s*/g, '').trim();
+  const getAreaOrderNumber = (groupKey, order, index) => {
+    if (groupKey === 'A' || groupKey === 'B') {
+      return `${groupKey}${String(index + 1).padStart(2, '0')}`;
+    }
+    return order.orderNumberDisplay || String(index + 1).padStart(2, '0');
+  };
+  const formatTodayOrdersCopyText = () => {
+    const orderLines = todayOrdersBySeatArea.flatMap(group => (
+      group.orders.flatMap((order, index) => {
+        const orderNumber = getAreaOrderNumber(group.key, order, index);
+        const customerLabel = `${orderNumber} ${displayUserName(order.user?.name)}`;
+        const itemLines = (order.orderItems || []).map(item => {
+          const itemName = item.menuItem?.name || '未命名品項';
+          const itemNote = (item.note || '').trim();
+          return `${itemName}${itemNote ? `(${itemNote})` : ''}*${item.quantity}`;
+        });
+
+        if (itemLines.length === 0) return [customerLabel];
+        return [
+          `${customerLabel} ${itemLines[0]}`,
+          ...itemLines.slice(1).map(itemLine => `    ${itemLine}`)
+        ];
+      })
+    ));
+
+    return [todayDate.slice(5), ...orderLines].join('\n');
+  };
+  const copyTodayOrders = async () => {
+    try {
+      await writeClipboardText(formatTodayOrdersCopyText());
+      setCopiedTodayOrders(true);
+      setTimeout(() => setCopiedTodayOrders(false), 1600);
+    } catch (err) {
+      console.error('Failed to copy today orders:', err);
+    }
+  };
 
   if (!user) {
     return (
@@ -646,8 +704,22 @@ export default function AdminDashboard() {
               </div>
 
               <div className="space-y-3">
-                <h4 className="text-sm font-bold text-[#333333] flex items-center gap-2">
-                  <i className="ti ti-users text-[#EA5B3C]"></i> 今日訂購者訂餐內容
+                <h4 className="flex items-center justify-between gap-3 text-sm font-bold text-[#333333]">
+                  <span className="flex items-center gap-2">
+                    <i className="ti ti-users text-[#EA5B3C]"></i>
+                    今日訂購者訂餐內容
+                  </span>
+                  <button
+                    type="button"
+                    onClick={copyTodayOrders}
+                    disabled={todayOrders.length === 0}
+                    className="inline-flex items-center gap-1 rounded-lg border border-[#EAE8E4] bg-white px-2.5 py-1.5 text-[11px] font-bold text-[#EA5B3C] transition-all hover:border-[#EA5B3C] disabled:cursor-not-allowed disabled:opacity-40"
+                    aria-label="複製今日訂購者訂單"
+                    title="複製今日訂購者訂單"
+                  >
+                    <i className={`ti ${copiedTodayOrders ? 'ti-check' : 'ti-copy'}`}></i>
+                    {copiedTodayOrders ? '已複製' : '複製'}
+                  </button>
                 </h4>
                 <div className="max-h-[240px] overflow-y-auto pr-1 space-y-3 kaizen-scrollbar">
                   {todayOrders.length > 0 ? todayOrdersBySeatArea.map(group => (
@@ -657,11 +729,11 @@ export default function AdminDashboard() {
                         <span className="text-[#888888]">{group.orders.length} {'\u4EBA'}</span>
                       </div>
                       <div className="space-y-3">
-                        {group.orders.map(order => (
+                        {group.orders.map((order, orderIndex) => (
                     <div key={order.id} className="flex gap-3 rounded-lg border border-[#EAE8E4] p-3 text-xs">
                       <div className="flex w-12 shrink-0 items-start justify-center">
                         <span className="inline-flex min-w-9 items-center justify-center rounded-full border border-[#EA5B3C]/20 bg-[#FFF3EF] px-2 py-1 text-[11px] font-bold text-[#EA5B3C]">
-                          {order.orderNumberDisplay || '-'}
+                          {getAreaOrderNumber(group.key, order, orderIndex)}
                         </span>
                       </div>
                       <div className="min-w-0 flex-1 space-y-2">

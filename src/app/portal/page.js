@@ -662,7 +662,7 @@ export default function PortalPage() {
                     <div className="text-right">
                       <span className="text-xs font-bold text-[#888888] block">截止訂購時間</span>
                       <span className="text-sm font-bold text-[#EA5B3C] flex items-center gap-1 mt-1 justify-end">
-                        <i className="ti ti-alarm"></i> 每日 {activeSchedule.orderDeadline} 前
+                        <i className="ti ti-alarm"></i> {activeSchedule.orderDeadline} 前
                       </span>
                     </div>
                   </div>

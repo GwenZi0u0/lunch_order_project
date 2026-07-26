@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Navbar from '@/components/Navbar';
+import LinkifiedText from '@/components/LinkifiedText';
 
 const DEFAULT_CUSTOMIZATION_OPTIONS = ['\u98ef\u5c11', '\u63db\u83dc', '\u63db\u83dc+$20'];
 const MIN_AVAILABLE_BALANCE = -200;
@@ -137,6 +138,7 @@ export default function PortalPage() {
   const [orderSuccess, setOrderSuccess] = useState('');
   const [isCumulativeTipOpen, setIsCumulativeTipOpen] = useState(false);
   const [isOrderNoteTipOpen, setIsOrderNoteTipOpen] = useState(false);
+  const [isOrderSummaryVisible, setIsOrderSummaryVisible] = useState(false);
   
   // Current system date/time check
   const [currentDateTime, setCurrentDateTime] = useState({ dateStr: '', timeStr: '' });
@@ -469,11 +471,32 @@ export default function PortalPage() {
   };
 
   const shouldShowModifyShortcut = Boolean(
-    activeSchedule?.userOrder && activeRestaurant && !isClosed() && hasOrderChanges()
+    activeSchedule?.userOrder
+      && activeRestaurant
+      && !isClosed()
+      && hasOrderChanges()
+      && !isOrderSummaryVisible
   );
   const shouldShowConfirmOrderShortcut = Boolean(
-    activeRestaurant && !activeSchedule?.userOrder && !isClosed() && calculateTotal() > 0
+    activeRestaurant
+      && !activeSchedule?.userOrder
+      && !isClosed()
+      && calculateTotal() > 0
+      && !isOrderSummaryVisible
   );
+
+  useEffect(() => {
+    const orderSummary = document.getElementById('order-summary');
+    if (!orderSummary) return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => setIsOrderSummaryVisible(entry.isIntersecting),
+      { threshold: 0.15 }
+    );
+
+    observer.observe(orderSummary);
+    return () => observer.disconnect();
+  }, [selectedDate, activeSchedule?.id]);
 
   useEffect(() => {
     document.body.classList.toggle('has-bottom-order-shortcut', shouldShowModifyShortcut || shouldShowConfirmOrderShortcut);
@@ -489,7 +512,7 @@ export default function PortalPage() {
     if (activeSchedule.userOrder && !hasOrderChanges()) return;
 
     if (projectedAvailableBalance < MIN_AVAILABLE_BALANCE) {
-      setOrderError('可用金額不可低於 -$200，請調整餐點或聯絡管理員。');
+      setOrderError('餘額不足無法點餐，請向管理員儲值。');
       return;
     }
 
@@ -845,7 +868,7 @@ export default function PortalPage() {
                       <div>
                         <span className="text-xs font-bold text-[#888888] block">截止訂購時間</span>
                         <span className="text-sm font-bold text-[#EA5B3C] flex items-center gap-1 mt-1 md:justify-end">
-                          <i className="ti ti-alarm"></i> 每日 {activeSchedule.orderDeadline} 前
+                          <i className="ti ti-alarm"></i> {activeSchedule.orderDeadline} 前
                         </span>
                       </div>
                       <div>
@@ -881,7 +904,10 @@ export default function PortalPage() {
                       </span>
                       <div className="space-y-1">
                         <div className="text-xs font-bold tracking-widest text-[#EA5B3C]">餐廳備註</div>
-                        <div className="font-bold text-[#333333]">{activeRestaurant.note}</div>
+                        <LinkifiedText
+                          value={activeRestaurant.note}
+                          className="font-bold text-[#333333]"
+                        />
                       </div>
                     </div>
                   )}
@@ -968,7 +994,7 @@ export default function PortalPage() {
           <div className="order-1 lg:order-2 space-y-6">
             <div id="order-summary" className="scroll-mt-24 bg-white border border-[#EAE8E4] rounded-xl shadow-sm p-6 lg:sticky lg:top-24 lg:max-h-[calc(100vh-8rem)] lg:flex lg:flex-col">
               <h3 className="font-bold text-base text-[#333333] border-b border-[#EAE8E4] pb-3">
-                您的訂購清單
+                訂購清單
               </h3>
 
               <div className="min-h-0 space-y-6 pt-6 lg:flex-1 lg:overflow-y-auto lg:pr-1 no-scrollbar">
@@ -1195,12 +1221,14 @@ export default function PortalPage() {
                       <div className="space-y-1.5">
                         <div className="text-right text-[11px] font-bold text-[#888888]">
                           可用金額 {projectedAvailableBalance < 0 ? '－' : ''}${Math.abs(projectedAvailableBalance)}
-                          {isBelowAvailableLimit && (
-                            <span className="ml-1 text-red-600">不可低於 -$200</span>
-                          )}
                           <span className="px-1.5 text-[#C9C3BB]">|</span>
                           儲值金 {user.balance < 0 ? '－' : ''}${Math.abs(user.balance)}
                         </div>
+                        {isBelowAvailableLimit && (
+                          <p className="text-right text-[11px] font-bold text-red-600">
+                            餘額不足無法點餐，請向管理員儲值
+                          </p>
+                        )}
                         <div className="flex justify-between items-center font-bold text-[#333333] text-sm">
                           <span>總計金額</span>
                           <span className="text-xl text-[#EA5B3C] font-bold">NT$ {calculateTotal()}</span>

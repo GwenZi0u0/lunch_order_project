@@ -3,6 +3,16 @@ import prisma from '@/lib/db';
 import { getCurrentUser } from '@/lib/auth';
 
 const DEFAULT_CUSTOMIZATION_OPTIONS = ['\u98ef\u5c11', '\u63db\u83dc', '\u63db\u83dc+$20'];
+const CLOSED_MENU_ITEMS_KEY = 'closedMenuItemIds';
+
+function parseClosedMenuItemIds(value) {
+  try {
+    const parsed = JSON.parse(value || '[]');
+    return Array.isArray(parsed) ? parsed.filter(id => typeof id === 'string') : [];
+  } catch {
+    return [];
+  }
+}
 
 function normalizeCustomizationOptions(value) {
   if (Array.isArray(value)) {
@@ -44,12 +54,19 @@ export async function GET(request) {
 
     const { searchParams } = new URL(request.url);
     const onlyActive = searchParams.get('active') !== 'false';
+    const includeUnavailable = user.role === 'admin' && searchParams.get('includeUnavailable') === 'true';
+    const closedSetting = includeUnavailable
+      ? await prisma.siteSetting.findUnique({ where: { key: CLOSED_MENU_ITEMS_KEY } })
+      : null;
+    const closedMenuItemIds = closedSetting ? parseClosedMenuItemIds(closedSetting.value) : [];
 
     const restaurants = await prisma.restaurant.findMany({
       where: onlyActive ? { isActive: true } : {},
       include: {
         menuItems: {
-          where: { isAvailable: true }
+          where: includeUnavailable
+            ? { OR: [{ isAvailable: true }, { id: { in: closedMenuItemIds } }] }
+            : { isAvailable: true }
         }
       },
       orderBy: { name: 'asc' }
@@ -85,15 +102,30 @@ export async function POST(request) {
         }
       });
 
+      const closedMenuItemIds = [];
       if (menuItems && menuItems.length > 0) {
-        await tx.menuItem.createMany({
-          data: menuItems.map(item => ({
+        for (const item of menuItems) {
+          const createdItem = await tx.menuItem.create({
+            data: {
             restaurantId: newRest.id,
             name: item.name,
             price: parseInt(item.price, 10) || 0,
             customizationOptions: serializeCustomizationOptions(item.customizationOptions),
             category: item.category || '主食',
-          }))
+            isAvailable: item.isAvailable !== false,
+            }
+          });
+          if (item.isAvailable === false) closedMenuItemIds.push(createdItem.id);
+        }
+      }
+
+      if (closedMenuItemIds.length > 0) {
+        const existingSetting = await tx.siteSetting.findUnique({ where: { key: CLOSED_MENU_ITEMS_KEY } });
+        const existingIds = existingSetting ? parseClosedMenuItemIds(existingSetting.value) : [];
+        await tx.siteSetting.upsert({
+          where: { key: CLOSED_MENU_ITEMS_KEY },
+          update: { value: JSON.stringify([...new Set([...existingIds, ...closedMenuItemIds])]) },
+          create: { key: CLOSED_MENU_ITEMS_KEY, value: JSON.stringify(closedMenuItemIds) },
         });
       }
 
@@ -136,33 +168,62 @@ export async function PUT(request) {
         }
       });
 
-      await tx.menuItem.updateMany({
-        where: { restaurantId: id },
-        data: { isAvailable: false }
+      const setting = await tx.siteSetting.findUnique({ where: { key: CLOSED_MENU_ITEMS_KEY } });
+      const closedIds = new Set(setting ? parseClosedMenuItemIds(setting.value) : []);
+      const retainedIds = (menuItems || []).map(item => item.id).filter(Boolean);
+      const removedWhere = {
+        restaurantId: id,
+        ...(retainedIds.length > 0 ? { id: { notIn: retainedIds } } : {}),
+      };
+      const removedItems = await tx.menuItem.findMany({
+        where: removedWhere,
+        select: { id: true },
       });
 
-      if (menuItems && menuItems.length > 0) {
-        await tx.menuItem.createMany({
-          data: menuItems.map(item => ({
-            restaurantId: id,
-            name: item.name,
-            price: parseInt(item.price, 10) || 0,
-            customizationOptions: serializeCustomizationOptions(item.customizationOptions),
-            category: item.category || '主食',
-          }))
-        });
+      await tx.menuItem.updateMany({
+        where: removedWhere,
+        data: { isAvailable: false },
+      });
+      removedItems.forEach(item => closedIds.delete(item.id));
+
+      for (const item of menuItems || []) {
+        const itemData = {
+          name: item.name,
+          price: parseInt(item.price, 10) || 0,
+          customizationOptions: serializeCustomizationOptions(item.customizationOptions),
+          category: item.category || '主食',
+          isAvailable: item.isAvailable !== false,
+        };
+
+        let menuItemId = item.id;
+        if (menuItemId) {
+          await tx.menuItem.updateMany({
+            where: { id: menuItemId, restaurantId: id },
+            data: itemData,
+          });
+        } else {
+          const createdItem = await tx.menuItem.create({
+            data: { ...itemData, restaurantId: id },
+          });
+          menuItemId = createdItem.id;
+        }
+
+        if (itemData.isAvailable) closedIds.delete(menuItemId);
+        else closedIds.add(menuItemId);
       }
+
+      await tx.siteSetting.upsert({
+        where: { key: CLOSED_MENU_ITEMS_KEY },
+        update: { value: JSON.stringify([...closedIds]) },
+        create: { key: CLOSED_MENU_ITEMS_KEY, value: JSON.stringify([...closedIds]) },
+      });
 
       return updatedRest;
     });
 
     const finalRestaurant = await prisma.restaurant.findUnique({
       where: { id: restaurant.id },
-      include: {
-        menuItems: {
-          where: { isAvailable: true }
-        }
-      }
+      include: { menuItems: true }
     });
 
     return NextResponse.json(finalRestaurant);

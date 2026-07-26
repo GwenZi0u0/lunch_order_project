@@ -77,6 +77,52 @@ export async function GET(request) {
 
     const { searchParams } = new URL(request.url);
     const scheduleId = searchParams.get('scheduleId');
+    const scope = searchParams.get('scope');
+
+    if (scope === 'company') {
+      if (!scheduleId) {
+        return NextResponse.json({ error: 'scheduleId is required' }, { status: 400 });
+      }
+
+      const orders = await prisma.order.findMany({
+        where: {
+          scheduleId,
+          status: { not: 'cancelled' }
+        },
+        orderBy: { orderNumber: 'asc' },
+        select: {
+          id: true,
+          orderNumber: true,
+          seatArea: true,
+          user: {
+            select: { name: true }
+          },
+          orderItems: {
+            select: {
+              id: true,
+              quantity: true,
+              note: true,
+              menuItem: {
+                select: { name: true }
+              }
+            }
+          }
+        }
+      });
+
+      return NextResponse.json(orders.map(order => ({
+        id: order.id,
+        orderNumberDisplay: formatOrderNumberDisplay(order.orderNumber),
+        seatArea: order.seatArea,
+        userName: order.user.name,
+        items: order.orderItems.map(item => ({
+          id: item.id,
+          name: item.menuItem.name,
+          quantity: item.quantity,
+          note: item.note
+        }))
+      })));
+    }
 
     if (user.role === 'admin') {
       // Admins can fetch all orders for a schedule

@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Navbar from '@/components/Navbar';
+import LinkifiedText from '@/components/LinkifiedText';
 
 const DEFAULT_CUSTOMIZATION_OPTIONS = ['\u98ef\u5c11', '\u63db\u83dc', '\u63db\u83dc+$20'];
 
@@ -66,6 +67,11 @@ export default function RestaurantsPage() {
   const [jsonInput, setJsonInput] = useState('');
   const [editingRestaurantId, setEditingRestaurantId] = useState('');
   const [editingOriginalData, setEditingOriginalData] = useState(null);
+  const [editingMenuItemIndex, setEditingMenuItemIndex] = useState(null);
+  const [editingMenuItemOriginal, setEditingMenuItemOriginal] = useState(null);
+  const [discardMenuItemDialogOpen, setDiscardMenuItemDialogOpen] = useState(false);
+  const [restaurantToDelete, setRestaurantToDelete] = useState(null);
+  const [isDeletingRestaurant, setIsDeletingRestaurant] = useState(false);
 
   const buildComparableRestaurant = (name, phone, note, items) => ({
     name: (name || '').trim(),
@@ -76,6 +82,7 @@ export default function RestaurantsPage() {
       price: parseInt(item.price, 10) || 0,
       category: (item.category || '').trim(),
       customizationOptions: normalizeCustomizationOptions(item.customizationOptions),
+      isAvailable: item.isAvailable !== false,
     })),
   });
 
@@ -103,7 +110,7 @@ export default function RestaurantsPage() {
   }, []);
 
   const fetchRestaurants = () => {
-    fetch('/api/restaurants')
+    fetch('/api/restaurants?includeUnavailable=true')
       .then(res => res.json())
       .then(data => {
         if (Array.isArray(data)) {
@@ -126,6 +133,7 @@ export default function RestaurantsPage() {
       name: item['品項'] || item.name || '',
       price: Number(item['價格'] ?? item.price ?? 0),
       customizationOptions: normalizeCustomizationOptions(item['客製化選項'] || item.customizationOptions),
+      isAvailable: item['開放'] ?? item.isAvailable ?? true,
     })).filter(item => item.name && Number.isFinite(item.price) && item.price > 0);
 
     if (normalizedItems.length === 0) {
@@ -152,12 +160,16 @@ export default function RestaurantsPage() {
       setNewRestPhone(parsed.phone);
       setNewRestNote(parsed.note);
       setMenuItems(parsed.menuItems);
-      setJsonDialogOpen(false);
+      setEditingMenuItemIndex(null);
       setStatusMsg({ text: 'JSON 匯入完成！請在下方表格中校對確認項目。', type: 'success' });
     } catch (err) {
-      setStatusMsg({ text: err.message || 'JSON 匯入失敗', type: 'error' });
+      const errorMessage = err instanceof SyntaxError
+        ? 'JSON 格式錯誤，請重新檢查。'
+        : (err.message || 'JSON 匯入失敗');
+      setStatusMsg({ text: errorMessage, type: 'error' });
     } finally {
       setOcrLoading(false);
+      setJsonDialogOpen(false);
     }
   };
 
@@ -173,7 +185,21 @@ export default function RestaurantsPage() {
   };
 
   const openJsonDialog = () => {
-    setJsonInput('');
+    const currentJson = {
+      餐廳: newRestName,
+      電話: newRestPhone,
+      備註: newRestNote,
+      品項列表: menuItems.map(item => ({
+        類型: item.category || '主食',
+        品項: item.name,
+        價格: Number(item.price) || 0,
+        客製化選項: normalizeCustomizationOptions(item.customizationOptions),
+        開放: item.isAvailable !== false,
+      })),
+    };
+    setJsonInput(newRestName || menuItems.length > 0
+      ? JSON.stringify(currentJson, null, 2)
+      : '');
     setJsonDialogOpen(true);
     setStatusMsg({ text: '', type: '' });
   };
@@ -232,11 +258,58 @@ export default function RestaurantsPage() {
   };
 
   const handleAddMenuItem = () => {
-    setMenuItems(prev => [{ name: '', price: 0, category: '餐盒', customizationOptions: DEFAULT_CUSTOMIZATION_OPTIONS }, ...prev]);
+    const newItem = { name: '', price: 0, category: '餐盒', customizationOptions: DEFAULT_CUSTOMIZATION_OPTIONS, isAvailable: true };
+    setMenuItems(prev => [newItem, ...prev]);
+    setEditingMenuItemIndex(0);
+    setEditingMenuItemOriginal({ ...newItem, customizationOptions: [...newItem.customizationOptions] });
   };
 
   const handleRemoveMenuItem = (index) => {
     setMenuItems(prev => prev.filter((_, i) => i !== index));
+    setEditingMenuItemIndex(current => current === index ? null : current);
+    if (editingMenuItemIndex === index) setEditingMenuItemOriginal(null);
+  };
+
+  const handleToggleMenuItem = (index) => {
+    handleMenuItemChange(index, 'isAvailable', menuItems[index].isAvailable === false);
+  };
+
+  const handleStartMenuItemEdit = (index) => {
+    if (editingMenuItemIndex !== null) return;
+    const item = menuItems[index];
+    setEditingMenuItemIndex(index);
+    setEditingMenuItemOriginal({
+      ...item,
+      customizationOptions: [...normalizeCustomizationOptions(item.customizationOptions)],
+    });
+  };
+
+  const handleConfirmMenuItemEdit = () => {
+    setEditingMenuItemIndex(null);
+    setEditingMenuItemOriginal(null);
+  };
+
+  const handleCancelMenuItemEdit = () => {
+    if (editingMenuItemIndex === null || !editingMenuItemOriginal) return;
+    const currentItem = menuItems[editingMenuItemIndex];
+    const hasChanges = JSON.stringify(currentItem) !== JSON.stringify(editingMenuItemOriginal);
+
+    if (hasChanges) {
+      setDiscardMenuItemDialogOpen(true);
+      return;
+    }
+
+    handleConfirmMenuItemEdit();
+  };
+
+  const handleDiscardMenuItemChanges = () => {
+    setMenuItems(prev => prev.map((item, index) => (
+      index === editingMenuItemIndex
+        ? { ...editingMenuItemOriginal, customizationOptions: [...normalizeCustomizationOptions(editingMenuItemOriginal.customizationOptions)] }
+        : item
+    )));
+    setDiscardMenuItemDialogOpen(false);
+    handleConfirmMenuItemEdit();
   };
 
   const resetRestaurantForm = () => {
@@ -246,15 +319,20 @@ export default function RestaurantsPage() {
     setNewRestPhone('');
     setNewRestNote('');
     setMenuItems([]);
+    setEditingMenuItemIndex(null);
+    setEditingMenuItemOriginal(null);
+    setDiscardMenuItemDialogOpen(false);
     setOcrWarning('');
   };
 
   const handleEditRestaurant = (restaurant) => {
     const editableItems = (restaurant.menuItems || []).map(item => ({
+      id: item.id,
       name: item.name,
       price: item.price,
       category: item.category || '',
       customizationOptions: normalizeCustomizationOptions(item.customizationOptions),
+      isAvailable: item.isAvailable !== false,
     }));
 
     setEditingRestaurantId(restaurant.id);
@@ -262,6 +340,8 @@ export default function RestaurantsPage() {
     setNewRestPhone(restaurant.phone || '');
     setNewRestNote(restaurant.note || '');
     setMenuItems(editableItems);
+    setEditingMenuItemIndex(null);
+    setEditingMenuItemOriginal(null);
     setEditingOriginalData(buildComparableRestaurant(
       restaurant.name,
       restaurant.phone,
@@ -280,9 +360,10 @@ export default function RestaurantsPage() {
     resetRestaurantForm();
   };
 
-  const handleDeleteRestaurant = async (restaurant) => {
-    if (!window.confirm(`確定要刪除「${restaurant.name}」嗎？`)) return;
-
+  const handleDeleteRestaurant = async () => {
+    if (!restaurantToDelete) return;
+    const restaurant = restaurantToDelete;
+    setIsDeletingRestaurant(true);
     setStatusMsg({ text: '', type: '' });
 
     try {
@@ -300,9 +381,12 @@ export default function RestaurantsPage() {
       }
 
       setStatusMsg({ text: '餐廳已刪除。', type: 'success' });
+      setRestaurantToDelete(null);
       fetchRestaurants();
     } catch (err) {
       setStatusMsg({ text: err.message, type: 'error' });
+    } finally {
+      setIsDeletingRestaurant(false);
     }
   };
 
@@ -378,11 +462,11 @@ export default function RestaurantsPage() {
           </button>
         </div>
 
-        <section className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <section className="grid grid-cols-1 gap-8 lg:grid-cols-[240px_minmax(0,1fr)] lg:gap-6">
           
           {/* Active Restaurants List (Col-span 1) */}
           <div className="space-y-6">
-            <div className="bg-white border border-[#EAE8E4] rounded-xl shadow-sm p-6 space-y-4">
+            <div className="bg-white border border-[#EAE8E4] rounded-xl shadow-sm p-6 space-y-4 lg:p-4 lg:space-y-3">
               <h3 className="font-bold text-sm text-[#333333] border-b border-[#EAE8E4] pb-3 flex justify-between items-center">
                 <span>現有餐廳列表</span>
                 <span className="text-xs font-bold text-[#888888]">共 {restaurants.length} 家</span>
@@ -395,10 +479,10 @@ export default function RestaurantsPage() {
                   restaurants.map(rest => (
                     <div 
                       key={rest.id} 
-                      className="p-4 bg-[#F9F8F5] border border-[#EAE8E4] rounded-xl space-y-2 hover:border-[#EA5B3C] transition-all"
+                      className="p-4 bg-[#F9F8F5] border border-[#EAE8E4] rounded-xl space-y-2 hover:border-[#EA5B3C] transition-all lg:p-3"
                     >
                       <div className="flex justify-between items-center">
-                        <span className="font-bold text-sm text-[#333333] truncate max-w-[150px]">{rest.name}</span>
+                        <span className="max-w-[150px] truncate text-sm font-bold text-[#333333] lg:max-w-[115px]">{rest.name}</span>
                         <div className="flex items-center gap-1">
                           <button
                             type="button"
@@ -410,7 +494,7 @@ export default function RestaurantsPage() {
                           </button>
                           <button
                             type="button"
-                            onClick={() => handleDeleteRestaurant(rest)}
+                            onClick={() => setRestaurantToDelete(rest)}
                             className="w-7 h-7 rounded-full border border-[#EAE8E4] bg-white text-red-600 hover:border-red-200 hover:bg-red-50 flex items-center justify-center transition-all"
                             aria-label={`刪除 ${rest.name}`}
                           >
@@ -436,7 +520,7 @@ export default function RestaurantsPage() {
           </div>
 
           {/* JSON Import and Add Menu Panel (Col-span 2) */}
-          <div className="lg:col-span-2 space-y-6">
+          <div className="space-y-6">
             <div className="c-box space-y-6">
               <h3 className="font-bold text-base text-[#333333] border-b border-[#EAE8E4] pb-3 flex items-center justify-between">
                 <span className="flex items-center gap-2">
@@ -450,11 +534,11 @@ export default function RestaurantsPage() {
                     onClick={openJsonDialog}
                     disabled={ocrLoading}
                     className="h-9 w-9 rounded-lg bg-[#EA5B3C] text-xs font-bold text-white shadow-sm transition-all flex items-center justify-center hover:bg-[#333333] disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto sm:px-4 sm:py-2 sm:gap-1.5"
-                    title={ocrLoading ? '匯入中' : '匯入 JSON'}
-                    aria-label={ocrLoading ? '匯入中' : '匯入 JSON'}
+                    title={ocrLoading ? '載入中' : 'JSON 檔'}
+                    aria-label={ocrLoading ? '載入中' : 'JSON 檔'}
                   >
                     <i className="ti ti-file-import"></i>
-                    <span className="hidden sm:inline">{ocrLoading ? '匯入中...' : '匯入 JSON'}</span>
+                    <span className="hidden sm:inline">{ocrLoading ? '載入中...' : 'JSON 檔'}</span>
                   </button>
                   <button
                     type="button"
@@ -535,12 +619,21 @@ export default function RestaurantsPage() {
 
               <div className="space-y-1">
                 <label className="text-xs font-bold text-[#888888]">外送規則與備註 (最低消費限制、附湯說明等)</label>
-                <input
-                  type="text"
+                <textarea
+                  rows={3}
                   value={newRestNote}
                   onChange={(e) => setNewRestNote(e.target.value)}
-                  className="w-full text-xs px-3 py-2 border border-[#EAE8E4] rounded-lg focus:outline-none focus:border-[#EA5B3C] bg-white font-medium"
+                  placeholder="可直接貼上網址，或使用 Markdown：[連結文字](https://example.com)"
+                  className="w-full resize-y text-xs px-3 py-2 border border-[#EAE8E4] rounded-lg focus:outline-none focus:border-[#EA5B3C] bg-white font-medium"
                 />
+                {newRestNote.trim() && (
+                  <div className="rounded-lg border border-[#EAE8E4] bg-[#F9F8F5] px-3 py-2">
+                    <div className="mb-1 text-[10px] font-bold tracking-wider text-[#888888]">內容預覽</div>
+                    <div className="whitespace-pre-wrap break-words text-xs leading-5 text-[#555555]">
+                      <LinkifiedText value={newRestNote} />
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Editable Menu Items Table */}
@@ -571,54 +664,124 @@ export default function RestaurantsPage() {
                           <th className="p-3 w-[120px]">單價 (NT$)</th>
                           <th className="p-3 w-[150px]">類型</th>
                           <th className="p-3 min-w-[220px]">客製化選項</th>
-                          <th className="sticky right-0 z-10 w-[70px] border-l border-[#EAE8E4] bg-[#F9F8F5] p-3 text-center">操作</th>
+                          <th className="sticky right-0 z-10 w-[148px] border-l border-[#EAE8E4] bg-[#F9F8F5] p-3 text-center">操作</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-[#EAE8E4] text-[#333333]">
-                        {menuItems.map((item, index) => (
-                          <tr key={index} className="hover:bg-[#F9F8F5]/30">
+                        {menuItems.map((item, index) => {
+                          const isEditing = editingMenuItemIndex === index;
+                          const isAvailable = item.isAvailable !== false;
+                          const itemLabel = item.name || '未命名品項';
+
+                          return (
+                          <tr
+                            key={item.id || `new-${index}`}
+                            className={isAvailable ? 'hover:bg-[#F9F8F5]/30' : 'bg-[#F4F3F1] text-[#999999]'}
+                          >
                             <td className="p-2">
-                              <input
+                              {isEditing ? <input
                                 type="text"
                                 value={item.name}
                                 onChange={(e) => handleMenuItemChange(index, 'name', e.target.value)}
                                 className="w-full text-xs px-2 py-1.5 border border-[#EAE8E4] rounded focus:outline-none focus:border-[#EA5B3C] bg-white font-medium"
-                              />
+                              /> : (
+                                <div className="flex items-center px-2 py-1.5">
+                                  <span className="font-bold">{itemLabel}</span>
+                                </div>
+                              )}
                             </td>
                             <td className="p-2">
-                              <input
+                              {isEditing ? <input
                                 type="number"
                                 value={item.price}
                                 onChange={(e) => handleMenuItemChange(index, 'price', parseInt(e.target.value, 10) || 0)}
                                 className="w-full text-xs px-2 py-1.5 border border-[#EAE8E4] rounded focus:outline-none focus:border-[#EA5B3C] bg-white font-bold"
-                              />
+                              /> : <span className="block px-2 py-1.5 font-bold">NT$ {item.price}</span>}
                             </td>
                             <td className="p-2">
-                              <input
+                              {isEditing ? <input
                                 type="text"
                                 value={item.category || ''}
                                 onChange={(e) => handleMenuItemChange(index, 'category', e.target.value)}
                                 className="w-full text-xs px-2 py-1.5 border border-[#EAE8E4] rounded focus:outline-none focus:border-[#EA5B3C] bg-white font-medium"
-                              />
+                              /> : <span className="block px-2 py-1.5">{item.category || '主食'}</span>}
                             </td>
                             <td className="p-2">
-                              <input
+                              {isEditing ? <input
                                 type="text"
                                 value={optionsToInputValue(item.customizationOptions)}
                                 onChange={(e) => handleMenuItemChange(index, 'customizationOptions', normalizeCustomizationOptions(e.target.value))}
                                 className="w-full text-xs px-2 py-1.5 border border-[#EAE8E4] rounded focus:outline-none focus:border-[#EA5B3C] bg-white font-medium"
-                              />
+                              /> : (
+                                <span className="block truncate px-2 py-1.5" title={optionsToInputValue(item.customizationOptions)}>
+                                  {optionsToInputValue(item.customizationOptions) || '—'}
+                                </span>
+                              )}
                             </td>
-                            <td className="sticky right-0 border-l border-[#EAE8E4] bg-white p-2 text-center">
+                            <td className={`sticky right-0 border-l border-[#EAE8E4] p-2 ${
+                              isAvailable ? 'bg-white' : 'bg-[#F4F3F1]'
+                            }`}>
+                              <div className="flex items-center justify-center gap-1">
                               <button
+                                type="button"
+                                onClick={() => handleToggleMenuItem(index)}
+                                className={`flex h-7 w-7 items-center justify-center rounded-full border transition-all ${
+                                  isAvailable
+                                    ? 'border-green-200 text-green-700 hover:bg-green-50'
+                                    : 'border-gray-300 text-gray-500 hover:bg-white'
+                                }`}
+                                aria-label={`${isAvailable ? '關閉' : '開放'} ${itemLabel}`}
+                                title={isAvailable ? '關閉品項' : '開放品項'}
+                              >
+                                <i className={`ti ${isAvailable ? 'ti-eye' : 'ti-eye-off'}`}></i>
+                              </button>
+                              {isEditing ? (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={handleCancelMenuItemEdit}
+                                    className="flex h-7 w-7 items-center justify-center rounded-full border border-[#D6D1CA] bg-white text-[#777777] transition-all hover:border-red-300 hover:bg-red-50 hover:text-red-600"
+                                    aria-label={`取消編輯 ${itemLabel}`}
+                                    title="取消編輯"
+                                  >
+                                    <i className="ti ti-x"></i>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={handleConfirmMenuItemEdit}
+                                    className="flex h-7 w-7 items-center justify-center rounded-full border border-green-600 bg-green-600 text-white transition-all hover:bg-green-700"
+                                    aria-label={`確認編輯 ${itemLabel}`}
+                                    title="確認編輯"
+                                  >
+                                    <i className="ti ti-check"></i>
+                                  </button>
+                                </>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => handleStartMenuItemEdit(index)}
+                                  disabled={editingMenuItemIndex !== null}
+                                  className="flex h-7 w-7 items-center justify-center rounded-full border border-[#D6D1CA] text-[#555555] transition-all hover:border-[#EA5B3C] hover:text-[#EA5B3C] disabled:cursor-not-allowed disabled:opacity-35"
+                                  aria-label={`編輯 ${itemLabel}`}
+                                  title={editingMenuItemIndex !== null ? '請先完成目前品項編輯' : '編輯品項'}
+                                >
+                                  <i className="ti ti-pencil"></i>
+                                </button>
+                              )}
+                              <button
+                                type="button"
                                 onClick={() => handleRemoveMenuItem(index)}
-                                className="w-7 h-7 text-red-600 hover:bg-red-50 border border-transparent hover:border-red-200 rounded-full flex items-center justify-center transition-all mx-auto"
+                                className="flex h-7 w-7 items-center justify-center rounded-full border border-transparent text-red-600 transition-all hover:border-red-200 hover:bg-red-50"
+                                aria-label={`刪除 ${itemLabel}`}
+                                title="刪除品項"
                               >
                                 <i className="ti ti-trash"></i>
                               </button>
+                              </div>
                             </td>
                           </tr>
-                        ))}
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -645,13 +808,110 @@ export default function RestaurantsPage() {
 
       </main>
 
+      {restaurantToDelete && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 px-4">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-restaurant-title"
+            className="w-full max-w-[420px] overflow-hidden rounded-xl border border-[#EAE8E4] bg-white shadow-2xl"
+          >
+            <div className="flex items-center justify-between border-b border-[#EAE8E4] px-6 py-4">
+              <h3 id="delete-restaurant-title" className="flex items-center gap-2 text-base font-bold text-[#333333]">
+                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-red-50 text-red-600">
+                  <i className="ti ti-trash"></i>
+                </span>
+                刪除餐廳
+              </h3>
+              <button
+                type="button"
+                onClick={() => setRestaurantToDelete(null)}
+                disabled={isDeletingRestaurant}
+                className="flex h-8 w-8 items-center justify-center rounded-full text-[#888888] transition-all hover:bg-[#F9F8F5] hover:text-[#333333] disabled:opacity-40"
+                aria-label="關閉刪除確認"
+              >
+                <i className="ti ti-x"></i>
+              </button>
+            </div>
+            <div className="space-y-5 p-6">
+              <div className="rounded-xl border border-red-100 bg-red-50/60 p-4">
+                <p className="text-sm font-bold text-[#333333]">
+                  確定要刪除「{restaurantToDelete.name}」嗎？
+                </p>
+                <p className="mt-2 text-xs leading-relaxed text-[#777777]">
+                  刪除後，這間餐廳及其菜單將不再顯示。
+                </p>
+              </div>
+              <div className="flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setRestaurantToDelete(null)}
+                  disabled={isDeletingRestaurant}
+                  className="rounded-lg border border-[#EAE8E4] bg-white px-4 py-2 text-xs font-bold text-[#333333] transition-all hover:border-[#333333] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDeleteRestaurant}
+                  disabled={isDeletingRestaurant}
+                  className="flex items-center gap-1.5 rounded-lg bg-red-600 px-4 py-2 text-xs font-bold text-white transition-all hover:bg-[#333333] disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <i className={`ti ${isDeletingRestaurant ? 'ti-loader-2 animate-spin' : 'ti-trash'}`}></i>
+                  {isDeletingRestaurant ? '正在刪除...' : '確認刪除'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {discardMenuItemDialogOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 px-4">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="discard-menu-item-title"
+            className="w-full max-w-[420px] overflow-hidden rounded-xl border border-[#EAE8E4] bg-white shadow-2xl"
+          >
+            <div className="border-b border-[#EAE8E4] px-6 py-4">
+              <h3 id="discard-menu-item-title" className="flex items-center gap-2 text-base font-bold text-[#333333]">
+                <i className="ti ti-alert-triangle text-[#EA5B3C]"></i>
+                放棄品項變更？
+              </h3>
+            </div>
+            <div className="space-y-5 p-6">
+              <p className="text-sm leading-relaxed text-[#666666]">
+                此品項已有尚未確認的修改。放棄後會還原成編輯前的內容。
+              </p>
+              <div className="flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setDiscardMenuItemDialogOpen(false)}
+                  className="rounded-lg border border-[#EAE8E4] bg-white px-4 py-2 text-xs font-bold text-[#333333] transition-all hover:border-[#333333]"
+                >
+                  繼續編輯
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDiscardMenuItemChanges}
+                  className="rounded-lg bg-[#EA5B3C] px-4 py-2 text-xs font-bold text-white transition-all hover:bg-[#333333]"
+                >
+                  放棄變更
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {jsonDialogOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
           <div className="w-full max-w-[680px] rounded-xl bg-white shadow-2xl border border-[#EAE8E4] overflow-hidden">
             <div className="flex items-center justify-between px-6 py-4 border-b border-[#EAE8E4]">
               <h3 className="font-bold text-base text-[#333333] flex items-center gap-2">
                 <i className="ti ti-file-import text-[#EA5B3C]"></i>
-                匯入 JSON
+                編輯 JSON
               </h3>
               <button
                 type="button"
@@ -686,7 +946,7 @@ export default function RestaurantsPage() {
                     className="text-xs font-bold bg-[#EA5B3C] hover:bg-[#333333] text-white px-5 py-2 rounded-lg shadow-sm transition-all flex items-center gap-1.5 disabled:opacity-60 disabled:cursor-not-allowed"
                   >
                     <i className="ti ti-check"></i>
-                    提交匯入
+                    儲存並匯入
                   </button>
               </div>
             </div>

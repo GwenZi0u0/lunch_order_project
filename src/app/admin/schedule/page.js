@@ -758,13 +758,27 @@ export default function AdminDashboard() {
   }, {});
   const todayItems = Object.values(todayItemSummary);
   const activeOrders = activeSchedule?.orders?.filter(order => order.status !== 'cancelled') || [];
+  const sortedActiveOrders = [...activeOrders].sort((a, b) => {
+    const areaA = ['A', 'B'].includes(a.seatArea) ? a.seatArea : 'A';
+    const areaB = ['A', 'B'].includes(b.seatArea) ? b.seatArea : 'A';
+    if (areaA !== areaB) return areaA.localeCompare(areaB);
+    return (a.orderNumber || '').localeCompare(b.orderNumber || '');
+  });
+  const areaOrderDisplayById = sortedActiveOrders.reduce((displayMap, order) => {
+    const seatArea = ['A', 'B'].includes(order.seatArea) ? order.seatArea : 'A';
+    const areaCount = Array.from(displayMap.values()).filter(value => value.startsWith(seatArea)).length + 1;
+    displayMap.set(order.id, `${seatArea}${String(areaCount).padStart(2, '0')}`);
+    return displayMap;
+  }, new Map());
+  const getAreaOrderDisplayNumber = order => areaOrderDisplayById.get(order.id) || '-';
   const normalizedOrderSearchTerm = orderSearchTerm.trim().toLowerCase();
   const filteredActiveOrders = normalizedOrderSearchTerm
-    ? activeOrders.filter(order => {
+    ? sortedActiveOrders.filter(order => {
       const statusText = order.status === 'delivered' ? '\u5df2\u6263\u6b3e' : '\u5df2\u8a02\u8cfc';
       const searchableText = [
         order.orderNumber || '',
         order.orderNumberDisplay || '',
+        getAreaOrderDisplayNumber(order),
         order.user?.name || '',
         order.user?.email || '',
         String(order.totalAmount || ''),
@@ -782,7 +796,7 @@ export default function AdminDashboard() {
 
       return searchableText.includes(normalizedOrderSearchTerm);
     })
-    : activeOrders;
+    : sortedActiveOrders;
   const orderCopyGroups = activeOrders.reduce((groups, order) => {
     (order.orderItems || []).forEach(oi => {
       const note = (oi.note || '').trim();
@@ -798,11 +812,16 @@ export default function AdminDashboard() {
           name,
           note,
           qty: 0,
-          isAlaCarte
+          isAlaCarte,
+          orderNumbers: []
         };
       }
 
       groups[key].qty += oi.quantity;
+      const displayNumber = getAreaOrderDisplayNumber(order);
+      if (displayNumber !== '-' && !groups[key].orderNumbers.includes(displayNumber)) {
+        groups[key].orderNumbers.push(displayNumber);
+      }
     });
 
     return groups;
@@ -822,21 +841,28 @@ export default function AdminDashboard() {
     `共計${copyMealCount}份餐，${copyAlaCarteCount}份單點`,
     `總金額$${totalOrderAmount}`
   ].join('\n').trim();
+  const numberedOrderCopyText = orderCopyItems
+    .map(item => {
+      const sortedOrderNumbers = [...item.orderNumbers].sort((a, b) => {
+        const areaCompare = a[0].localeCompare(b[0]);
+        return areaCompare || Number(a.slice(1)) - Number(b.slice(1));
+      });
+      return `${item.name}${item.note ? ` ${item.note}` : ''} *${item.qty} [編號:${sortedOrderNumbers.join('、')}]`;
+    })
+    .join('\n');
 
-  const handleCopyOrderSummary = async () => {
-    if (!orderCopyItems.length) return;
-
+  const copyOrderText = async (text, successMessage) => {
     try {
       if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(orderCopyText);
+        await navigator.clipboard.writeText(text);
       } else {
         throw new Error('Clipboard API unavailable');
       }
-      setCopyOrderMessage('已複製訂單。');
+      setCopyOrderMessage(successMessage);
       setTimeout(() => setCopyOrderMessage(''), 3000);
     } catch (err) {
       const textarea = document.createElement('textarea');
-      textarea.value = orderCopyText;
+      textarea.value = text;
       textarea.setAttribute('readonly', '');
       textarea.style.position = 'fixed';
       textarea.style.left = '-9999px';
@@ -846,7 +872,7 @@ export default function AdminDashboard() {
 
       try {
         const copied = document.execCommand('copy');
-        setCopyOrderMessage(copied ? '已複製訂單。' : '複製失敗，請再試一次。');
+        setCopyOrderMessage(copied ? successMessage : '複製失敗，請再試一次。');
       } catch {
         setCopyOrderMessage('複製失敗，請再試一次。');
       } finally {
@@ -854,6 +880,16 @@ export default function AdminDashboard() {
         setTimeout(() => setCopyOrderMessage(''), 3000);
       }
     }
+  };
+
+  const handleCopyOrderSummary = () => {
+    if (!orderCopyItems.length) return;
+    return copyOrderText(orderCopyText, '已複製訂單。');
+  };
+
+  const handleCopyNumberedOrderSummary = () => {
+    if (!orderCopyItems.length) return;
+    return copyOrderText(numberedOrderCopyText, '已複製編號統整。');
   };
 
   if (!user) {
@@ -1356,10 +1392,21 @@ export default function AdminDashboard() {
                           type="button"
                           onClick={handleCopyOrderSummary}
                           disabled={orderCopyItems.length === 0}
-                          className="inline-flex items-center justify-center gap-1 rounded-lg border border-[#EA5B3C] bg-[#FFF3EF] px-2.5 py-1.5 text-[11px] font-bold text-[#EA5B3C] transition-all hover:bg-[#FFE7DE] disabled:cursor-not-allowed disabled:opacity-50"
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#EA5B3C] bg-[#FFF3EF] text-[#EA5B3C] transition-all hover:bg-[#FFE7DE] disabled:cursor-not-allowed disabled:opacity-50"
+                          aria-label="複製訂單"
+                          title="複製訂單"
                         >
                           <i className="ti ti-copy text-sm"></i>
-                          複製訂單
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleCopyNumberedOrderSummary}
+                          disabled={orderCopyItems.length === 0}
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#EA5B3C] bg-white text-[#EA5B3C] transition-all hover:bg-[#FFF3EF] disabled:cursor-not-allowed disabled:opacity-50"
+                          aria-label="複製編號統整"
+                          title="複製編號統整"
+                        >
+                          <i className="ti ti-list-numbers text-sm"></i>
                         </button>
                       </span>
                     </h4>
@@ -1531,7 +1578,7 @@ export default function AdminDashboard() {
                                 <tr key={order.id} className="hover:bg-[#F9F8F5]/30">
                                   <td className="p-3">
                                     <span className="inline-flex min-w-8 items-center justify-center rounded-full border border-[#EA5B3C]/20 bg-[#FFF3EF] px-2 py-0.5 text-[10px] font-bold text-[#EA5B3C]">
-                                      {order.orderNumberDisplay || '-'}
+                                      {getAreaOrderDisplayNumber(order)}
                                     </span>
                                   </td>
                                   <td className="p-3 font-bold">{order.user.name}</td>
@@ -1624,7 +1671,7 @@ export default function AdminDashboard() {
                 <div>
                   <h4 className="text-base font-bold text-[#333333]">餐點內容</h4>
                   <p className="mt-1 text-xs font-bold text-[#888888]">
-                    {selectedOrderDetail.user.name} · {selectedOrderDetail.orderNumberDisplay || '-'}
+                    {selectedOrderDetail.user.name} · {getAreaOrderDisplayNumber(selectedOrderDetail)}
                   </p>
                 </div>
                 <button

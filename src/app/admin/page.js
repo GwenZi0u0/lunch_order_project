@@ -95,6 +95,7 @@ export default function AdminDashboard() {
   const [announcementMessage, setAnnouncementMessage] = useState('');
   const [copiedItemSummary, setCopiedItemSummary] = useState(false);
   const [copiedTodayOrders, setCopiedTodayOrders] = useState(false);
+  const [todayOrdersDialogOpen, setTodayOrdersDialogOpen] = useState(false);
   const [messageFormats, setMessageFormats] = useState([]);
   const [messageFormatDialogOpen, setMessageFormatDialogOpen] = useState(false);
   const [messageFormatDraft, setMessageFormatDraft] = useState({ id: '', title: '', content: '' });
@@ -653,31 +654,29 @@ export default function AdminDashboard() {
 
     if (/A\s*[\u5340\u533A]|\uFF21\s*[\u5340\u533A]/i.test(searchableNote)) return 'A';
     if (/B\s*[\u5340\u533A]|\uFF22\s*[\u5340\u533A]/i.test(searchableNote)) return 'B';
-    return 'unassigned';
+    return 'A';
   };
+  const sortedTodayOrders = [...todayOrders].sort((a, b) => {
+    const areaA = getSeatArea(a);
+    const areaB = getSeatArea(b);
+    if (areaA !== areaB) return areaA.localeCompare(areaB);
+    return (a.orderNumber || '').localeCompare(b.orderNumber || '');
+  });
   const todayOrdersBySeatArea = [
     {
       key: 'A',
       title: 'A \u5340',
-      orders: todayOrders.filter(order => getSeatArea(order) === 'A')
+      orders: sortedTodayOrders.filter(order => getSeatArea(order) === 'A')
     },
     {
       key: 'B',
       title: 'B \u5340',
-      orders: todayOrders.filter(order => getSeatArea(order) === 'B')
-    },
-    {
-      key: 'unassigned',
-      title: '\u672A\u5206\u985E',
-      orders: todayOrders.filter(order => getSeatArea(order) === 'unassigned')
+      orders: sortedTodayOrders.filter(order => getSeatArea(order) === 'B')
     }
   ].filter(group => group.orders.length > 0);
   const displayUserName = (name) => (name || '未命名成員').replace(/\s*\(欠款警示\)\s*/g, '').trim();
   const getAreaOrderNumber = (groupKey, order, index) => {
-    if (groupKey === 'A' || groupKey === 'B') {
-      return `${groupKey}${String(index + 1).padStart(2, '0')}`;
-    }
-    return order.orderNumberDisplay || String(index + 1).padStart(2, '0');
+    return `${groupKey}${String(index + 1).padStart(2, '0')}`;
   };
   const formatTodayOrdersCopyText = () => {
     const orderLines = todayOrdersBySeatArea.flatMap(group => (
@@ -816,17 +815,28 @@ export default function AdminDashboard() {
                     <i className="ti ti-users text-[#EA5B3C]"></i>
                     今日訂購者訂餐內容
                   </span>
-                  <button
-                    type="button"
-                    onClick={copyTodayOrders}
-                    disabled={todayOrders.length === 0}
-                    className="inline-flex items-center gap-1 rounded-lg border border-[#EAE8E4] bg-white px-2.5 py-1.5 text-[11px] font-bold text-[#EA5B3C] transition-all hover:border-[#EA5B3C] disabled:cursor-not-allowed disabled:opacity-40"
-                    aria-label="複製今日訂購者訂單"
-                    title="複製今日訂購者訂單"
-                  >
-                    <i className={`ti ${copiedTodayOrders ? 'ti-check' : 'ti-copy'}`}></i>
-                    {copiedTodayOrders ? '已複製' : '複製'}
-                  </button>
+                  <span className="flex shrink-0 items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={copyTodayOrders}
+                      disabled={todayOrders.length === 0}
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#EAE8E4] bg-white text-[#EA5B3C] transition-all hover:border-[#EA5B3C] disabled:cursor-not-allowed disabled:opacity-40"
+                      aria-label="複製今日訂購者訂單"
+                      title="複製"
+                    >
+                      <i className={`ti ${copiedTodayOrders ? 'ti-check text-green-600' : 'ti-copy'}`}></i>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setTodayOrdersDialogOpen(true)}
+                      disabled={todayOrders.length === 0}
+                      className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#EAE8E4] bg-white text-[#888888] transition-all hover:border-[#EA5B3C] hover:text-[#EA5B3C] disabled:cursor-not-allowed disabled:opacity-40"
+                      aria-label="展開今日訂購者訂餐內容"
+                      title="展開"
+                    >
+                      <i className="ti ti-arrows-maximize"></i>
+                    </button>
+                  </span>
                 </h4>
                 <div className="max-h-[240px] overflow-y-auto pr-1 space-y-3 kaizen-scrollbar">
                   {todayOrders.length > 0 ? todayOrdersBySeatArea.map(group => (
@@ -1092,6 +1102,78 @@ export default function AdminDashboard() {
 
 
       </main>
+
+      {todayOrdersDialogOpen && (
+        <div
+          className="fixed inset-0 z-[60] flex items-end justify-center bg-black/40 px-4 py-4 sm:items-center"
+          onClick={() => setTodayOrdersDialogOpen(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="today-orders-dialog-title"
+            className="flex max-h-[88vh] w-full max-w-[680px] flex-col overflow-hidden rounded-xl border border-[#EAE8E4] bg-white shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-[#EAE8E4] px-5 py-4 sm:px-6">
+              <div>
+                <p className="text-xs font-bold tracking-widest text-[#888888]">{todayDate}</p>
+                <h3 id="today-orders-dialog-title" className="mt-1 flex items-center gap-2 text-lg font-bold text-[#333333]">
+                  <i className="ti ti-users text-[#EA5B3C]"></i>
+                  今日訂購者訂餐內容
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setTodayOrdersDialogOpen(false)}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#EAE8E4] bg-white text-[#888888] transition-all hover:border-[#EA5B3C] hover:text-[#EA5B3C]"
+                aria-label="關閉今日訂購者訂餐內容"
+              >
+                <i className="ti ti-x text-lg"></i>
+              </button>
+            </div>
+
+            <div className="overflow-y-auto p-5 kaizen-scrollbar sm:p-6">
+              {todayOrdersBySeatArea.map((group, groupIndex) => (
+                <section
+                  key={group.key}
+                  className={groupIndex > 0 ? 'mt-4 border-t-2 border-dashed border-[#D6D1CA] pt-4' : ''}
+                >
+                  <div className="divide-y divide-[#EAE8E4]">
+                    {group.orders.map((order, orderIndex) => (
+                      <div key={order.id} className="flex flex-wrap items-baseline gap-x-2 gap-y-1 px-1 py-3 text-sm leading-6">
+                        <span className="shrink-0 font-bold text-[#EA5B3C]">
+                          {getAreaOrderNumber(group.key, order, orderIndex)}
+                        </span>
+                        <span className="shrink-0 font-bold text-[#333333]">
+                          {displayUserName(order.user?.name)}
+                        </span>
+                        <span className="min-w-0 text-[#555555]">
+                          {(order.orderItems || []).map((item, itemIndex) => (
+                            <span key={item.id}>
+                              {itemIndex > 0 && <span className="text-[#B0AAA2]">／</span>}
+                              <span>{item.menuItem?.name || '未命名餐點'}</span>
+                              {item.quantity > 1 && (
+                                <span className="ml-0.5 font-bold text-[#EA5B3C]">*{item.quantity}</span>
+                              )}
+                              {item.note && (
+                                <span className="text-[#888888]">／備註：{item.note}</span>
+                              )}
+                            </span>
+                          ))}
+                          {order.note && (
+                            <span className="text-[#888888]">／訂單備註：{order.note}</span>
+                          )}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {messageFormatDialogOpen && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 px-4">

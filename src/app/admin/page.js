@@ -675,13 +675,16 @@ export default function AdminDashboard() {
     }
   ].filter(group => group.orders.length > 0);
   const displayUserName = (name) => (name || '未命名成員').replace(/\s*\(欠款警示\)\s*/g, '').trim();
-  const getAreaOrderNumber = (groupKey, order, index) => {
-    return `${groupKey}${String(index + 1).padStart(2, '0')}`;
+  const getAreaOrderNumber = (groupKey, order) => {
+    const rawSerial = parseInt((order.orderNumber || '').slice(-3), 10);
+    const serial = order.orderNumberDisplay
+      || (Number.isNaN(rawSerial) ? '--' : String(rawSerial).padStart(2, '0'));
+    return `${groupKey}${serial}`;
   };
   const formatTodayOrdersCopyText = () => {
     const orderLines = todayOrdersBySeatArea.flatMap(group => (
-      group.orders.flatMap((order, index) => {
-        const orderNumber = getAreaOrderNumber(group.key, order, index);
+      group.orders.flatMap(order => {
+        const orderNumber = getAreaOrderNumber(group.key, order);
         const customerLabel = `${orderNumber} ${displayUserName(order.user?.name)}`;
         const itemLines = (order.orderItems || []).map(item => {
           const itemName = item.menuItem?.name || '未命名品項';
@@ -846,11 +849,11 @@ export default function AdminDashboard() {
                         <span className="text-[#888888]">{group.orders.length} {'\u4EBA'}</span>
                       </div>
                       <div className="space-y-3">
-                        {group.orders.map((order, orderIndex) => (
+                        {group.orders.map(order => (
                     <div key={order.id} className="flex gap-3 rounded-lg border border-[#EAE8E4] p-3 text-xs">
                       <div className="flex w-12 shrink-0 items-start justify-center">
                         <span className="inline-flex min-w-9 items-center justify-center rounded-full border border-[#EA5B3C]/20 bg-[#FFF3EF] px-2 py-1 text-[11px] font-bold text-[#EA5B3C]">
-                          {getAreaOrderNumber(group.key, order, orderIndex)}
+                          {getAreaOrderNumber(group.key, order)}
                         </span>
                       </div>
                       <div className="min-w-0 flex-1 space-y-2">
@@ -1140,10 +1143,10 @@ export default function AdminDashboard() {
                   className={groupIndex > 0 ? 'mt-4 border-t-2 border-dashed border-[#D6D1CA] pt-4' : ''}
                 >
                   <div className="divide-y divide-[#EAE8E4]">
-                    {group.orders.map((order, orderIndex) => (
+                    {group.orders.map(order => (
                       <div key={order.id} className="flex flex-wrap items-baseline gap-x-2 gap-y-1 px-1 py-3 text-sm leading-6">
                         <span className="shrink-0 font-bold text-[#EA5B3C]">
-                          {getAreaOrderNumber(group.key, order, orderIndex)}
+                          {getAreaOrderNumber(group.key, order)}
                         </span>
                         <span className="shrink-0 font-bold text-[#333333]">
                           {displayUserName(order.user?.name)}

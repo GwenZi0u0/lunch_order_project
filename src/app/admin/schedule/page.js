@@ -35,6 +35,29 @@ function splitExistingItemNote(menuItem, note) {
   return { selectedOptions, note: cleanedNote };
 }
 
+function getMenuItemCategory(menuItem) {
+  return String(menuItem?.category || '\u672a\u5206\u985e').trim() || '\u672a\u5206\u985e';
+}
+
+function getMenuCategoryPriority(category) {
+  const value = String(category || '');
+  if (value.includes('\u9910\u76d2')) return 0;
+  if (value.includes('\u7fa9\u5927\u5229\u9eb5')) return 1;
+  if (/\u55ae\u9ede|\u55ae\u54c1|\u52a0\u9ede/.test(value)) return 2;
+  if (/\u98f2\u54c1|\u98f2\u6599/.test(value)) return 3;
+  return 4;
+}
+
+function getMenuItemProteinPriority(itemName) {
+  const name = String(itemName || '');
+  if (/\u96de|\u9d28|\u9d5d|\u706b\u96de/.test(name)) return 0;
+  if (/\u8c6c|\u677e\u962a|\u57f9\u6839|\u6392\u9aa8|\u91cc\u808c/.test(name)) return 1;
+  if (/\u725b/.test(name)) return 2;
+  if (/\u9b5a|\u8766|\u9bad|\u9bd6|\u9bdb|\u9c48|\u6d77\u9bae|\u82b1\u679d|\u9b77|\u900f\u62bd|\u5e72\u8c9d/.test(name)) return 3;
+  if (/\u7d20|\u852c\u98df/.test(name)) return 4;
+  return 5;
+}
+
 function formatDate(date) {
   const d = new Date(date);
   let month = '' + (d.getMonth() + 1);
@@ -169,6 +192,7 @@ export default function AdminDashboard() {
   const [orderEditor, setOrderEditor] = useState(null);
   const [memberSearchTerm, setMemberSearchTerm] = useState('');
   const [memberPickerOpen, setMemberPickerOpen] = useState(false);
+  const [orderMenuCategory, setOrderMenuCategory] = useState('');
   const [selectedOrderDetail, setSelectedOrderDetail] = useState(null);
   const [isSavingOrder, setIsSavingOrder] = useState(false);
   const [orderSearchTerm, setOrderSearchTerm] = useState('');
@@ -356,6 +380,30 @@ export default function AdminDashboard() {
   const weeklyDates = getWeeklyDates();
   const selectedDateIsHoliday = activeSchedule ? !activeSchedule.isOpen && !activeSchedule.deliveredAt : isHoliday;
   const activeMenuItems = activeSchedule?.restaurant?.menuItems || [];
+  const availableOrderMenuCategories = Array.from(new Set(activeMenuItems.map(getMenuItemCategory)));
+  const savedOrderMenuCategoryOrder = Array.isArray(activeSchedule?.restaurant?.categoryOrder)
+    ? activeSchedule.restaurant.categoryOrder.filter(category => availableOrderMenuCategories.includes(category))
+    : [];
+  const orderMenuCategories = [
+    ...savedOrderMenuCategoryOrder,
+    ...availableOrderMenuCategories
+      .filter(category => !savedOrderMenuCategoryOrder.includes(category))
+      .sort((a, b) => {
+        const priorityDifference = getMenuCategoryPriority(a) - getMenuCategoryPriority(b);
+        return priorityDifference || a.localeCompare(b, 'zh-Hant');
+      })
+  ];
+  const sortedOrderMenuItems = activeMenuItems
+    .filter(item => !orderMenuCategory || getMenuItemCategory(item) === orderMenuCategory)
+    .sort((a, b) => {
+      const categoryDifference = orderMenuCategories.indexOf(getMenuItemCategory(a))
+        - orderMenuCategories.indexOf(getMenuItemCategory(b));
+      if (categoryDifference) return categoryDifference;
+
+      const proteinDifference = getMenuItemProteinPriority(a.name) - getMenuItemProteinPriority(b.name);
+      if (proteinDifference) return proteinDifference;
+      return (a.name || '').localeCompare(b.name || '', 'zh-Hant');
+    });
   const normalizedMemberSearchTerm = memberSearchTerm.trim().toLowerCase();
   const filteredMembers = members.filter(member => {
     if (!normalizedMemberSearchTerm) return true;
@@ -419,6 +467,7 @@ export default function AdminDashboard() {
     }
     setMessage({ text: '', type: '' });
     setOrderEditor(null);
+    setOrderMenuCategory('');
   }, [selectedDate, activeSchedule]);
 
   const persistScheduleSettings = async ({
@@ -559,9 +608,11 @@ export default function AdminDashboard() {
   const startNewOrder = () => {
     setMemberSearchTerm('');
     setMemberPickerOpen(false);
+    setOrderMenuCategory('');
     setOrderEditor({
       orderId: null,
       userId: '',
+      seatArea: 'A',
       note: '',
       quantities: {},
       itemNotes: {},
@@ -583,9 +634,11 @@ export default function AdminDashboard() {
 
     setMemberSearchTerm(order.user?.name || '');
     setMemberPickerOpen(false);
+    setOrderMenuCategory('');
     setOrderEditor({
       orderId: order.id,
       userId: order.userId,
+      seatArea: ['A', 'B'].includes(order.seatArea) ? order.seatArea : 'A',
       note: order.note || '',
       quantities,
       itemNotes,
@@ -672,6 +725,7 @@ export default function AdminDashboard() {
         body: JSON.stringify({
           scheduleId: activeSchedule.id,
           targetUserId: orderEditor.userId,
+          seatArea: orderEditor.seatArea || 'A',
           items,
           note: orderEditor.note
         })
@@ -1555,7 +1609,7 @@ export default function AdminDashboard() {
 
                     {orderEditor && (
                       <div className="rounded-xl border border-[#EAE8E4] bg-[#F9F8F5] p-4 space-y-4">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
                           <div className="relative space-y-1.5">
                             <label className="text-xs font-bold text-[#888888]">{'\u6210\u54e1'}</label>
                             <div className="relative">
@@ -1592,13 +1646,48 @@ export default function AdminDashboard() {
                                     }`}
                                   >
                                     <span className="min-w-0 truncate font-bold">{member.name}</span>
-                                    {member.email && <span className="min-w-0 truncate text-[10px] text-[#888888]">{member.email}</span>}
                                   </button>
                                 )) : (
                                   <p className="px-3 py-5 text-center text-xs text-[#888888]">找不到符合的成員</p>
                                 )}
                               </div>
                             )}
+                          </div>
+                          <div className="space-y-1.5">
+                            <label className="text-xs font-bold text-[#888888]">{'\u985e\u578b'}</label>
+                            <select
+                              value={orderMenuCategory}
+                              onChange={(e) => setOrderMenuCategory(e.target.value)}
+                              className="w-full rounded-lg border border-[#EAE8E4] bg-white px-3 py-2 text-xs font-medium text-[#333333] focus:border-[#EA5B3C] focus:outline-none"
+                              aria-label={'\u7be9\u9078\u9910\u9ede\u985e\u578b'}
+                            >
+                              <option value="">{'\u5168\u90e8\u985e\u578b'}</option>
+                              {orderMenuCategories.map((category, index) => (
+                                <option key={category} value={category}>
+                                  {String(index + 1).padStart(2, '0')} {category}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="space-y-1.5">
+                            <label className="text-xs font-bold text-[#888888]">{'\u5ea7\u4f4d\u5340'}</label>
+                            <div className="grid grid-cols-2 rounded-lg border border-[#EAE8E4] bg-white p-1">
+                              {['A', 'B'].map(area => (
+                                <button
+                                  key={area}
+                                  type="button"
+                                  onClick={() => setOrderEditor(prev => ({ ...prev, seatArea: area }))}
+                                  className={`rounded-md px-3 py-1.5 text-xs font-bold transition-all ${
+                                    (orderEditor.seatArea || 'A') === area
+                                      ? 'bg-[#FFF3EF] text-[#EA5B3C] shadow-sm'
+                                      : 'text-[#888888] hover:text-[#333333]'
+                                  }`}
+                                  aria-pressed={(orderEditor.seatArea || 'A') === area}
+                                >
+                                  {area} {'\u5340'}
+                                </button>
+                              ))}
+                            </div>
                           </div>
                           <div className="space-y-1.5">
                             <label className="text-xs font-bold text-[#888888]">{'\u5099\u8a3b'}</label>
@@ -1613,7 +1702,7 @@ export default function AdminDashboard() {
                         </div>
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-72 overflow-y-auto pr-1 custom-scrollbar">
-                          {activeMenuItems.map(item => (
+                          {sortedOrderMenuItems.map(item => (
                             <div key={item.id} className="space-y-2 rounded-lg border border-[#EAE8E4] bg-white px-3 py-2">
                               <div className="flex items-center justify-between gap-3">
                                 <div className="min-w-0">
@@ -1657,6 +1746,11 @@ export default function AdminDashboard() {
                               />
                             </div>
                           ))}
+                          {sortedOrderMenuItems.length === 0 && (
+                            <div className="md:col-span-2 rounded-lg border border-dashed border-[#D6D1CA] bg-white px-4 py-8 text-center text-xs font-bold text-[#888888]">
+                              {'\u6b64\u985e\u578b\u76ee\u524d\u6c92\u6709\u53ef\u9078\u64c7\u7684\u9910\u9ede\u3002'}
+                            </div>
+                          )}
                         </div>
 
                         <div className="flex justify-end gap-2">

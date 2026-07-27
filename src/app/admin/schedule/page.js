@@ -919,13 +919,13 @@ export default function AdminDashboard() {
     if (areaA !== areaB) return areaA.localeCompare(areaB);
     return (a.orderNumber || '').localeCompare(b.orderNumber || '');
   });
-  const areaOrderDisplayById = sortedActiveOrders.reduce((displayMap, order) => {
+  const getAreaOrderDisplayNumber = order => {
     const seatArea = ['A', 'B'].includes(order.seatArea) ? order.seatArea : 'A';
-    const areaCount = Array.from(displayMap.values()).filter(value => value.startsWith(seatArea)).length + 1;
-    displayMap.set(order.id, `${seatArea}${String(areaCount).padStart(2, '0')}`);
-    return displayMap;
-  }, new Map());
-  const getAreaOrderDisplayNumber = order => areaOrderDisplayById.get(order.id) || '-';
+    const rawSerial = parseInt((order.orderNumber || '').slice(-3), 10);
+    const serial = order.orderNumberDisplay
+      || (Number.isNaN(rawSerial) ? null : String(rawSerial).padStart(2, '0'));
+    return serial ? `${seatArea}${serial}` : '-';
+  };
   const normalizedOrderSearchTerm = orderSearchTerm.trim().toLowerCase();
   const filteredActiveOrders = normalizedOrderSearchTerm
     ? sortedActiveOrders.filter(order => {

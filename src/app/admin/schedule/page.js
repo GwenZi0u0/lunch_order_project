@@ -186,6 +186,7 @@ export default function AdminDashboard() {
   
   // Scheduling state
   const [selectedRestaurantId, setSelectedRestaurantId] = useState('');
+  const [orderDeadlineDate, setOrderDeadlineDate] = useState('');
   const [orderDeadline, setOrderDeadline] = useState('09:40');
   const [isHoliday, setIsHoliday] = useState(false);
   const [savingScheduleSection, setSavingScheduleSection] = useState('');
@@ -374,6 +375,7 @@ export default function AdminDashboard() {
   };
 
   const activeSchedule = schedules.find(s => s.date === selectedDate);
+  const isScheduleLocked = Boolean(activeSchedule?.deliveredAt);
   const todayDate = formatDate(new Date());
   const isPastSelectedDate = selectedDate < todayDate;
   const todaySchedule = schedules.find(s => s.date === todayDate);
@@ -458,10 +460,12 @@ export default function AdminDashboard() {
   useEffect(() => {
     if (activeSchedule) {
       setSelectedRestaurantId(activeSchedule.restaurantId || '');
+      setOrderDeadlineDate(activeSchedule.orderDeadlineDate || activeSchedule.date);
       setOrderDeadline(activeSchedule.orderDeadline || '09:40');
       setIsHoliday(!activeSchedule.isOpen && !activeSchedule.deliveredAt);
     } else {
       setSelectedRestaurantId('');
+      setOrderDeadlineDate(selectedDate);
       setOrderDeadline('09:40');
       setIsHoliday(isWeekendDate(selectedDate));
     }
@@ -472,6 +476,7 @@ export default function AdminDashboard() {
 
   const persistScheduleSettings = async ({
     restaurantId,
+    orderDeadlineDateValue,
     orderDeadlineValue,
     isOpenValue,
     clearOrdersOnRestaurantChange,
@@ -488,6 +493,7 @@ export default function AdminDashboard() {
         body: JSON.stringify({
           date: selectedDate,
           restaurantId,
+          orderDeadlineDate: orderDeadlineDateValue || selectedDate,
           orderDeadline: orderDeadlineValue,
           isOpen: isOpenValue,
           clearOrdersOnRestaurantChange
@@ -509,6 +515,11 @@ export default function AdminDashboard() {
   };
 
   const handleSaveRestaurantSetting = async () => {
+    if (isScheduleLocked) {
+      setMessage({ text: '扣款結算完成後，無法再變更排程設定。', type: 'error' });
+      return;
+    }
+
     if (isPastSelectedDate) {
       setMessage({ text: '供餐日期已過，無法進行設定。', type: 'error' });
       return;
@@ -532,6 +543,7 @@ export default function AdminDashboard() {
 
     await persistScheduleSettings({
       restaurantId: nextRestaurantId,
+      orderDeadlineDateValue: activeSchedule?.orderDeadlineDate || orderDeadlineDate || selectedDate,
       orderDeadlineValue: activeSchedule?.orderDeadline || orderDeadline || '09:40',
       isOpenValue: !isHoliday,
       clearOrdersOnRestaurantChange: shouldClearOrders,
@@ -541,6 +553,11 @@ export default function AdminDashboard() {
   };
 
   const handleSaveDeadlineSetting = async () => {
+    if (isScheduleLocked) {
+      setMessage({ text: '扣款結算完成後，無法再變更排程設定。', type: 'error' });
+      return;
+    }
+
     if (isPastSelectedDate) {
       setMessage({ text: '供餐日期已過，無法進行設定。', type: 'error' });
       return;
@@ -556,6 +573,7 @@ export default function AdminDashboard() {
 
     await persistScheduleSettings({
       restaurantId: savedIsOpen ? savedRestaurantId : null,
+      orderDeadlineDateValue: orderDeadlineDate || selectedDate,
       orderDeadlineValue: orderDeadline || '09:40',
       isOpenValue: savedIsOpen,
       clearOrdersOnRestaurantChange: false,
@@ -1197,30 +1215,7 @@ export default function AdminDashboard() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
-                <div className="space-y-3">
-                  <h4 className="text-sm font-bold text-[#333333] border-l-4 border-l-[#EA5B3C] pl-2.5">
-                    品項總計
-                  </h4>
-                  {historyItemSummaries.length === 0 ? (
-                    <div className="text-center py-8 text-xs text-[#888888] border border-[#EAE8E4] rounded-xl bg-[#F9F8F5]">
-                      此日期沒有訂購品項。
-                    </div>
-                  ) : (
-                    <div className="space-y-2 max-h-72 overflow-y-auto pr-1 custom-scrollbar">
-                      {historyItemSummaries.map(item => (
-                        <div key={item.name} className="p-3 bg-[#F9F8F5] border border-[#EAE8E4] rounded-lg flex justify-between items-center">
-                          <div>
-                            <div className="font-bold text-xs text-[#333333]">{item.name}</div>
-                            <div className="text-[11px] text-[#888888]">NT$ {item.price}</div>
-                          </div>
-                          <div className="text-sm font-bold text-[#EA5B3C]">{item.qty} 份</div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
+              <div>
                 <div className="space-y-3">
                   <h4 className="text-sm font-bold text-[#333333] border-l-4 border-l-[#EA5B3C] pl-2.5">
                     成員訂單明細
@@ -1231,28 +1226,35 @@ export default function AdminDashboard() {
                     </div>
                   ) : (
                     <div className="overflow-x-auto border border-[#EAE8E4] rounded-xl bg-white max-h-72 overflow-y-auto custom-scrollbar">
-                      <table className="w-full text-left border-collapse text-xs">
+                      <table className="min-w-[760px] w-full table-fixed text-left border-collapse text-xs">
                         <thead className="sticky top-0 bg-[#F9F8F5] text-[#888888] font-bold border-b border-[#EAE8E4]">
                           <tr>
-                            <th className="p-3">姓名</th>
-                            <th className="p-3">餐點</th>
-                            <th className="p-3 text-right">金額</th>
-                            <th className="p-3">備註</th>
+                            <th className="w-[18%] px-4 py-3">姓名</th>
+                            <th className="w-[30%] px-4 py-3">餐點</th>
+                            <th className="w-[14%] px-4 py-3 text-center">金額</th>
+                            <th className="w-[38%] px-4 py-3">備註</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-[#EAE8E4] text-[#333333]">
                           {historyOrders.map(order => (
                             <tr key={order.id}>
-                              <td className="p-3 font-bold whitespace-nowrap">{order.user.name}</td>
-                              <td className="p-3 leading-normal">
+                              <td className="px-4 py-3 align-top font-bold leading-5">{order.user.name}</td>
+                              <td className="px-4 py-3 align-top leading-5">
                                 {order.orderItems.map(oi => (
                                   <div key={oi.id} className="font-medium">
                                     {oi.menuItem.name} <span className="text-[#888888]">x {oi.quantity}</span>
+                                    {oi.note && (
+                                      <div className="mt-0.5 text-[11px] font-bold leading-5 text-[#EA5B3C]">
+                                        {oi.note}
+                                      </div>
+                                    )}
                                   </div>
                                 ))}
                               </td>
-                              <td className="p-3 text-right font-bold text-[#EA5B3C] whitespace-nowrap">NT$ {order.totalAmount}</td>
-                              <td className="p-3 text-[#888888] italic">{order.note || '-'}</td>
+                              <td className="px-4 py-3 align-top text-center font-bold text-[#EA5B3C] whitespace-nowrap">NT$ {order.totalAmount}</td>
+                              <td className="px-4 py-3 align-top leading-5">
+                                {order.note || <span className="text-[#888888]">-</span>}
+                              </td>
                             </tr>
                           ))}
                         </tbody>
@@ -1326,7 +1328,7 @@ export default function AdminDashboard() {
                   <button
                     type="button"
                     onClick={() => setIsHoliday(prev => !prev)}
-                    disabled={isPastSelectedDate}
+                    disabled={isPastSelectedDate || isScheduleLocked}
                     className={`shrink-0 flex items-center gap-2 px-3 py-2.5 rounded-lg border text-xs font-bold transition-all ${
                       isHoliday
                         ? 'border-[#EA5B3C] bg-[#FFF3EF] text-[#EA5B3C]'
@@ -1347,7 +1349,7 @@ export default function AdminDashboard() {
                     <select
                       value={selectedRestaurantId}
                       onChange={(e) => setSelectedRestaurantId(e.target.value)}
-                      disabled={isHoliday || isPastSelectedDate}
+                      disabled={isHoliday || isPastSelectedDate || isScheduleLocked}
                       className="w-full text-xs pl-3 pr-5 py-2 border border-[#EAE8E4] rounded-lg focus:outline-none focus:border-[#EA5B3C] bg-white font-medium disabled:bg-[#F9F8F5] disabled:text-[#B8B2AA] disabled:cursor-not-allowed"
                     >
                       <option value="">-- 請選擇餐廳 --</option>
@@ -1359,7 +1361,7 @@ export default function AdminDashboard() {
                   <button
                     type="button"
                     onClick={handleSaveRestaurantSetting}
-                    disabled={isPastSelectedDate || Boolean(savingScheduleSection) || (!isHoliday && !selectedRestaurantId)}
+                    disabled={isPastSelectedDate || isScheduleLocked || Boolean(savingScheduleSection) || (!isHoliday && !selectedRestaurantId)}
                     className="shrink-0 px-4 py-3 text-xs font-bold bg-[#EA5B3C] text-white rounded-xl shadow-sm hover:bg-[#333333] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {savingScheduleSection === 'restaurant' ? '儲存中' : '儲存'}
@@ -1369,18 +1371,30 @@ export default function AdminDashboard() {
                 <div className="flex items-end gap-2">
                   <div className="min-w-0 flex-1 space-y-1.5">
                     <label className="text-xs font-bold text-[#888888]">訂單截止時間</label>
-                    <input
-                      type="time"
-                      value={orderDeadline}
-                      onChange={(e) => setOrderDeadline(e.target.value)}
-                      disabled={isPastSelectedDate}
-                      className="w-full text-xs px-3 py-2 border border-[#EAE8E4] rounded-lg focus:outline-none focus:border-[#EA5B3C] bg-white font-medium disabled:bg-[#F9F8F5] disabled:text-[#B8B2AA] disabled:cursor-not-allowed"
-                    />
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                      <input
+                        type="date"
+                        aria-label="訂單截止日期"
+                        value={orderDeadlineDate}
+                        max={selectedDate}
+                        onChange={(e) => setOrderDeadlineDate(e.target.value)}
+                        disabled={isPastSelectedDate || isScheduleLocked}
+                        className="w-full text-xs px-3 py-2 border border-[#EAE8E4] rounded-lg focus:outline-none focus:border-[#EA5B3C] bg-white font-medium disabled:bg-[#F9F8F5] disabled:text-[#B8B2AA] disabled:cursor-not-allowed"
+                      />
+                      <input
+                        type="time"
+                        aria-label="訂單截止時間"
+                        value={orderDeadline}
+                        onChange={(e) => setOrderDeadline(e.target.value)}
+                        disabled={isPastSelectedDate || isScheduleLocked}
+                        className="w-full text-xs px-3 py-2 border border-[#EAE8E4] rounded-lg focus:outline-none focus:border-[#EA5B3C] bg-white font-medium disabled:bg-[#F9F8F5] disabled:text-[#B8B2AA] disabled:cursor-not-allowed"
+                      />
+                    </div>
                   </div>
                   <button
                     type="button"
                     onClick={handleSaveDeadlineSetting}
-                    disabled={isPastSelectedDate || Boolean(savingScheduleSection)}
+                    disabled={isPastSelectedDate || isScheduleLocked || Boolean(savingScheduleSection)}
                     className="shrink-0 px-4 py-3 text-xs font-bold bg-[#EA5B3C] text-white rounded-xl shadow-sm hover:bg-[#333333] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {savingScheduleSection === 'deadline' ? '儲存中' : '儲存'}
@@ -1390,6 +1404,11 @@ export default function AdminDashboard() {
                 {isPastSelectedDate && (
                   <div className="rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-xs font-bold text-orange-700">
                     供餐日期已過，無法進行設定。
+                  </div>
+                )}
+                {isScheduleLocked && (
+                  <div className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-xs font-bold text-green-700">
+                    扣款結算已完成，排程設定已鎖定。
                   </div>
                 )}
               </div>

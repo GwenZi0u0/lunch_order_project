@@ -3,6 +3,7 @@ import prisma from '@/lib/db';
 import { getCurrentUser } from '@/lib/auth';
 
 const CATEGORY_ORDER_KEY_PREFIX = 'restaurantCategoryOrder:';
+const DEADLINE_DATE_KEY_PREFIX = 'scheduleOrderDeadlineDate:';
 
 // Helper to get date string YYYY-MM-DD
 function formatDate(date) {
@@ -83,6 +84,19 @@ export async function GET(request) {
     const categoryOrderSettings = await prisma.siteSetting.findMany({
       where: { key: { startsWith: CATEGORY_ORDER_KEY_PREFIX } }
     });
+    const deadlineDateSettings = await prisma.siteSetting.findMany({
+      where: {
+        key: {
+          in: schedules.map(schedule => `${DEADLINE_DATE_KEY_PREFIX}${schedule.date}`)
+        }
+      }
+    });
+    const deadlineDateByScheduleDate = new Map(
+      deadlineDateSettings.map(setting => [
+        setting.key.slice(DEADLINE_DATE_KEY_PREFIX.length),
+        setting.value
+      ])
+    );
     const categoryOrderByRestaurantId = new Map(categoryOrderSettings.map(setting => {
       let order = [];
       try {
@@ -106,6 +120,7 @@ export async function GET(request) {
         date: sched.date,
         restaurantId: sched.restaurantId,
         orderDeadline: sched.orderDeadline,
+        orderDeadlineDate: deadlineDateByScheduleDate.get(sched.date) || sched.date,
         isOpen: sched.isOpen,
         deliveredAt: sched.deliveredAt,
         restaurant: sched.restaurant ? {
@@ -166,12 +181,22 @@ export async function POST(request) {
     }
 
     const body = await request.json();
-    const { date, restaurantId, orderDeadline, isOpen = true, clearOrdersOnRestaurantChange = false } = body;
+    const {
+      date,
+      restaurantId,
+      orderDeadline,
+      orderDeadlineDate,
+      isOpen = true,
+      clearOrdersOnRestaurantChange = false
+    } = body;
     const scheduleIsOpen = Boolean(isOpen);
     const normalizedRestaurantId = scheduleIsOpen ? restaurantId : null;
 
     if (!date || (scheduleIsOpen && !normalizedRestaurantId)) {
       return NextResponse.json({ error: 'Date and Restaurant ID are required' }, { status: 400 });
+    }
+    if (orderDeadlineDate && orderDeadlineDate > date) {
+      return NextResponse.json({ error: '訂單截止日期不可晚於供餐日期。' }, { status: 400 });
     }
 
     const today = formatDate(new Date());
@@ -214,7 +239,7 @@ export async function POST(request) {
         });
       }
 
-      return tx.weeklySchedule.upsert({
+      const savedSchedule = await tx.weeklySchedule.upsert({
         where: { date },
         update: {
           restaurantId: normalizedRestaurantId,
@@ -228,11 +253,33 @@ export async function POST(request) {
           isOpen: scheduleIsOpen
         }
       });
+
+      if (existingSchedule?.deliveredAt) {
+        throw new Error('Delivered schedule is locked');
+      }
+
+      await tx.siteSetting.upsert({
+        where: { key: `${DEADLINE_DATE_KEY_PREFIX}${date}` },
+        update: { value: orderDeadlineDate || date },
+        create: {
+          key: `${DEADLINE_DATE_KEY_PREFIX}${date}`,
+          value: orderDeadlineDate || date
+        }
+      });
+
+      return savedSchedule;
     });
 
     return NextResponse.json(schedule);
   } catch (error) {
-    const status = error.message === 'Restaurant change requires clearing existing orders' ? 409 : 500;
+    const status = error.message === 'Restaurant change requires clearing existing orders'
+      ? 409
+      : error.message === 'Delivered schedule is locked'
+        ? 409
+        : 500;
+    if (error.message === 'Delivered schedule is locked') {
+      return NextResponse.json({ error: '扣款結算完成後，無法再變更排程設定。' }, { status });
+    }
     return NextResponse.json({ error: error.message }, { status });
   }
 }

@@ -3,6 +3,8 @@ import prisma from '@/lib/db';
 import { getCurrentUser } from '@/lib/auth';
 import { getPendingHoldAmount, MIN_AVAILABLE_BALANCE } from '@/lib/wallet';
 
+const DEADLINE_DATE_KEY_PREFIX = 'scheduleOrderDeadlineDate:';
+
 // Helper to get current Taipei/system date and time info
 function getCurrentDateTime() {
   // Format current date as YYYY-MM-DD and time as HH:MM based on local time
@@ -25,13 +27,13 @@ function getCurrentDateTime() {
 // Function to check if ordering is closed for a schedule
 function isScheduleClosed(schedule, currentDateTime) {
   const { dateStr: currentDate, timeStr: currentTime } = currentDateTime;
+  const deadlineDate = schedule.orderDeadlineDate || schedule.date;
   
-  if (currentDate > schedule.date) {
+  if (currentDate > deadlineDate) {
     return true; // Past date is closed
   }
   
-  if (currentDate === schedule.date) {
-    // Same day, check time deadline
+  if (currentDate === deadlineDate) {
     const deadline = schedule.orderDeadline || '09:40';
     return currentTime >= deadline;
   }
@@ -226,6 +228,10 @@ export async function POST(request) {
     if (!schedule) {
       return NextResponse.json({ error: 'Schedule not found' }, { status: 404 });
     }
+    const deadlineDateSetting = await prisma.siteSetting.findUnique({
+      where: { key: `${DEADLINE_DATE_KEY_PREFIX}${schedule.date}` }
+    });
+    schedule.orderDeadlineDate = deadlineDateSetting?.value || schedule.date;
 
     if (!schedule.isOpen || !schedule.restaurantId) {
       return NextResponse.json({ error: 'This date is marked as a holiday or has no restaurant scheduled' }, { status: 400 });
@@ -390,6 +396,10 @@ export async function DELETE(request) {
     if (!order) {
       return NextResponse.json({ error: 'Order not found' }, { status: 404 });
     }
+    const deadlineDateSetting = await prisma.siteSetting.findUnique({
+      where: { key: `${DEADLINE_DATE_KEY_PREFIX}${order.schedule.date}` }
+    });
+    order.schedule.orderDeadlineDate = deadlineDateSetting?.value || order.schedule.date;
 
     // Verify it is user's own order, or they are admin
     if (order.userId !== user.userId && user.role !== 'admin') {

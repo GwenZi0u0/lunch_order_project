@@ -52,7 +52,9 @@ export default function NotificationCenter() {
         if (!res.ok) return;
 
         const schedules = await res.json();
-        const todaySchedule = schedules.find(item => item.date === today);
+        const todaySchedule = schedules.find(
+          item => (item.orderDeadlineDate || item.date) === today
+        );
         if (!todaySchedule || !todaySchedule.isOpen || !todaySchedule.restaurant) return;
 
         const now = new Date();

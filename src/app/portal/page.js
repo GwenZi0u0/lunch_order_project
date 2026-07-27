@@ -261,8 +261,9 @@ export default function PortalPage() {
     if (!activeSchedule.isOpen) return true;
     
     const { dateStr: currentDate, timeStr: currentTime } = currentDateTime;
-    if (currentDate > activeSchedule.date) return true;
-    if (currentDate === activeSchedule.date) {
+    const deadlineDate = activeSchedule.orderDeadlineDate || activeSchedule.date;
+    if (currentDate > deadlineDate) return true;
+    if (currentDate === deadlineDate) {
       const deadline = activeSchedule.orderDeadline || '09:40';
       return currentTime >= deadline;
     }
@@ -671,7 +672,10 @@ export default function PortalPage() {
                     <div className="text-right">
                       <span className="text-xs font-bold text-[#888888] block">截止訂購時間</span>
                       <span className="text-sm font-bold text-[#EA5B3C] flex items-center gap-1 mt-1 justify-end">
-                        <i className="ti ti-alarm"></i> {activeSchedule.orderDeadline} 前
+                        <i className="ti ti-alarm"></i>
+                        {activeSchedule.orderDeadlineDate && activeSchedule.orderDeadlineDate !== activeSchedule.date
+                          ? `${activeSchedule.orderDeadlineDate} ${activeSchedule.orderDeadline}`
+                          : activeSchedule.orderDeadline} 前
                       </span>
                     </div>
                   </div>

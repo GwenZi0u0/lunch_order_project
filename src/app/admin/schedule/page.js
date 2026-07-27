@@ -4,6 +4,60 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Navbar from '@/components/Navbar';
 
+const DEFAULT_CUSTOMIZATION_OPTIONS = ['飯少', '換菜', '換菜+$20'];
+
+function parseCustomizationOptions(value) {
+  if (Array.isArray(value)) {
+    return value.map(option => String(option).trim()).filter(Boolean);
+  }
+
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) {
+        return parsed.map(option => String(option).trim()).filter(Boolean);
+      }
+    } catch {
+      return value.split(/[\r\n,;|]+/).map(option => option.trim()).filter(Boolean);
+    }
+  }
+
+  return DEFAULT_CUSTOMIZATION_OPTIONS;
+}
+
+function splitExistingItemNote(menuItem, note) {
+  const options = parseCustomizationOptions(menuItem?.customizationOptions);
+  const selectedOptions = options.filter(option => (note || '').includes(option));
+  const cleanedNote = selectedOptions.reduce((current, option) => {
+    return current.split(option).join(' ');
+  }, note || '').replace(/[;,\s]+/g, ' ').trim();
+
+  return { selectedOptions, note: cleanedNote };
+}
+
+function getMenuItemCategory(menuItem) {
+  return String(menuItem?.category || '\u672a\u5206\u985e').trim() || '\u672a\u5206\u985e';
+}
+
+function getMenuCategoryPriority(category) {
+  const value = String(category || '');
+  if (value.includes('\u9910\u76d2')) return 0;
+  if (value.includes('\u7fa9\u5927\u5229\u9eb5')) return 1;
+  if (/\u55ae\u9ede|\u55ae\u54c1|\u52a0\u9ede/.test(value)) return 2;
+  if (/\u98f2\u54c1|\u98f2\u6599/.test(value)) return 3;
+  return 4;
+}
+
+function getMenuItemProteinPriority(itemName) {
+  const name = String(itemName || '');
+  if (/\u96de|\u9d28|\u9d5d|\u706b\u96de/.test(name)) return 0;
+  if (/\u8c6c|\u677e\u962a|\u57f9\u6839|\u6392\u9aa8|\u91cc\u808c/.test(name)) return 1;
+  if (/\u725b/.test(name)) return 2;
+  if (/\u9b5a|\u8766|\u9bad|\u9bd6|\u9bdb|\u9c48|\u6d77\u9bae|\u82b1\u679d|\u9b77|\u900f\u62bd|\u5e72\u8c9d/.test(name)) return 3;
+  if (/\u7d20|\u852c\u98df/.test(name)) return 4;
+  return 5;
+}
+
 function formatDate(date) {
   const d = new Date(date);
   let month = '' + (d.getMonth() + 1);
@@ -132,10 +186,14 @@ export default function AdminDashboard() {
   
   // Scheduling state
   const [selectedRestaurantId, setSelectedRestaurantId] = useState('');
+  const [orderDeadlineDate, setOrderDeadlineDate] = useState('');
   const [orderDeadline, setOrderDeadline] = useState('09:40');
   const [isHoliday, setIsHoliday] = useState(false);
   const [savingScheduleSection, setSavingScheduleSection] = useState('');
   const [orderEditor, setOrderEditor] = useState(null);
+  const [memberSearchTerm, setMemberSearchTerm] = useState('');
+  const [memberPickerOpen, setMemberPickerOpen] = useState(false);
+  const [orderMenuCategory, setOrderMenuCategory] = useState('');
   const [selectedOrderDetail, setSelectedOrderDetail] = useState(null);
   const [isSavingOrder, setIsSavingOrder] = useState(false);
   const [orderSearchTerm, setOrderSearchTerm] = useState('');
@@ -224,8 +282,14 @@ export default function AdminDashboard() {
   };
 
   const fetchMembers = () => {
-    fetch('/api/wallets?action=list_users')
-      .then(res => res.json())
+    fetch('/api/wallets?action=list_members')
+      .then(async res => {
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.error || 'Failed to load members');
+        }
+        return data;
+      })
       .then(data => {
         if (Array.isArray(data)) {
           setMembers(data);
@@ -311,12 +375,44 @@ export default function AdminDashboard() {
   };
 
   const activeSchedule = schedules.find(s => s.date === selectedDate);
+  const isScheduleLocked = Boolean(activeSchedule?.deliveredAt);
   const todayDate = formatDate(new Date());
   const isPastSelectedDate = selectedDate < todayDate;
   const todaySchedule = schedules.find(s => s.date === todayDate);
   const weeklyDates = getWeeklyDates();
   const selectedDateIsHoliday = activeSchedule ? !activeSchedule.isOpen && !activeSchedule.deliveredAt : isHoliday;
   const activeMenuItems = activeSchedule?.restaurant?.menuItems || [];
+  const availableOrderMenuCategories = Array.from(new Set(activeMenuItems.map(getMenuItemCategory)));
+  const savedOrderMenuCategoryOrder = Array.isArray(activeSchedule?.restaurant?.categoryOrder)
+    ? activeSchedule.restaurant.categoryOrder.filter(category => availableOrderMenuCategories.includes(category))
+    : [];
+  const orderMenuCategories = [
+    ...savedOrderMenuCategoryOrder,
+    ...availableOrderMenuCategories
+      .filter(category => !savedOrderMenuCategoryOrder.includes(category))
+      .sort((a, b) => {
+        const priorityDifference = getMenuCategoryPriority(a) - getMenuCategoryPriority(b);
+        return priorityDifference || a.localeCompare(b, 'zh-Hant');
+      })
+  ];
+  const sortedOrderMenuItems = activeMenuItems
+    .filter(item => !orderMenuCategory || getMenuItemCategory(item) === orderMenuCategory)
+    .sort((a, b) => {
+      const categoryDifference = orderMenuCategories.indexOf(getMenuItemCategory(a))
+        - orderMenuCategories.indexOf(getMenuItemCategory(b));
+      if (categoryDifference) return categoryDifference;
+
+      const proteinDifference = getMenuItemProteinPriority(a.name) - getMenuItemProteinPriority(b.name);
+      if (proteinDifference) return proteinDifference;
+      return (a.name || '').localeCompare(b.name || '', 'zh-Hant');
+    });
+  const normalizedMemberSearchTerm = memberSearchTerm.trim().toLowerCase();
+  const filteredMembers = members.filter(member => {
+    if (!normalizedMemberSearchTerm) return true;
+    return [member.name, member.email]
+      .filter(Boolean)
+      .some(value => value.toLowerCase().includes(normalizedMemberSearchTerm));
+  });
 
   const handleWeekTabChange = (weekTab) => {
     setActiveWeekTab(weekTab);
@@ -364,19 +460,23 @@ export default function AdminDashboard() {
   useEffect(() => {
     if (activeSchedule) {
       setSelectedRestaurantId(activeSchedule.restaurantId || '');
+      setOrderDeadlineDate(activeSchedule.orderDeadlineDate || activeSchedule.date);
       setOrderDeadline(activeSchedule.orderDeadline || '09:40');
       setIsHoliday(!activeSchedule.isOpen && !activeSchedule.deliveredAt);
     } else {
       setSelectedRestaurantId('');
+      setOrderDeadlineDate(selectedDate);
       setOrderDeadline('09:40');
       setIsHoliday(isWeekendDate(selectedDate));
     }
     setMessage({ text: '', type: '' });
     setOrderEditor(null);
+    setOrderMenuCategory('');
   }, [selectedDate, activeSchedule]);
 
   const persistScheduleSettings = async ({
     restaurantId,
+    orderDeadlineDateValue,
     orderDeadlineValue,
     isOpenValue,
     clearOrdersOnRestaurantChange,
@@ -393,6 +493,7 @@ export default function AdminDashboard() {
         body: JSON.stringify({
           date: selectedDate,
           restaurantId,
+          orderDeadlineDate: orderDeadlineDateValue || selectedDate,
           orderDeadline: orderDeadlineValue,
           isOpen: isOpenValue,
           clearOrdersOnRestaurantChange
@@ -414,6 +515,11 @@ export default function AdminDashboard() {
   };
 
   const handleSaveRestaurantSetting = async () => {
+    if (isScheduleLocked) {
+      setMessage({ text: '扣款結算完成後，無法再變更排程設定。', type: 'error' });
+      return;
+    }
+
     if (isPastSelectedDate) {
       setMessage({ text: '供餐日期已過，無法進行設定。', type: 'error' });
       return;
@@ -437,6 +543,7 @@ export default function AdminDashboard() {
 
     await persistScheduleSettings({
       restaurantId: nextRestaurantId,
+      orderDeadlineDateValue: activeSchedule?.orderDeadlineDate || orderDeadlineDate || selectedDate,
       orderDeadlineValue: activeSchedule?.orderDeadline || orderDeadline || '09:40',
       isOpenValue: !isHoliday,
       clearOrdersOnRestaurantChange: shouldClearOrders,
@@ -446,6 +553,11 @@ export default function AdminDashboard() {
   };
 
   const handleSaveDeadlineSetting = async () => {
+    if (isScheduleLocked) {
+      setMessage({ text: '扣款結算完成後，無法再變更排程設定。', type: 'error' });
+      return;
+    }
+
     if (isPastSelectedDate) {
       setMessage({ text: '供餐日期已過，無法進行設定。', type: 'error' });
       return;
@@ -461,6 +573,7 @@ export default function AdminDashboard() {
 
     await persistScheduleSettings({
       restaurantId: savedIsOpen ? savedRestaurantId : null,
+      orderDeadlineDateValue: orderDeadlineDate || selectedDate,
       orderDeadlineValue: orderDeadline || '09:40',
       isOpenValue: savedIsOpen,
       clearOrdersOnRestaurantChange: false,
@@ -511,29 +624,43 @@ export default function AdminDashboard() {
   };
 
   const startNewOrder = () => {
+    setMemberSearchTerm('');
+    setMemberPickerOpen(false);
+    setOrderMenuCategory('');
     setOrderEditor({
       orderId: null,
       userId: '',
+      seatArea: 'A',
       note: '',
       quantities: {},
-      itemNotes: {}
+      itemNotes: {},
+      itemCustomOptions: {}
     });
   };
 
   const startEditOrder = (order) => {
     const quantities = {};
     const itemNotes = {};
+    const itemCustomOptions = {};
     order.orderItems.forEach(item => {
+      const menuItem = activeMenuItems.find(menu => menu.id === item.menuItemId);
+      const parsedNote = splitExistingItemNote(menuItem, item.note || '');
       quantities[item.menuItemId] = item.quantity;
-      itemNotes[item.menuItemId] = item.note || '';
+      itemNotes[item.menuItemId] = parsedNote.note;
+      itemCustomOptions[item.menuItemId] = parsedNote.selectedOptions;
     });
 
+    setMemberSearchTerm(order.user?.name || '');
+    setMemberPickerOpen(false);
+    setOrderMenuCategory('');
     setOrderEditor({
       orderId: order.id,
       userId: order.userId,
+      seatArea: ['A', 'B'].includes(order.seatArea) ? order.seatArea : 'A',
       note: order.note || '',
       quantities,
-      itemNotes
+      itemNotes,
+      itemCustomOptions
     });
   };
 
@@ -558,16 +685,43 @@ export default function AdminDashboard() {
     }));
   };
 
+  const toggleOrderItemCustomOption = (menuItemId, option) => {
+    setOrderEditor(prev => {
+      const selectedOptions = prev.itemCustomOptions?.[menuItemId] || [];
+      const nextOptions = selectedOptions.includes(option)
+        ? selectedOptions.filter(selected => selected !== option)
+        : [...selectedOptions, option];
+
+      return {
+        ...prev,
+        itemCustomOptions: {
+          ...(prev.itemCustomOptions || {}),
+          [menuItemId]: nextOptions
+        }
+      };
+    });
+  };
+
+  const selectOrderMember = (member) => {
+    setOrderEditor(prev => ({ ...prev, userId: member.id }));
+    setMemberSearchTerm(member.name);
+    setMemberPickerOpen(false);
+  };
+
   const handleSaveAdminOrder = async () => {
     if (!activeSchedule || !orderEditor) return;
 
     const items = Object.entries(orderEditor.quantities)
       .filter(([, quantity]) => quantity > 0)
-      .map(([menuItemId, quantity]) => ({
-        menuItemId,
-        quantity,
-        note: orderEditor.itemNotes?.[menuItemId] || orderEditor.note || ''
-      }));
+      .map(([menuItemId, quantity]) => {
+        const selectedOptions = orderEditor.itemCustomOptions?.[menuItemId] || [];
+        const freeNote = (orderEditor.itemNotes?.[menuItemId] || '').trim();
+        return {
+          menuItemId,
+          quantity,
+          note: [...selectedOptions, freeNote].filter(Boolean).join('; ')
+        };
+      });
 
     if (!orderEditor.userId) {
       setMessage({ text: '請選擇成員。', type: 'error' });
@@ -589,6 +743,7 @@ export default function AdminDashboard() {
         body: JSON.stringify({
           scheduleId: activeSchedule.id,
           targetUserId: orderEditor.userId,
+          seatArea: orderEditor.seatArea || 'A',
           items,
           note: orderEditor.note
         })
@@ -758,13 +913,27 @@ export default function AdminDashboard() {
   }, {});
   const todayItems = Object.values(todayItemSummary);
   const activeOrders = activeSchedule?.orders?.filter(order => order.status !== 'cancelled') || [];
+  const sortedActiveOrders = [...activeOrders].sort((a, b) => {
+    const areaA = ['A', 'B'].includes(a.seatArea) ? a.seatArea : 'A';
+    const areaB = ['A', 'B'].includes(b.seatArea) ? b.seatArea : 'A';
+    if (areaA !== areaB) return areaA.localeCompare(areaB);
+    return (a.orderNumber || '').localeCompare(b.orderNumber || '');
+  });
+  const areaOrderDisplayById = sortedActiveOrders.reduce((displayMap, order) => {
+    const seatArea = ['A', 'B'].includes(order.seatArea) ? order.seatArea : 'A';
+    const areaCount = Array.from(displayMap.values()).filter(value => value.startsWith(seatArea)).length + 1;
+    displayMap.set(order.id, `${seatArea}${String(areaCount).padStart(2, '0')}`);
+    return displayMap;
+  }, new Map());
+  const getAreaOrderDisplayNumber = order => areaOrderDisplayById.get(order.id) || '-';
   const normalizedOrderSearchTerm = orderSearchTerm.trim().toLowerCase();
   const filteredActiveOrders = normalizedOrderSearchTerm
-    ? activeOrders.filter(order => {
+    ? sortedActiveOrders.filter(order => {
       const statusText = order.status === 'delivered' ? '\u5df2\u6263\u6b3e' : '\u5df2\u8a02\u8cfc';
       const searchableText = [
         order.orderNumber || '',
         order.orderNumberDisplay || '',
+        getAreaOrderDisplayNumber(order),
         order.user?.name || '',
         order.user?.email || '',
         String(order.totalAmount || ''),
@@ -782,7 +951,7 @@ export default function AdminDashboard() {
 
       return searchableText.includes(normalizedOrderSearchTerm);
     })
-    : activeOrders;
+    : sortedActiveOrders;
   const orderCopyGroups = activeOrders.reduce((groups, order) => {
     (order.orderItems || []).forEach(oi => {
       const note = (oi.note || '').trim();
@@ -798,11 +967,16 @@ export default function AdminDashboard() {
           name,
           note,
           qty: 0,
-          isAlaCarte
+          isAlaCarte,
+          orderNumbers: []
         };
       }
 
       groups[key].qty += oi.quantity;
+      const displayNumber = getAreaOrderDisplayNumber(order);
+      if (displayNumber !== '-' && !groups[key].orderNumbers.includes(displayNumber)) {
+        groups[key].orderNumbers.push(displayNumber);
+      }
     });
 
     return groups;
@@ -822,21 +996,28 @@ export default function AdminDashboard() {
     `共計${copyMealCount}份餐，${copyAlaCarteCount}份單點`,
     `總金額$${totalOrderAmount}`
   ].join('\n').trim();
+  const numberedOrderCopyText = orderCopyItems
+    .map(item => {
+      const sortedOrderNumbers = [...item.orderNumbers].sort((a, b) => {
+        const areaCompare = a[0].localeCompare(b[0]);
+        return areaCompare || Number(a.slice(1)) - Number(b.slice(1));
+      });
+      return `${item.name}${item.note ? ` ${item.note}` : ''} *${item.qty} [編號:${sortedOrderNumbers.join('、')}]`;
+    })
+    .join('\n');
 
-  const handleCopyOrderSummary = async () => {
-    if (!orderCopyItems.length) return;
-
+  const copyOrderText = async (text, successMessage) => {
     try {
       if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(orderCopyText);
+        await navigator.clipboard.writeText(text);
       } else {
         throw new Error('Clipboard API unavailable');
       }
-      setCopyOrderMessage('已複製訂單。');
+      setCopyOrderMessage(successMessage);
       setTimeout(() => setCopyOrderMessage(''), 3000);
     } catch (err) {
       const textarea = document.createElement('textarea');
-      textarea.value = orderCopyText;
+      textarea.value = text;
       textarea.setAttribute('readonly', '');
       textarea.style.position = 'fixed';
       textarea.style.left = '-9999px';
@@ -846,7 +1027,7 @@ export default function AdminDashboard() {
 
       try {
         const copied = document.execCommand('copy');
-        setCopyOrderMessage(copied ? '已複製訂單。' : '複製失敗，請再試一次。');
+        setCopyOrderMessage(copied ? successMessage : '複製失敗，請再試一次。');
       } catch {
         setCopyOrderMessage('複製失敗，請再試一次。');
       } finally {
@@ -854,6 +1035,16 @@ export default function AdminDashboard() {
         setTimeout(() => setCopyOrderMessage(''), 3000);
       }
     }
+  };
+
+  const handleCopyOrderSummary = () => {
+    if (!orderCopyItems.length) return;
+    return copyOrderText(orderCopyText, '已複製訂單。');
+  };
+
+  const handleCopyNumberedOrderSummary = () => {
+    if (!orderCopyItems.length) return;
+    return copyOrderText(numberedOrderCopyText, '已複製編號統整。');
   };
 
   if (!user) {
@@ -1024,30 +1215,7 @@ export default function AdminDashboard() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
-                <div className="space-y-3">
-                  <h4 className="text-sm font-bold text-[#333333] border-l-4 border-l-[#EA5B3C] pl-2.5">
-                    品項總計
-                  </h4>
-                  {historyItemSummaries.length === 0 ? (
-                    <div className="text-center py-8 text-xs text-[#888888] border border-[#EAE8E4] rounded-xl bg-[#F9F8F5]">
-                      此日期沒有訂購品項。
-                    </div>
-                  ) : (
-                    <div className="space-y-2 max-h-72 overflow-y-auto pr-1 custom-scrollbar">
-                      {historyItemSummaries.map(item => (
-                        <div key={item.name} className="p-3 bg-[#F9F8F5] border border-[#EAE8E4] rounded-lg flex justify-between items-center">
-                          <div>
-                            <div className="font-bold text-xs text-[#333333]">{item.name}</div>
-                            <div className="text-[11px] text-[#888888]">NT$ {item.price}</div>
-                          </div>
-                          <div className="text-sm font-bold text-[#EA5B3C]">{item.qty} 份</div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
+              <div>
                 <div className="space-y-3">
                   <h4 className="text-sm font-bold text-[#333333] border-l-4 border-l-[#EA5B3C] pl-2.5">
                     成員訂單明細
@@ -1058,28 +1226,35 @@ export default function AdminDashboard() {
                     </div>
                   ) : (
                     <div className="overflow-x-auto border border-[#EAE8E4] rounded-xl bg-white max-h-72 overflow-y-auto custom-scrollbar">
-                      <table className="w-full text-left border-collapse text-xs">
+                      <table className="min-w-[760px] w-full table-fixed text-left border-collapse text-xs">
                         <thead className="sticky top-0 bg-[#F9F8F5] text-[#888888] font-bold border-b border-[#EAE8E4]">
                           <tr>
-                            <th className="p-3">姓名</th>
-                            <th className="p-3">餐點</th>
-                            <th className="p-3 text-right">金額</th>
-                            <th className="p-3">備註</th>
+                            <th className="w-[18%] px-4 py-3">姓名</th>
+                            <th className="w-[30%] px-4 py-3">餐點</th>
+                            <th className="w-[14%] px-4 py-3 text-center">金額</th>
+                            <th className="w-[38%] px-4 py-3">備註</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-[#EAE8E4] text-[#333333]">
                           {historyOrders.map(order => (
                             <tr key={order.id}>
-                              <td className="p-3 font-bold whitespace-nowrap">{order.user.name}</td>
-                              <td className="p-3 leading-normal">
+                              <td className="px-4 py-3 align-top font-bold leading-5">{order.user.name}</td>
+                              <td className="px-4 py-3 align-top leading-5">
                                 {order.orderItems.map(oi => (
                                   <div key={oi.id} className="font-medium">
                                     {oi.menuItem.name} <span className="text-[#888888]">x {oi.quantity}</span>
+                                    {oi.note && (
+                                      <div className="mt-0.5 text-[11px] font-bold leading-5 text-[#EA5B3C]">
+                                        {oi.note}
+                                      </div>
+                                    )}
                                   </div>
                                 ))}
                               </td>
-                              <td className="p-3 text-right font-bold text-[#EA5B3C] whitespace-nowrap">NT$ {order.totalAmount}</td>
-                              <td className="p-3 text-[#888888] italic">{order.note || '-'}</td>
+                              <td className="px-4 py-3 align-top text-center font-bold text-[#EA5B3C] whitespace-nowrap">NT$ {order.totalAmount}</td>
+                              <td className="px-4 py-3 align-top leading-5">
+                                {order.note || <span className="text-[#888888]">-</span>}
+                              </td>
                             </tr>
                           ))}
                         </tbody>
@@ -1153,7 +1328,7 @@ export default function AdminDashboard() {
                   <button
                     type="button"
                     onClick={() => setIsHoliday(prev => !prev)}
-                    disabled={isPastSelectedDate}
+                    disabled={isPastSelectedDate || isScheduleLocked}
                     className={`shrink-0 flex items-center gap-2 px-3 py-2.5 rounded-lg border text-xs font-bold transition-all ${
                       isHoliday
                         ? 'border-[#EA5B3C] bg-[#FFF3EF] text-[#EA5B3C]'
@@ -1174,7 +1349,7 @@ export default function AdminDashboard() {
                     <select
                       value={selectedRestaurantId}
                       onChange={(e) => setSelectedRestaurantId(e.target.value)}
-                      disabled={isHoliday || isPastSelectedDate}
+                      disabled={isHoliday || isPastSelectedDate || isScheduleLocked}
                       className="w-full text-xs pl-3 pr-5 py-2 border border-[#EAE8E4] rounded-lg focus:outline-none focus:border-[#EA5B3C] bg-white font-medium disabled:bg-[#F9F8F5] disabled:text-[#B8B2AA] disabled:cursor-not-allowed"
                     >
                       <option value="">-- 請選擇餐廳 --</option>
@@ -1186,7 +1361,7 @@ export default function AdminDashboard() {
                   <button
                     type="button"
                     onClick={handleSaveRestaurantSetting}
-                    disabled={isPastSelectedDate || Boolean(savingScheduleSection) || (!isHoliday && !selectedRestaurantId)}
+                    disabled={isPastSelectedDate || isScheduleLocked || Boolean(savingScheduleSection) || (!isHoliday && !selectedRestaurantId)}
                     className="shrink-0 px-4 py-3 text-xs font-bold bg-[#EA5B3C] text-white rounded-xl shadow-sm hover:bg-[#333333] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {savingScheduleSection === 'restaurant' ? '儲存中' : '儲存'}
@@ -1196,18 +1371,30 @@ export default function AdminDashboard() {
                 <div className="flex items-end gap-2">
                   <div className="min-w-0 flex-1 space-y-1.5">
                     <label className="text-xs font-bold text-[#888888]">訂單截止時間</label>
-                    <input
-                      type="time"
-                      value={orderDeadline}
-                      onChange={(e) => setOrderDeadline(e.target.value)}
-                      disabled={isPastSelectedDate}
-                      className="w-full text-xs px-3 py-2 border border-[#EAE8E4] rounded-lg focus:outline-none focus:border-[#EA5B3C] bg-white font-medium disabled:bg-[#F9F8F5] disabled:text-[#B8B2AA] disabled:cursor-not-allowed"
-                    />
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                      <input
+                        type="date"
+                        aria-label="訂單截止日期"
+                        value={orderDeadlineDate}
+                        max={selectedDate}
+                        onChange={(e) => setOrderDeadlineDate(e.target.value)}
+                        disabled={isPastSelectedDate || isScheduleLocked}
+                        className="w-full text-xs px-3 py-2 border border-[#EAE8E4] rounded-lg focus:outline-none focus:border-[#EA5B3C] bg-white font-medium disabled:bg-[#F9F8F5] disabled:text-[#B8B2AA] disabled:cursor-not-allowed"
+                      />
+                      <input
+                        type="time"
+                        aria-label="訂單截止時間"
+                        value={orderDeadline}
+                        onChange={(e) => setOrderDeadline(e.target.value)}
+                        disabled={isPastSelectedDate || isScheduleLocked}
+                        className="w-full text-xs px-3 py-2 border border-[#EAE8E4] rounded-lg focus:outline-none focus:border-[#EA5B3C] bg-white font-medium disabled:bg-[#F9F8F5] disabled:text-[#B8B2AA] disabled:cursor-not-allowed"
+                      />
+                    </div>
                   </div>
                   <button
                     type="button"
                     onClick={handleSaveDeadlineSetting}
-                    disabled={isPastSelectedDate || Boolean(savingScheduleSection)}
+                    disabled={isPastSelectedDate || isScheduleLocked || Boolean(savingScheduleSection)}
                     className="shrink-0 px-4 py-3 text-xs font-bold bg-[#EA5B3C] text-white rounded-xl shadow-sm hover:bg-[#333333] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {savingScheduleSection === 'deadline' ? '儲存中' : '儲存'}
@@ -1217,6 +1404,11 @@ export default function AdminDashboard() {
                 {isPastSelectedDate && (
                   <div className="rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-xs font-bold text-orange-700">
                     供餐日期已過，無法進行設定。
+                  </div>
+                )}
+                {isScheduleLocked && (
+                  <div className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-xs font-bold text-green-700">
+                    扣款結算已完成，排程設定已鎖定。
                   </div>
                 )}
               </div>
@@ -1356,10 +1548,21 @@ export default function AdminDashboard() {
                           type="button"
                           onClick={handleCopyOrderSummary}
                           disabled={orderCopyItems.length === 0}
-                          className="inline-flex items-center justify-center gap-1 rounded-lg border border-[#EA5B3C] bg-[#FFF3EF] px-2.5 py-1.5 text-[11px] font-bold text-[#EA5B3C] transition-all hover:bg-[#FFE7DE] disabled:cursor-not-allowed disabled:opacity-50"
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#EA5B3C] bg-[#FFF3EF] text-[#EA5B3C] transition-all hover:bg-[#FFE7DE] disabled:cursor-not-allowed disabled:opacity-50"
+                          aria-label="複製訂單"
+                          title="複製訂單"
                         >
                           <i className="ti ti-copy text-sm"></i>
-                          複製訂單
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleCopyNumberedOrderSummary}
+                          disabled={orderCopyItems.length === 0}
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#EA5B3C] bg-white text-[#EA5B3C] transition-all hover:bg-[#FFF3EF] disabled:cursor-not-allowed disabled:opacity-50"
+                          aria-label="複製編號統整"
+                          title="複製編號統整"
+                        >
+                          <i className="ti ti-list-numbers text-sm"></i>
                         </button>
                       </span>
                     </h4>
@@ -1425,20 +1628,85 @@ export default function AdminDashboard() {
 
                     {orderEditor && (
                       <div className="rounded-xl border border-[#EAE8E4] bg-[#F9F8F5] p-4 space-y-4">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                          <div className="space-y-1.5">
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                          <div className="relative space-y-1.5">
                             <label className="text-xs font-bold text-[#888888]">{'\u6210\u54e1'}</label>
-                            <select
-                              value={orderEditor.userId}
-                              onChange={(e) => setOrderEditor(prev => ({ ...prev, userId: e.target.value }))}
+                            <div className="relative">
+                              <i className="ti ti-search pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-[#AAA39A]"></i>
+                              <input
+                              type="search"
+                              value={memberSearchTerm}
+                              onChange={(e) => {
+                                setMemberSearchTerm(e.target.value);
+                                setOrderEditor(prev => ({ ...prev, userId: '' }));
+                                setMemberPickerOpen(true);
+                              }}
+                              onFocus={() => setMemberPickerOpen(true)}
+                              onBlur={() => setTimeout(() => setMemberPickerOpen(false), 120)}
                               disabled={Boolean(orderEditor.orderId)}
-                              className="w-full text-xs px-3 py-2 border border-[#EAE8E4] rounded-lg focus:outline-none focus:border-[#EA5B3C] bg-white font-medium disabled:bg-[#F2EFEA] disabled:text-[#888888]"
+                              placeholder={'\u641c\u5c0b\u6216\u9078\u64c7\u6210\u54e1'}
+                              autoComplete="off"
+                              className="w-full rounded-lg border border-[#EAE8E4] bg-white py-2 pl-9 pr-9 text-xs font-medium text-[#333333] focus:border-[#EA5B3C] focus:outline-none disabled:bg-[#F2EFEA] disabled:text-[#888888]"
+                              aria-label="搜尋或選擇成員"
+                              aria-expanded={memberPickerOpen}
+                            />
+                              <i className="ti ti-chevron-down pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-[#888888]"></i>
+                            </div>
+                            {memberPickerOpen && !orderEditor.orderId && (
+                              <div className="absolute left-0 right-0 top-full z-30 mt-1 max-h-48 overflow-y-auto rounded-lg border border-[#EAE8E4] bg-white p-1 shadow-xl kaizen-scrollbar">
+                                {filteredMembers.length > 0 ? filteredMembers.map(member => (
+                                  <button
+                                    key={member.id}
+                                    type="button"
+                                    onMouseDown={(event) => event.preventDefault()}
+                                    onClick={() => selectOrderMember(member)}
+                                    className={`flex w-full items-center justify-between gap-3 rounded-md px-3 py-2 text-left text-xs transition-colors hover:bg-[#FFF3EF] ${
+                                      orderEditor.userId === member.id ? 'bg-[#FFF3EF] text-[#EA5B3C]' : 'text-[#333333]'
+                                    }`}
+                                  >
+                                    <span className="min-w-0 truncate font-bold">{member.name}</span>
+                                  </button>
+                                )) : (
+                                  <p className="px-3 py-5 text-center text-xs text-[#888888]">找不到符合的成員</p>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                          <div className="space-y-1.5">
+                            <label className="text-xs font-bold text-[#888888]">{'\u985e\u578b'}</label>
+                            <select
+                              value={orderMenuCategory}
+                              onChange={(e) => setOrderMenuCategory(e.target.value)}
+                              className="w-full rounded-lg border border-[#EAE8E4] bg-white px-3 py-2 text-xs font-medium text-[#333333] focus:border-[#EA5B3C] focus:outline-none"
+                              aria-label={'\u7be9\u9078\u9910\u9ede\u985e\u578b'}
                             >
-                              <option value="">{'\u8acb\u9078\u64c7\u6210\u54e1'}</option>
-                              {members.map(member => (
-                                <option key={member.id} value={member.id}>{member.name}</option>
+                              <option value="">{'\u5168\u90e8\u985e\u578b'}</option>
+                              {orderMenuCategories.map((category, index) => (
+                                <option key={category} value={category}>
+                                  {String(index + 1).padStart(2, '0')} {category}
+                                </option>
                               ))}
                             </select>
+                          </div>
+                          <div className="space-y-1.5">
+                            <label className="text-xs font-bold text-[#888888]">{'\u5ea7\u4f4d\u5340'}</label>
+                            <div className="grid grid-cols-2 rounded-lg border border-[#EAE8E4] bg-white p-1">
+                              {['A', 'B'].map(area => (
+                                <button
+                                  key={area}
+                                  type="button"
+                                  onClick={() => setOrderEditor(prev => ({ ...prev, seatArea: area }))}
+                                  className={`rounded-md px-3 py-1.5 text-xs font-bold transition-all ${
+                                    (orderEditor.seatArea || 'A') === area
+                                      ? 'bg-[#FFF3EF] text-[#EA5B3C] shadow-sm'
+                                      : 'text-[#888888] hover:text-[#333333]'
+                                  }`}
+                                  aria-pressed={(orderEditor.seatArea || 'A') === area}
+                                >
+                                  {area} {'\u5340'}
+                                </button>
+                              ))}
+                            </div>
                           </div>
                           <div className="space-y-1.5">
                             <label className="text-xs font-bold text-[#888888]">{'\u5099\u8a3b'}</label>
@@ -1453,7 +1721,7 @@ export default function AdminDashboard() {
                         </div>
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-72 overflow-y-auto pr-1 custom-scrollbar">
-                          {activeMenuItems.map(item => (
+                          {sortedOrderMenuItems.map(item => (
                             <div key={item.id} className="space-y-2 rounded-lg border border-[#EAE8E4] bg-white px-3 py-2">
                               <div className="flex items-center justify-between gap-3">
                                 <div className="min-w-0">
@@ -1468,6 +1736,26 @@ export default function AdminDashboard() {
                                   className="w-20 text-xs px-2 py-1.5 border border-[#EAE8E4] rounded-lg text-right focus:outline-none focus:border-[#EA5B3C]"
                                 />
                               </div>
+                              <div className="flex flex-wrap gap-1.5">
+                                {parseCustomizationOptions(item.customizationOptions).map(option => {
+                                  const isSelected = (orderEditor.itemCustomOptions?.[item.id] || []).includes(option);
+                                  return (
+                                    <button
+                                      key={option}
+                                      type="button"
+                                      onClick={() => toggleOrderItemCustomOption(item.id, option)}
+                                      className={`rounded-full border px-2.5 py-1 text-[10px] font-bold transition-all ${
+                                        isSelected
+                                          ? 'border-[#EA5B3C] bg-[#FFF3EF] text-[#EA5B3C]'
+                                          : 'border-[#EAE8E4] bg-white text-[#888888] hover:border-[#EA5B3C] hover:text-[#EA5B3C]'
+                                      }`}
+                                      aria-pressed={isSelected}
+                                    >
+                                      {option}
+                                    </button>
+                                  );
+                                })}
+                              </div>
                               <input
                                 type="text"
                                 value={orderEditor.itemNotes?.[item.id] || ''}
@@ -1477,6 +1765,11 @@ export default function AdminDashboard() {
                               />
                             </div>
                           ))}
+                          {sortedOrderMenuItems.length === 0 && (
+                            <div className="md:col-span-2 rounded-lg border border-dashed border-[#D6D1CA] bg-white px-4 py-8 text-center text-xs font-bold text-[#888888]">
+                              {'\u6b64\u985e\u578b\u76ee\u524d\u6c92\u6709\u53ef\u9078\u64c7\u7684\u9910\u9ede\u3002'}
+                            </div>
+                          )}
                         </div>
 
                         <div className="flex justify-end gap-2">
@@ -1531,7 +1824,7 @@ export default function AdminDashboard() {
                                 <tr key={order.id} className="hover:bg-[#F9F8F5]/30">
                                   <td className="p-3">
                                     <span className="inline-flex min-w-8 items-center justify-center rounded-full border border-[#EA5B3C]/20 bg-[#FFF3EF] px-2 py-0.5 text-[10px] font-bold text-[#EA5B3C]">
-                                      {order.orderNumberDisplay || '-'}
+                                      {getAreaOrderDisplayNumber(order)}
                                     </span>
                                   </td>
                                   <td className="p-3 font-bold">{order.user.name}</td>
@@ -1624,7 +1917,7 @@ export default function AdminDashboard() {
                 <div>
                   <h4 className="text-base font-bold text-[#333333]">餐點內容</h4>
                   <p className="mt-1 text-xs font-bold text-[#888888]">
-                    {selectedOrderDetail.user.name} · {selectedOrderDetail.orderNumberDisplay || '-'}
+                    {selectedOrderDetail.user.name} · {getAreaOrderDisplayNumber(selectedOrderDetail)}
                   </p>
                 </div>
                 <button

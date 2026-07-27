@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Navbar from '@/components/Navbar';
 import LinkifiedText from '@/components/LinkifiedText';
@@ -47,6 +47,29 @@ function optionsToInputValue(value) {
   return normalizeCustomizationOptions(value).join(', ');
 }
 
+function getDefaultCategoryOrder(items = []) {
+  const priority = category => {
+    if (category.includes('餐盒')) return 0;
+    if (category.includes('義大利麵')) return 1;
+    if (/單點|加點/.test(category)) return 2;
+    if (/飲料|飲品/.test(category)) return 3;
+    return 4;
+  };
+  return [...new Set(
+    items.map(item => String(item.category || '餐盒').trim()).filter(Boolean)
+  )].sort((a, b) => priority(a) - priority(b) || a.localeCompare(b, 'zh-Hant'));
+}
+
+function getMenuItemProteinPriority(itemName) {
+  const name = String(itemName || '');
+  if (/雞|鴨|鵝/.test(name)) return 0;
+  if (/豬|松阪|排骨/.test(name)) return 1;
+  if (/牛/.test(name)) return 2;
+  if (/魚|蝦|蟹|透抽|魷魚|花枝|干貝|蛤|蚵|貝/.test(name)) return 3;
+  if (/蔬|素|菜/.test(name)) return 4;
+  return 5;
+}
+
 export default function RestaurantsPage() {
   const router = useRouter();
   const [user, setUser] = useState(null);
@@ -59,6 +82,16 @@ export default function RestaurantsPage() {
   const [newRestPhone, setNewRestPhone] = useState('');
   const [newRestNote, setNewRestNote] = useState('');
   const [menuItems, setMenuItems] = useState([]); // [{ name, price, category }] category maps to JSON "類型"
+  const [categoryOrder, setCategoryOrder] = useState([]);
+  const [draggedCategory, setDraggedCategory] = useState('');
+  const [isMenuTableDragging, setIsMenuTableDragging] = useState(false);
+  const menuTableDragRef = useRef({
+    active: false,
+    moved: false,
+    startX: 0,
+    scrollLeft: 0,
+    pointerId: null
+  });
   
   // UI states
   const [statusMsg, setStatusMsg] = useState({ text: '', type: '' });
@@ -66,6 +99,7 @@ export default function RestaurantsPage() {
   const [jsonDialogOpen, setJsonDialogOpen] = useState(false);
   const [jsonInput, setJsonInput] = useState('');
   const [editingRestaurantId, setEditingRestaurantId] = useState('');
+  const [viewingRestaurantId, setViewingRestaurantId] = useState('');
   const [editingOriginalData, setEditingOriginalData] = useState(null);
   const [editingMenuItemIndex, setEditingMenuItemIndex] = useState(null);
   const [editingMenuItemOriginal, setEditingMenuItemOriginal] = useState(null);
@@ -73,10 +107,11 @@ export default function RestaurantsPage() {
   const [restaurantToDelete, setRestaurantToDelete] = useState(null);
   const [isDeletingRestaurant, setIsDeletingRestaurant] = useState(false);
 
-  const buildComparableRestaurant = (name, phone, note, items) => ({
+  const buildComparableRestaurant = (name, phone, note, items, orderedCategories = []) => ({
     name: (name || '').trim(),
     phone: (phone || '').trim(),
     note: (note || '').trim(),
+    categoryOrder: orderedCategories,
     menuItems: (items || []).map(item => ({
       name: (item.name || '').trim(),
       price: parseInt(item.price, 10) || 0,
@@ -160,6 +195,14 @@ export default function RestaurantsPage() {
       setNewRestPhone(parsed.phone);
       setNewRestNote(parsed.note);
       setMenuItems(parsed.menuItems);
+      const importedCategoryOrder = getDefaultCategoryOrder(parsed.menuItems);
+      setCategoryOrder(previousOrder => editingRestaurantId
+        ? [
+          ...previousOrder.filter(category => importedCategoryOrder.includes(category)),
+          ...importedCategoryOrder.filter(category => !previousOrder.includes(category))
+        ]
+        : importedCategoryOrder
+      );
       setEditingMenuItemIndex(null);
       setStatusMsg({ text: 'JSON 匯入完成！請在下方表格中校對確認項目。', type: 'success' });
     } catch (err) {
@@ -314,11 +357,14 @@ export default function RestaurantsPage() {
 
   const resetRestaurantForm = () => {
     setEditingRestaurantId('');
+    setViewingRestaurantId('');
     setEditingOriginalData(null);
     setNewRestName('');
     setNewRestPhone('');
     setNewRestNote('');
     setMenuItems([]);
+    setCategoryOrder([]);
+    setDraggedCategory('');
     setEditingMenuItemIndex(null);
     setEditingMenuItemOriginal(null);
     setDiscardMenuItemDialogOpen(false);
@@ -336,28 +382,144 @@ export default function RestaurantsPage() {
     }));
 
     setEditingRestaurantId(restaurant.id);
+    setViewingRestaurantId('');
     setNewRestName(restaurant.name || '');
     setNewRestPhone(restaurant.phone || '');
     setNewRestNote(restaurant.note || '');
     setMenuItems(editableItems);
+    const initialCategoryOrder = [
+      ...(restaurant.categoryOrder || []),
+      ...getDefaultCategoryOrder(editableItems)
+    ].filter((category, index, categories) => category && categories.indexOf(category) === index);
+    setCategoryOrder(initialCategoryOrder);
     setEditingMenuItemIndex(null);
     setEditingMenuItemOriginal(null);
     setEditingOriginalData(buildComparableRestaurant(
       restaurant.name,
       restaurant.phone,
       restaurant.note,
-      editableItems
+      editableItems,
+      initialCategoryOrder
     ));
     setOcrWarning('');
     setStatusMsg({ text: `正在編輯「${restaurant.name}」。`, type: 'success' });
   };
 
-  const currentEditData = buildComparableRestaurant(newRestName, newRestPhone, newRestNote, menuItems);
+  const handleToggleRestaurantPreview = restaurant => {
+    if (editingRestaurantId) return;
+    if (viewingRestaurantId === restaurant.id) {
+      resetRestaurantForm();
+      setStatusMsg({ text: '', type: '' });
+      return;
+    }
+
+    const previewItems = (restaurant.menuItems || []).map(item => ({
+      id: item.id,
+      name: item.name,
+      price: item.price,
+      category: item.category || '',
+      customizationOptions: normalizeCustomizationOptions(item.customizationOptions),
+      isAvailable: item.isAvailable !== false,
+    }));
+    const previewCategoryOrder = [
+      ...(restaurant.categoryOrder || []),
+      ...getDefaultCategoryOrder(previewItems)
+    ].filter((category, index, categories) => category && categories.indexOf(category) === index);
+
+    setViewingRestaurantId(restaurant.id);
+    setNewRestName(restaurant.name || '');
+    setNewRestPhone(restaurant.phone || '');
+    setNewRestNote(restaurant.note || '');
+    setMenuItems(previewItems);
+    setCategoryOrder(previewCategoryOrder);
+    setEditingMenuItemIndex(null);
+    setEditingMenuItemOriginal(null);
+    setStatusMsg({ text: '', type: '' });
+  };
+
+  const currentCategories = getDefaultCategoryOrder(menuItems);
+  const displayedCategoryOrder = [
+    ...categoryOrder.filter(category => currentCategories.includes(category)),
+    ...currentCategories.filter(category => !categoryOrder.includes(category))
+  ];
+  const sortedMenuItemEntries = menuItems
+    .map((item, originalIndex) => ({ item, originalIndex }))
+    .sort((a, b) => {
+      const categoryA = displayedCategoryOrder.indexOf(a.item.category);
+      const categoryB = displayedCategoryOrder.indexOf(b.item.category);
+      const normalizedCategoryA = categoryA < 0 ? Number.MAX_SAFE_INTEGER : categoryA;
+      const normalizedCategoryB = categoryB < 0 ? Number.MAX_SAFE_INTEGER : categoryB;
+      if (normalizedCategoryA !== normalizedCategoryB) return normalizedCategoryA - normalizedCategoryB;
+
+      const proteinDifference = getMenuItemProteinPriority(a.item.name) - getMenuItemProteinPriority(b.item.name);
+      if (proteinDifference) return proteinDifference;
+      return (a.item.name || '').localeCompare(b.item.name || '', 'zh-Hant');
+    });
+  const currentEditData = buildComparableRestaurant(
+    newRestName,
+    newRestPhone,
+    newRestNote,
+    menuItems,
+    displayedCategoryOrder
+  );
   const hasEditChanges = !!editingRestaurantId && JSON.stringify(currentEditData) !== JSON.stringify(editingOriginalData);
+
+  const handleCategoryDrop = targetCategory => {
+    if (!draggedCategory || draggedCategory === targetCategory) {
+      setDraggedCategory('');
+      return;
+    }
+
+    const nextOrder = [...displayedCategoryOrder];
+    const fromIndex = nextOrder.indexOf(draggedCategory);
+    const targetIndex = nextOrder.indexOf(targetCategory);
+    if (fromIndex < 0 || targetIndex < 0) return;
+    nextOrder.splice(fromIndex, 1);
+    nextOrder.splice(targetIndex, 0, draggedCategory);
+    setCategoryOrder(nextOrder);
+    setDraggedCategory('');
+  };
+
+  const handleMenuTablePointerDown = event => {
+    if (
+      event.button !== 0
+      || event.target.closest('button, input, textarea, select, a, [data-table-actions]')
+    ) return;
+    const dragState = menuTableDragRef.current;
+    dragState.active = true;
+    dragState.moved = false;
+    dragState.startX = event.clientX;
+    dragState.scrollLeft = event.currentTarget.scrollLeft;
+    dragState.pointerId = event.pointerId;
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const handleMenuTablePointerMove = event => {
+    const dragState = menuTableDragRef.current;
+    if (!dragState.active || dragState.pointerId !== event.pointerId) return;
+    const distance = event.clientX - dragState.startX;
+    if (!dragState.moved && Math.abs(distance) < 4) return;
+    dragState.moved = true;
+    setIsMenuTableDragging(true);
+    event.currentTarget.scrollLeft = dragState.scrollLeft - distance;
+    event.preventDefault();
+  };
+
+  const finishMenuTableDrag = event => {
+    const dragState = menuTableDragRef.current;
+    if (!dragState.active || dragState.pointerId !== event.pointerId) return;
+    dragState.active = false;
+    dragState.pointerId = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    setIsMenuTableDragging(false);
+  };
 
   const handleCancelEdit = () => {
     if (hasEditChanges && !window.confirm('資料有變更，確認要取消嗎？')) return;
     resetRestaurantForm();
+    setStatusMsg({ text: '', type: '' });
   };
 
   const handleDeleteRestaurant = async () => {
@@ -413,7 +575,8 @@ export default function RestaurantsPage() {
           name: newRestName,
           phone: newRestPhone,
           note: newRestNote,
-          menuItems
+          menuItems,
+          categoryOrder: displayedCategoryOrder
         })
       });
 
@@ -479,14 +642,22 @@ export default function RestaurantsPage() {
                   restaurants.map(rest => (
                     <div 
                       key={rest.id} 
-                      className="p-4 bg-[#F9F8F5] border border-[#EAE8E4] rounded-xl space-y-2 hover:border-[#EA5B3C] transition-all lg:p-3"
+                      onClick={() => handleToggleRestaurantPreview(rest)}
+                      className={`cursor-pointer space-y-2 rounded-xl border p-4 transition-all lg:p-3 ${
+                        viewingRestaurantId === rest.id
+                          ? 'border-[#EA5B3C] bg-[#FFF3EF] shadow-sm'
+                          : 'border-[#EAE8E4] bg-[#F9F8F5] hover:border-[#EA5B3C]'
+                      }`}
                     >
                       <div className="flex justify-between items-center">
                         <span className="max-w-[150px] truncate text-sm font-bold text-[#333333] lg:max-w-[115px]">{rest.name}</span>
                         <div className="flex items-center gap-1">
                           <button
                             type="button"
-                            onClick={() => handleEditRestaurant(rest)}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              handleEditRestaurant(rest);
+                            }}
                             className="w-7 h-7 rounded-full border border-[#EAE8E4] bg-white text-[#333333] hover:border-[#EA5B3C] hover:text-[#EA5B3C] flex items-center justify-center transition-all"
                             aria-label={`編輯 ${rest.name}`}
                           >
@@ -494,7 +665,10 @@ export default function RestaurantsPage() {
                           </button>
                           <button
                             type="button"
-                            onClick={() => setRestaurantToDelete(rest)}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setRestaurantToDelete(rest);
+                            }}
                             className="w-7 h-7 rounded-full border border-[#EAE8E4] bg-white text-red-600 hover:border-red-200 hover:bg-red-50 flex items-center justify-center transition-all"
                             aria-label={`刪除 ${rest.name}`}
                           >
@@ -525,14 +699,18 @@ export default function RestaurantsPage() {
               <h3 className="font-bold text-base text-[#333333] border-b border-[#EAE8E4] pb-3 flex items-center justify-between">
                 <span className="flex items-center gap-2">
                   <i className="ti ti-file-import text-lg text-[#EA5B3C]"></i>
-                  {editingRestaurantId ? '編輯餐廳與菜單' : '新增餐廳與菜單匯入'}
+                  {editingRestaurantId
+                    ? '編輯餐廳與菜單'
+                    : viewingRestaurantId
+                      ? '檢視餐廳與菜單'
+                      : '新增餐廳與菜單匯入'}
                 </span>
                 
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
                     onClick={openJsonDialog}
-                    disabled={ocrLoading}
+                    disabled={ocrLoading || Boolean(viewingRestaurantId)}
                     className="h-9 w-9 rounded-lg bg-[#EA5B3C] text-xs font-bold text-white shadow-sm transition-all flex items-center justify-center hover:bg-[#333333] disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto sm:px-4 sm:py-2 sm:gap-1.5"
                     title={ocrLoading ? '載入中' : 'JSON 檔'}
                     aria-label={ocrLoading ? '載入中' : 'JSON 檔'}
@@ -602,7 +780,10 @@ export default function RestaurantsPage() {
                     type="text"
                     value={newRestName}
                     onChange={(e) => setNewRestName(e.target.value)}
-                    className="w-full text-xs px-3 py-2 border border-[#EAE8E4] rounded-lg focus:outline-none focus:border-[#EA5B3C] bg-white font-medium"
+                    readOnly={Boolean(viewingRestaurantId)}
+                    className={`w-full text-xs px-3 py-2 border border-[#EAE8E4] rounded-lg focus:outline-none focus:border-[#EA5B3C] font-medium ${
+                      viewingRestaurantId ? 'cursor-default bg-[#F9F8F5] text-[#666666]' : 'bg-white'
+                    }`}
                   />
                 </div>
 
@@ -612,7 +793,10 @@ export default function RestaurantsPage() {
                     type="text"
                     value={newRestPhone}
                     onChange={(e) => setNewRestPhone(e.target.value)}
-                    className="w-full text-xs px-3 py-2 border border-[#EAE8E4] rounded-lg focus:outline-none focus:border-[#EA5B3C] bg-white font-medium"
+                    readOnly={Boolean(viewingRestaurantId)}
+                    className={`w-full text-xs px-3 py-2 border border-[#EAE8E4] rounded-lg focus:outline-none focus:border-[#EA5B3C] font-medium ${
+                      viewingRestaurantId ? 'cursor-default bg-[#F9F8F5] text-[#666666]' : 'bg-white'
+                    }`}
                   />
                 </div>
               </div>
@@ -623,8 +807,11 @@ export default function RestaurantsPage() {
                   rows={3}
                   value={newRestNote}
                   onChange={(e) => setNewRestNote(e.target.value)}
+                  readOnly={Boolean(viewingRestaurantId)}
                   placeholder="可直接貼上網址，或使用 Markdown：[連結文字](https://example.com)"
-                  className="w-full resize-y text-xs px-3 py-2 border border-[#EAE8E4] rounded-lg focus:outline-none focus:border-[#EA5B3C] bg-white font-medium"
+                  className={`w-full resize-y text-xs px-3 py-2 border border-[#EAE8E4] rounded-lg focus:outline-none focus:border-[#EA5B3C] font-medium ${
+                    viewingRestaurantId ? 'cursor-default bg-[#F9F8F5] text-[#666666]' : 'bg-white'
+                  }`}
                 />
                 {newRestNote.trim() && (
                   <div className="rounded-lg border border-[#EAE8E4] bg-[#F9F8F5] px-3 py-2">
@@ -642,13 +829,51 @@ export default function RestaurantsPage() {
                   <h4 className="font-bold text-sm text-[#333333] border-l-4 border-l-[#EA5B3C] pl-2.5">
                     菜單品項校對編輯
                   </h4>
-                  <button
-                    onClick={handleAddMenuItem}
-                    className="text-xs font-bold border border-[#EAE8E4] text-[#333333] hover:text-[#EA5B3C] hover:border-[#EA5B3C] px-3 py-1.5 rounded-lg bg-white transition-all flex items-center gap-1"
-                  >
-                    <i className="ti ti-plus"></i> 新增品項
-                  </button>
+                  {!viewingRestaurantId && (
+                    <button
+                      onClick={handleAddMenuItem}
+                      className="text-xs font-bold border border-[#EAE8E4] text-[#333333] hover:text-[#EA5B3C] hover:border-[#EA5B3C] px-3 py-1.5 rounded-lg bg-white transition-all flex items-center gap-1"
+                    >
+                      <i className="ti ti-plus"></i> 新增品項
+                    </button>
+                  )}
                 </div>
+
+                {displayedCategoryOrder.length > 0 && (
+                  <div className="space-y-2 rounded-xl border border-[#EAE8E4] bg-[#F9F8F5] p-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-xs font-bold text-[#666666]">類型書籤排序</span>
+                      <span className="text-[10px] text-[#888888]">
+                        {viewingRestaurantId ? '唯讀預覽' : '拖曳調整訂購頁顯示順序'}
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {displayedCategoryOrder.map((category, index) => (
+                        <button
+                          key={category}
+                          type="button"
+                          draggable={!viewingRestaurantId}
+                          onDragStart={() => setDraggedCategory(category)}
+                          onDragEnd={() => setDraggedCategory('')}
+                          onDragOver={(event) => event.preventDefault()}
+                          onDrop={() => handleCategoryDrop(category)}
+                          className={`inline-flex items-center gap-2 rounded-lg border bg-white px-3 py-2 text-xs font-bold transition-all ${
+                            viewingRestaurantId ? 'cursor-default' : 'cursor-grab active:cursor-grabbing'
+                          } ${
+                            draggedCategory === category
+                              ? 'border-[#EA5B3C] text-[#EA5B3C] opacity-60'
+                              : 'border-[#EAE8E4] text-[#333333] hover:border-[#EA5B3C]'
+                          }`}
+                          aria-label={`第 ${String(index + 1).padStart(2, '0')} 類型 ${category}，可拖曳排序`}
+                        >
+                          <i className="ti ti-grip-vertical text-[#AAA39A]"></i>
+                          <span className="text-[#EA5B3C]">{String(index + 1).padStart(2, '0')}</span>
+                          <span>{category}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {menuItems.length === 0 ? (
                   <div className="text-center py-10 border border-dashed border-[#D6D1CA] rounded-xl text-xs text-[#888888] space-y-2">
@@ -656,19 +881,41 @@ export default function RestaurantsPage() {
                     <p>尚無任何餐點項目。</p>
                   </div>
                 ) : (
-                  <div className="overflow-x-auto border border-[#EAE8E4] rounded-xl">
-                    <table className="min-w-[760px] w-full text-left border-collapse text-xs">
+                  <div className="relative overflow-hidden rounded-xl border border-[#EAE8E4]">
+                    <div
+                      className={`overflow-x-auto touch-pan-y ${
+                        isMenuTableDragging ? 'cursor-grabbing select-none' : 'cursor-grab'
+                      }`}
+                      onPointerDown={handleMenuTablePointerDown}
+                      onPointerMove={handleMenuTablePointerMove}
+                      onPointerUp={finishMenuTableDrag}
+                      onPointerCancel={finishMenuTableDrag}
+                      onClickCapture={event => {
+                        if (!menuTableDragRef.current.moved) return;
+                        event.preventDefault();
+                        event.stopPropagation();
+                        menuTableDragRef.current.moved = false;
+                      }}
+                      role="region"
+                      aria-label="菜單品項表格，可按住拖曳左右移動"
+                    >
+                    <table className="min-w-[710px] w-full table-fixed text-left border-collapse text-xs">
                       <thead>
                         <tr className="bg-[#F9F8F5] text-[#888888] font-bold border-b border-[#EAE8E4]">
-                          <th className="p-3">品項名稱</th>
+                          <th className="w-[150px] p-3">品項名稱</th>
                           <th className="p-3 w-[120px]">單價 (NT$)</th>
-                          <th className="p-3 w-[150px]">類型</th>
+                          <th className="w-[72px] p-3 text-center">類型</th>
                           <th className="p-3 min-w-[220px]">客製化選項</th>
-                          <th className="sticky right-0 z-10 w-[148px] border-l border-[#EAE8E4] bg-[#F9F8F5] p-3 text-center">操作</th>
+                          <th
+                            data-table-actions
+                            className="sticky right-0 z-10 w-[148px] cursor-default border-l border-[#EAE8E4] bg-[#F9F8F5] p-3 text-center"
+                          >
+                            操作
+                          </th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-[#EAE8E4] text-[#333333]">
-                        {menuItems.map((item, index) => {
+                        {sortedMenuItemEntries.map(({ item, originalIndex: index }) => {
                           const isEditing = editingMenuItemIndex === index;
                           const isAvailable = item.isAvailable !== false;
                           const itemLabel = item.name || '未命名品項';
@@ -698,13 +945,27 @@ export default function RestaurantsPage() {
                                 className="w-full text-xs px-2 py-1.5 border border-[#EAE8E4] rounded focus:outline-none focus:border-[#EA5B3C] bg-white font-bold"
                               /> : <span className="block px-2 py-1.5 font-bold">NT$ {item.price}</span>}
                             </td>
-                            <td className="p-2">
-                              {isEditing ? <input
-                                type="text"
-                                value={item.category || ''}
-                                onChange={(e) => handleMenuItemChange(index, 'category', e.target.value)}
-                                className="w-full text-xs px-2 py-1.5 border border-[#EAE8E4] rounded focus:outline-none focus:border-[#EA5B3C] bg-white font-medium"
-                              /> : <span className="block px-2 py-1.5">{item.category || '主食'}</span>}
+                            <td className="p-2 text-center">
+                              {isEditing ? (
+                                <div className="flex items-center gap-1.5">
+                                  <span className="shrink-0 text-[10px] font-bold text-[#EA5B3C]">
+                                    {String(Math.max(0, displayedCategoryOrder.indexOf(item.category)) + 1).padStart(2, '0')}
+                                  </span>
+                                  <input
+                                    type="text"
+                                    value={item.category || ''}
+                                    onChange={(e) => handleMenuItemChange(index, 'category', e.target.value)}
+                                    className="min-w-0 flex-1 text-xs px-2 py-1.5 border border-[#EAE8E4] rounded focus:outline-none focus:border-[#EA5B3C] bg-white font-medium"
+                                  />
+                                </div>
+                              ) : (
+                                <span
+                                  className="block py-1.5 text-xs font-bold text-[#EA5B3C]"
+                                  title={item.category || '主食'}
+                                >
+                                  {String(Math.max(0, displayedCategoryOrder.indexOf(item.category)) + 1).padStart(2, '0')}
+                                </span>
+                              )}
                             </td>
                             <td className="p-2">
                               {isEditing ? <input
@@ -718,10 +979,14 @@ export default function RestaurantsPage() {
                                 </span>
                               )}
                             </td>
-                            <td className={`sticky right-0 border-l border-[#EAE8E4] p-2 ${
+                            <td data-table-actions className={`sticky right-0 cursor-default border-l border-[#EAE8E4] p-2 ${
                               isAvailable ? 'bg-white' : 'bg-[#F4F3F1]'
                             }`}>
                               <div className="flex items-center justify-center gap-1">
+                              {viewingRestaurantId ? (
+                                <span className="text-[10px] font-bold tracking-wider text-[#888888]">唯讀</span>
+                              ) : (
+                              <>
                               <button
                                 type="button"
                                 onClick={() => handleToggleMenuItem(index)}
@@ -777,6 +1042,8 @@ export default function RestaurantsPage() {
                               >
                                 <i className="ti ti-trash"></i>
                               </button>
+                              </>
+                              )}
                               </div>
                             </td>
                           </tr>
@@ -784,12 +1051,17 @@ export default function RestaurantsPage() {
                         })}
                       </tbody>
                     </table>
+                    </div>
+                    <div
+                      className="pointer-events-none absolute bottom-0 right-0 z-30 h-3 w-[148px] border-l border-[#EAE8E4] bg-white"
+                      aria-hidden="true"
+                    ></div>
                   </div>
                 )}
               </div>
 
               {/* Submit Button */}
-              {menuItems.length > 0 && !editingRestaurantId && (
+              {menuItems.length > 0 && !editingRestaurantId && !viewingRestaurantId && (
                 <div className="pt-4 border-t border-[#EAE8E4] flex justify-end">
                   <button
                     disabled={isSaving || !newRestName}

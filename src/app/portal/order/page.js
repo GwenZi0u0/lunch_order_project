@@ -42,6 +42,29 @@ function getCustomizationExtraAmount(value) {
   return Array.from(matches).reduce((sum, match) => sum + (parseInt(match[1], 10) || 0), 0);
 }
 
+function getMenuCategory(item) {
+  return String(item?.category || '餐盒').trim() || '餐盒';
+}
+
+function getMenuCategoryPriority(category) {
+  if (category.includes('餐盒')) return 0;
+  if (category.includes('主食')) return 1;
+  if (category.includes('單點')) return 2;
+  if (category.includes('飲料')) return 3;
+  if (category.includes('湯')) return 4;
+  return 5;
+}
+
+function getMainDishPriority(itemName) {
+  const name = String(itemName || '');
+  if (/雞|鴨|鵝/.test(name)) return 0;
+  if (/豬|松阪|排骨/.test(name)) return 1;
+  if (/牛/.test(name)) return 2;
+  if (/魚|蝦|蟹|透抽|魷魚|花枝|干貝|蛤|蚵|貝/.test(name)) return 3;
+  if (/蔬|素|菜/.test(name)) return 4;
+  return 5;
+}
+
 function formatDate(date) {
   const d = new Date(date);
   let month = '' + (d.getMonth() + 1);
@@ -139,6 +162,7 @@ export default function PortalPage() {
   const [isCumulativeTipOpen, setIsCumulativeTipOpen] = useState(false);
   const [isOrderNoteTipOpen, setIsOrderNoteTipOpen] = useState(false);
   const [isOrderSummaryVisible, setIsOrderSummaryVisible] = useState(false);
+  const [activeMenuCategory, setActiveMenuCategory] = useState('');
   
   // Current system date/time check
   const [currentDateTime, setCurrentDateTime] = useState({ dateStr: '', timeStr: '' });
@@ -251,6 +275,31 @@ export default function PortalPage() {
   // Find schedule details for selected date
   const activeSchedule = schedules.find(s => s.date === selectedDate);
   const activeRestaurant = activeSchedule?.restaurant || null;
+  const availableMenuCategories = Array.from(new Set(
+    (activeRestaurant?.menuItems || []).map(getMenuCategory)
+  ));
+  const savedMenuCategoryOrder = Array.isArray(activeRestaurant?.categoryOrder)
+    ? activeRestaurant.categoryOrder.filter(category => availableMenuCategories.includes(category))
+    : [];
+  const menuCategories = [
+    ...savedMenuCategoryOrder,
+    ...availableMenuCategories
+      .filter(category => !savedMenuCategoryOrder.includes(category))
+      .sort((a, b) => {
+        const priorityDifference = getMenuCategoryPriority(a) - getMenuCategoryPriority(b);
+        return priorityDifference || a.localeCompare(b, 'zh-Hant');
+      })
+  ];
+  const selectedMenuCategory = menuCategories.includes(activeMenuCategory)
+    ? activeMenuCategory
+    : menuCategories[0] || '';
+  const visibleMenuItems = (activeRestaurant?.menuItems || [])
+    .filter(item => getMenuCategory(item) === selectedMenuCategory)
+    .sort((a, b) => {
+      const mainDishDifference = getMainDishPriority(a.name) - getMainDishPriority(b.name);
+      if (mainDishDifference) return mainDishDifference;
+      return (a.name || '').localeCompare(b.name || '', 'zh-Hant');
+    });
   const todayDate = currentDateTime.dateStr || formatDate(new Date());
   const todaySchedule = schedules.find(s => s.date === todayDate);
   const todayOrder = todaySchedule?.userOrder || null;
@@ -269,6 +318,10 @@ export default function PortalPage() {
       setSelectedDate(getDefaultDateForWeek('current'));
     }
   }, [allowNextWeekMenu, activeWeekTab]);
+
+  useEffect(() => {
+    setActiveMenuCategory('');
+  }, [activeRestaurant?.id]);
 
   useEffect(() => {
     if (!useSavedOrderNote || !user) return;
@@ -425,8 +478,9 @@ export default function PortalPage() {
     if (!activeSchedule.isOpen) return true;
     
     const { dateStr: currentDate, timeStr: currentTime } = currentDateTime;
-    if (currentDate > activeSchedule.date) return true;
-    if (currentDate === activeSchedule.date) {
+    const deadlineDate = activeSchedule.orderDeadlineDate || activeSchedule.date;
+    if (currentDate > deadlineDate) return true;
+    if (currentDate === deadlineDate) {
       const deadline = activeSchedule.orderDeadline || '09:40';
       return currentTime >= deadline;
     }
@@ -868,7 +922,10 @@ export default function PortalPage() {
                       <div>
                         <span className="text-xs font-bold text-[#888888] block">截止訂購時間</span>
                         <span className="text-sm font-bold text-[#EA5B3C] flex items-center gap-1 mt-1 md:justify-end">
-                          <i className="ti ti-alarm"></i> {activeSchedule.orderDeadline} 前
+                          <i className="ti ti-alarm"></i>
+                          {activeSchedule.orderDeadlineDate && activeSchedule.orderDeadlineDate !== activeSchedule.date
+                            ? `${activeSchedule.orderDeadlineDate} ${activeSchedule.orderDeadline}`
+                            : activeSchedule.orderDeadline} 前
                         </span>
                       </div>
                       <div>
@@ -926,58 +983,69 @@ export default function PortalPage() {
                       美味餐點選擇
                     </h4>
 
-                    {/* Group menu items by category */}
-                    {['主食', '配菜', '飲料湯品'].map(cat => {
-                      const items = activeRestaurant.menuItems.filter(mi => mi.category === cat || (!['主食', '配菜', '飲料湯品'].includes(mi.category) && cat === '主食'));
-                      if (items.length === 0) return null;
-                      
-                      return (
-                        <div key={cat} className="space-y-3">
-                          <h5 className="text-xs font-bold text-[#888888] tracking-widest uppercase">{cat}</h5>
-                          
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            {items.map(item => {
-                              const qty = orderQuantities[item.id] || 0;
-                              return (
-                                <button
-                                  type="button"
-                                  key={item.id}
-                                  disabled={isClosed()}
-                                  onClick={() => openMenuItemDialog(item)}
-                                  className={`w-full p-4 border rounded-xl flex items-center justify-between text-left transition-all disabled:cursor-not-allowed disabled:opacity-60 ${
-                                    qty > 0 ? 'border-[#EA5B3C] bg-orange-[0.005]' : 'border-[#EAE8E4]'
-                                  }`}
-                                >
-                                  <div className="min-w-0">
-                                    <div className="font-bold text-[#333333] text-sm">{item.name}</div>
-                                    <div className="text-xs text-[#EA5B3C] font-bold mt-1">
-                                      NT$ {getItemUnitPrice(item)}
-                                      {getItemExtraAmount(item.id) > 0 && (
-                                        <span className="ml-1 text-[11px] text-[#888888]">
-                                          (含加價 +{getItemExtraAmount(item.id)})
-                                        </span>
-                                      )}
-                                    </div>
-                                    {composeItemNote(item.id) && (
-                                      <div className="mt-1 truncate text-[11px] font-bold text-[#888888]">
-                                        備註：{composeItemNote(item.id)}
-                                      </div>
-                                    )}
-                                  </div>
+                    <div className="border-b border-[#EAE8E4]">
+                      <div className="flex gap-1 overflow-x-auto pb-0 kaizen-scrollbar">
+                        {menuCategories.map(category => (
+                          <button
+                            key={category}
+                            type="button"
+                            onClick={() => setActiveMenuCategory(category)}
+                            className={`relative shrink-0 px-4 pb-3 pt-1 text-xs font-bold transition-colors ${
+                              selectedMenuCategory === category
+                                ? 'text-[#EA5B3C]'
+                                : 'text-[#888888] hover:text-[#333333]'
+                            }`}
+                            aria-pressed={selectedMenuCategory === category}
+                          >
+                            {category}
+                            {selectedMenuCategory === category && (
+                              <span className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-[#EA5B3C]"></span>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
 
-                                  <div className="flex shrink-0 items-center gap-2">
-                                    <span className="inline-flex h-9 min-w-9 items-center justify-center rounded-full border border-[#EAE8E4] bg-white px-3 text-sm font-bold text-[#333333]">
-                                      {qty}
-                                    </span>
-                                    <i className="ti ti-chevron-right text-lg text-[#C9C3BB]"></i>
-                                  </div>
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      );
-                    })}
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                      {visibleMenuItems.map(item => {
+                        const qty = orderQuantities[item.id] || 0;
+                        return (
+                          <button
+                            type="button"
+                            key={item.id}
+                            disabled={isClosed()}
+                            onClick={() => openMenuItemDialog(item)}
+                            className={`flex w-full items-center justify-between rounded-xl border p-4 text-left transition-all disabled:cursor-not-allowed disabled:opacity-60 ${
+                              qty > 0 ? 'border-[#EA5B3C] bg-[#FFF9F6]' : 'border-[#EAE8E4]'
+                            }`}
+                          >
+                            <div className="min-w-0">
+                              <div className="text-sm font-bold text-[#333333]">{item.name}</div>
+                              <div className="mt-1 text-xs font-bold text-[#EA5B3C]">
+                                NT$ {getItemUnitPrice(item)}
+                                {getItemExtraAmount(item.id) > 0 && (
+                                  <span className="ml-1 text-[11px] text-[#888888]">
+                                    (含加價 +{getItemExtraAmount(item.id)})
+                                  </span>
+                                )}
+                              </div>
+                              {composeItemNote(item.id) && (
+                                <div className="mt-1 truncate text-[11px] font-bold text-[#888888]">
+                                  備註：{composeItemNote(item.id)}
+                                </div>
+                              )}
+                            </div>
+
+                            <div className="flex shrink-0 items-center gap-2">
+                              <span className="inline-flex h-9 min-w-9 items-center justify-center rounded-full border border-[#EAE8E4] bg-white px-3 text-sm font-bold text-[#333333]">
+                                {qty}
+                              </span>
+                              <i className="ti ti-chevron-right text-lg text-[#C9C3BB]"></i>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
                 </div>
               ) : (

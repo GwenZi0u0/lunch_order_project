@@ -45,6 +45,22 @@ export async function GET(request) {
     const { searchParams } = new URL(request.url);
     const action = searchParams.get('action') || 'history';
 
+    if (action === 'list_members') {
+      if (user.role !== 'admin') {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+      }
+
+      const members = await prisma.user.findMany({
+        select: {
+          id: true,
+          name: true,
+          email: true
+        },
+        orderBy: { name: 'asc' }
+      });
+      return NextResponse.json(members);
+    }
+
     if (action === 'list_users') {
       if (user.role !== 'admin') {
         return NextResponse.json({ error: 'Forbidden' }, { status: 403 });

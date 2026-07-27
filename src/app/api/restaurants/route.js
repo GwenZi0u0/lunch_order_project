@@ -4,6 +4,7 @@ import { getCurrentUser } from '@/lib/auth';
 
 const DEFAULT_CUSTOMIZATION_OPTIONS = ['\u98ef\u5c11', '\u63db\u83dc', '\u63db\u83dc+$20'];
 const CLOSED_MENU_ITEMS_KEY = 'closedMenuItemIds';
+const CATEGORY_ORDER_KEY_PREFIX = 'restaurantCategoryOrder:';
 
 function parseClosedMenuItemIds(value) {
   try {
@@ -45,6 +46,26 @@ function serializeCustomizationOptions(value) {
   return JSON.stringify(normalizeCustomizationOptions(value));
 }
 
+function normalizeCategoryOrder(value, menuItems = []) {
+  const categories = [...new Set(
+    (menuItems || []).map(item => String(item.category || '餐盒').trim()).filter(Boolean)
+  )];
+  const requestedOrder = Array.isArray(value)
+    ? value.map(category => String(category).trim()).filter(category => categories.includes(category))
+    : [];
+  if (requestedOrder.length === 0) {
+    const priority = category => {
+      if (category.includes('餐盒')) return 0;
+      if (category.includes('義大利麵')) return 1;
+      if (/單點|加點/.test(category)) return 2;
+      if (/飲料|飲品/.test(category)) return 3;
+      return 4;
+    };
+    return categories.sort((a, b) => priority(a) - priority(b) || a.localeCompare(b, 'zh-Hant'));
+  }
+  return [...new Set([...requestedOrder, ...categories])];
+}
+
 export async function GET(request) {
   try {
     const user = await getCurrentUser(request);
@@ -71,8 +92,27 @@ export async function GET(request) {
       },
       orderBy: { name: 'asc' }
     });
+    const categoryOrderSettings = await prisma.siteSetting.findMany({
+      where: { key: { startsWith: CATEGORY_ORDER_KEY_PREFIX } }
+    });
+    const categoryOrderByRestaurantId = new Map(categoryOrderSettings.map(setting => [
+      setting.key.slice(CATEGORY_ORDER_KEY_PREFIX.length),
+      (() => {
+        try {
+          return JSON.parse(setting.value || '[]');
+        } catch {
+          return [];
+        }
+      })()
+    ]));
 
-    return NextResponse.json(restaurants);
+    return NextResponse.json(restaurants.map(restaurant => ({
+      ...restaurant,
+      categoryOrder: normalizeCategoryOrder(
+        categoryOrderByRestaurantId.get(restaurant.id),
+        restaurant.menuItems
+      )
+    })));
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
@@ -86,7 +126,7 @@ export async function POST(request) {
     }
 
     const body = await request.json();
-    const { name, phone, note, menuItems } = body;
+    const { name, phone, note, menuItems, categoryOrder } = body;
 
     if (!name) {
       return NextResponse.json({ error: 'Name is required' }, { status: 400 });
@@ -129,6 +169,16 @@ export async function POST(request) {
         });
       }
 
+      const normalizedCategoryOrder = normalizeCategoryOrder(categoryOrder, menuItems);
+      await tx.siteSetting.upsert({
+        where: { key: `${CATEGORY_ORDER_KEY_PREFIX}${newRest.id}` },
+        update: { value: JSON.stringify(normalizedCategoryOrder) },
+        create: {
+          key: `${CATEGORY_ORDER_KEY_PREFIX}${newRest.id}`,
+          value: JSON.stringify(normalizedCategoryOrder)
+        }
+      });
+
       return newRest;
     });
 
@@ -137,7 +187,10 @@ export async function POST(request) {
       include: { menuItems: true }
     });
 
-    return NextResponse.json(finalRestaurant);
+    return NextResponse.json({
+      ...finalRestaurant,
+      categoryOrder: normalizeCategoryOrder(categoryOrder, finalRestaurant.menuItems)
+    });
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
@@ -151,7 +204,7 @@ export async function PUT(request) {
     }
 
     const body = await request.json();
-    const { id, name, phone, note, menuItems } = body;
+    const { id, name, phone, note, menuItems, categoryOrder } = body;
 
     if (!id || !name) {
       return NextResponse.json({ error: 'Restaurant ID and name are required' }, { status: 400 });
@@ -218,6 +271,16 @@ export async function PUT(request) {
         create: { key: CLOSED_MENU_ITEMS_KEY, value: JSON.stringify([...closedIds]) },
       });
 
+      const normalizedCategoryOrder = normalizeCategoryOrder(categoryOrder, menuItems);
+      await tx.siteSetting.upsert({
+        where: { key: `${CATEGORY_ORDER_KEY_PREFIX}${id}` },
+        update: { value: JSON.stringify(normalizedCategoryOrder) },
+        create: {
+          key: `${CATEGORY_ORDER_KEY_PREFIX}${id}`,
+          value: JSON.stringify(normalizedCategoryOrder)
+        }
+      });
+
       return updatedRest;
     });
 
@@ -226,7 +289,10 @@ export async function PUT(request) {
       include: { menuItems: true }
     });
 
-    return NextResponse.json(finalRestaurant);
+    return NextResponse.json({
+      ...finalRestaurant,
+      categoryOrder: normalizeCategoryOrder(categoryOrder, finalRestaurant.menuItems)
+    });
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

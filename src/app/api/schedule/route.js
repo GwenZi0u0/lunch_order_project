@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import prisma from '@/lib/db';
 import { getCurrentUser } from '@/lib/auth';
 
+const CATEGORY_ORDER_KEY_PREFIX = 'restaurantCategoryOrder:';
+
 // Helper to get date string YYYY-MM-DD
 function formatDate(date) {
   const d = new Date(date);
@@ -78,6 +80,19 @@ export async function GET(request) {
       },
       orderBy: { date: 'asc' }
     });
+    const categoryOrderSettings = await prisma.siteSetting.findMany({
+      where: { key: { startsWith: CATEGORY_ORDER_KEY_PREFIX } }
+    });
+    const categoryOrderByRestaurantId = new Map(categoryOrderSettings.map(setting => {
+      let order = [];
+      try {
+        const parsed = JSON.parse(setting.value || '[]');
+        if (Array.isArray(parsed)) order = parsed;
+      } catch {
+        order = [];
+      }
+      return [setting.key.slice(CATEGORY_ORDER_KEY_PREFIX.length), order];
+    }));
 
     // Format schedules to include the current user's order details in a simplified field
     const formattedSchedules = schedules.map(sched => {
@@ -93,7 +108,10 @@ export async function GET(request) {
         orderDeadline: sched.orderDeadline,
         isOpen: sched.isOpen,
         deliveredAt: sched.deliveredAt,
-        restaurant: sched.restaurant,
+        restaurant: sched.restaurant ? {
+          ...sched.restaurant,
+          categoryOrder: categoryOrderByRestaurantId.get(sched.restaurant.id) || []
+        } : null,
         userOrder: userOrder ? {
           id: userOrder.id,
           orderNumber: userOrder.orderNumber,

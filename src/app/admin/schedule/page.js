@@ -4,6 +4,37 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Navbar from '@/components/Navbar';
 
+const DEFAULT_CUSTOMIZATION_OPTIONS = ['飯少', '換菜', '換菜+$20'];
+
+function parseCustomizationOptions(value) {
+  if (Array.isArray(value)) {
+    return value.map(option => String(option).trim()).filter(Boolean);
+  }
+
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) {
+        return parsed.map(option => String(option).trim()).filter(Boolean);
+      }
+    } catch {
+      return value.split(/[\r\n,;|]+/).map(option => option.trim()).filter(Boolean);
+    }
+  }
+
+  return DEFAULT_CUSTOMIZATION_OPTIONS;
+}
+
+function splitExistingItemNote(menuItem, note) {
+  const options = parseCustomizationOptions(menuItem?.customizationOptions);
+  const selectedOptions = options.filter(option => (note || '').includes(option));
+  const cleanedNote = selectedOptions.reduce((current, option) => {
+    return current.split(option).join(' ');
+  }, note || '').replace(/[;,\s]+/g, ' ').trim();
+
+  return { selectedOptions, note: cleanedNote };
+}
+
 function formatDate(date) {
   const d = new Date(date);
   let month = '' + (d.getMonth() + 1);
@@ -136,6 +167,8 @@ export default function AdminDashboard() {
   const [isHoliday, setIsHoliday] = useState(false);
   const [savingScheduleSection, setSavingScheduleSection] = useState('');
   const [orderEditor, setOrderEditor] = useState(null);
+  const [memberSearchTerm, setMemberSearchTerm] = useState('');
+  const [memberPickerOpen, setMemberPickerOpen] = useState(false);
   const [selectedOrderDetail, setSelectedOrderDetail] = useState(null);
   const [isSavingOrder, setIsSavingOrder] = useState(false);
   const [orderSearchTerm, setOrderSearchTerm] = useState('');
@@ -224,8 +257,14 @@ export default function AdminDashboard() {
   };
 
   const fetchMembers = () => {
-    fetch('/api/wallets?action=list_users')
-      .then(res => res.json())
+    fetch('/api/wallets?action=list_members')
+      .then(async res => {
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.error || 'Failed to load members');
+        }
+        return data;
+      })
       .then(data => {
         if (Array.isArray(data)) {
           setMembers(data);
@@ -317,6 +356,13 @@ export default function AdminDashboard() {
   const weeklyDates = getWeeklyDates();
   const selectedDateIsHoliday = activeSchedule ? !activeSchedule.isOpen && !activeSchedule.deliveredAt : isHoliday;
   const activeMenuItems = activeSchedule?.restaurant?.menuItems || [];
+  const normalizedMemberSearchTerm = memberSearchTerm.trim().toLowerCase();
+  const filteredMembers = members.filter(member => {
+    if (!normalizedMemberSearchTerm) return true;
+    return [member.name, member.email]
+      .filter(Boolean)
+      .some(value => value.toLowerCase().includes(normalizedMemberSearchTerm));
+  });
 
   const handleWeekTabChange = (weekTab) => {
     setActiveWeekTab(weekTab);
@@ -511,29 +557,39 @@ export default function AdminDashboard() {
   };
 
   const startNewOrder = () => {
+    setMemberSearchTerm('');
+    setMemberPickerOpen(false);
     setOrderEditor({
       orderId: null,
       userId: '',
       note: '',
       quantities: {},
-      itemNotes: {}
+      itemNotes: {},
+      itemCustomOptions: {}
     });
   };
 
   const startEditOrder = (order) => {
     const quantities = {};
     const itemNotes = {};
+    const itemCustomOptions = {};
     order.orderItems.forEach(item => {
+      const menuItem = activeMenuItems.find(menu => menu.id === item.menuItemId);
+      const parsedNote = splitExistingItemNote(menuItem, item.note || '');
       quantities[item.menuItemId] = item.quantity;
-      itemNotes[item.menuItemId] = item.note || '';
+      itemNotes[item.menuItemId] = parsedNote.note;
+      itemCustomOptions[item.menuItemId] = parsedNote.selectedOptions;
     });
 
+    setMemberSearchTerm(order.user?.name || '');
+    setMemberPickerOpen(false);
     setOrderEditor({
       orderId: order.id,
       userId: order.userId,
       note: order.note || '',
       quantities,
-      itemNotes
+      itemNotes,
+      itemCustomOptions
     });
   };
 
@@ -558,16 +614,43 @@ export default function AdminDashboard() {
     }));
   };
 
+  const toggleOrderItemCustomOption = (menuItemId, option) => {
+    setOrderEditor(prev => {
+      const selectedOptions = prev.itemCustomOptions?.[menuItemId] || [];
+      const nextOptions = selectedOptions.includes(option)
+        ? selectedOptions.filter(selected => selected !== option)
+        : [...selectedOptions, option];
+
+      return {
+        ...prev,
+        itemCustomOptions: {
+          ...(prev.itemCustomOptions || {}),
+          [menuItemId]: nextOptions
+        }
+      };
+    });
+  };
+
+  const selectOrderMember = (member) => {
+    setOrderEditor(prev => ({ ...prev, userId: member.id }));
+    setMemberSearchTerm(member.name);
+    setMemberPickerOpen(false);
+  };
+
   const handleSaveAdminOrder = async () => {
     if (!activeSchedule || !orderEditor) return;
 
     const items = Object.entries(orderEditor.quantities)
       .filter(([, quantity]) => quantity > 0)
-      .map(([menuItemId, quantity]) => ({
-        menuItemId,
-        quantity,
-        note: orderEditor.itemNotes?.[menuItemId] || orderEditor.note || ''
-      }));
+      .map(([menuItemId, quantity]) => {
+        const selectedOptions = orderEditor.itemCustomOptions?.[menuItemId] || [];
+        const freeNote = (orderEditor.itemNotes?.[menuItemId] || '').trim();
+        return {
+          menuItemId,
+          quantity,
+          note: [...selectedOptions, freeNote].filter(Boolean).join('; ')
+        };
+      });
 
     if (!orderEditor.userId) {
       setMessage({ text: '請選擇成員。', type: 'error' });
@@ -1473,19 +1556,49 @@ export default function AdminDashboard() {
                     {orderEditor && (
                       <div className="rounded-xl border border-[#EAE8E4] bg-[#F9F8F5] p-4 space-y-4">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                          <div className="space-y-1.5">
+                          <div className="relative space-y-1.5">
                             <label className="text-xs font-bold text-[#888888]">{'\u6210\u54e1'}</label>
-                            <select
-                              value={orderEditor.userId}
-                              onChange={(e) => setOrderEditor(prev => ({ ...prev, userId: e.target.value }))}
+                            <div className="relative">
+                              <i className="ti ti-search pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-[#AAA39A]"></i>
+                              <input
+                              type="search"
+                              value={memberSearchTerm}
+                              onChange={(e) => {
+                                setMemberSearchTerm(e.target.value);
+                                setOrderEditor(prev => ({ ...prev, userId: '' }));
+                                setMemberPickerOpen(true);
+                              }}
+                              onFocus={() => setMemberPickerOpen(true)}
+                              onBlur={() => setTimeout(() => setMemberPickerOpen(false), 120)}
                               disabled={Boolean(orderEditor.orderId)}
-                              className="w-full text-xs px-3 py-2 border border-[#EAE8E4] rounded-lg focus:outline-none focus:border-[#EA5B3C] bg-white font-medium disabled:bg-[#F2EFEA] disabled:text-[#888888]"
-                            >
-                              <option value="">{'\u8acb\u9078\u64c7\u6210\u54e1'}</option>
-                              {members.map(member => (
-                                <option key={member.id} value={member.id}>{member.name}</option>
-                              ))}
-                            </select>
+                              placeholder={'\u641c\u5c0b\u6216\u9078\u64c7\u6210\u54e1'}
+                              autoComplete="off"
+                              className="w-full rounded-lg border border-[#EAE8E4] bg-white py-2 pl-9 pr-9 text-xs font-medium text-[#333333] focus:border-[#EA5B3C] focus:outline-none disabled:bg-[#F2EFEA] disabled:text-[#888888]"
+                              aria-label="搜尋或選擇成員"
+                              aria-expanded={memberPickerOpen}
+                            />
+                              <i className="ti ti-chevron-down pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-[#888888]"></i>
+                            </div>
+                            {memberPickerOpen && !orderEditor.orderId && (
+                              <div className="absolute left-0 right-0 top-full z-30 mt-1 max-h-48 overflow-y-auto rounded-lg border border-[#EAE8E4] bg-white p-1 shadow-xl kaizen-scrollbar">
+                                {filteredMembers.length > 0 ? filteredMembers.map(member => (
+                                  <button
+                                    key={member.id}
+                                    type="button"
+                                    onMouseDown={(event) => event.preventDefault()}
+                                    onClick={() => selectOrderMember(member)}
+                                    className={`flex w-full items-center justify-between gap-3 rounded-md px-3 py-2 text-left text-xs transition-colors hover:bg-[#FFF3EF] ${
+                                      orderEditor.userId === member.id ? 'bg-[#FFF3EF] text-[#EA5B3C]' : 'text-[#333333]'
+                                    }`}
+                                  >
+                                    <span className="min-w-0 truncate font-bold">{member.name}</span>
+                                    {member.email && <span className="min-w-0 truncate text-[10px] text-[#888888]">{member.email}</span>}
+                                  </button>
+                                )) : (
+                                  <p className="px-3 py-5 text-center text-xs text-[#888888]">找不到符合的成員</p>
+                                )}
+                              </div>
+                            )}
                           </div>
                           <div className="space-y-1.5">
                             <label className="text-xs font-bold text-[#888888]">{'\u5099\u8a3b'}</label>
@@ -1514,6 +1627,26 @@ export default function AdminDashboard() {
                                   onChange={(e) => updateOrderItemQuantity(item.id, e.target.value)}
                                   className="w-20 text-xs px-2 py-1.5 border border-[#EAE8E4] rounded-lg text-right focus:outline-none focus:border-[#EA5B3C]"
                                 />
+                              </div>
+                              <div className="flex flex-wrap gap-1.5">
+                                {parseCustomizationOptions(item.customizationOptions).map(option => {
+                                  const isSelected = (orderEditor.itemCustomOptions?.[item.id] || []).includes(option);
+                                  return (
+                                    <button
+                                      key={option}
+                                      type="button"
+                                      onClick={() => toggleOrderItemCustomOption(item.id, option)}
+                                      className={`rounded-full border px-2.5 py-1 text-[10px] font-bold transition-all ${
+                                        isSelected
+                                          ? 'border-[#EA5B3C] bg-[#FFF3EF] text-[#EA5B3C]'
+                                          : 'border-[#EAE8E4] bg-white text-[#888888] hover:border-[#EA5B3C] hover:text-[#EA5B3C]'
+                                      }`}
+                                      aria-pressed={isSelected}
+                                    >
+                                      {option}
+                                    </button>
+                                  );
+                                })}
                               </div>
                               <input
                                 type="text"

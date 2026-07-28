@@ -159,6 +159,7 @@ export default function PortalPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [orderError, setOrderError] = useState('');
   const [orderSuccess, setOrderSuccess] = useState('');
+  const [submittedOrder, setSubmittedOrder] = useState(null);
   const [isCumulativeTipOpen, setIsCumulativeTipOpen] = useState(false);
   const [isOrderNoteTipOpen, setIsOrderNoteTipOpen] = useState(false);
   const [isOrderSummaryVisible, setIsOrderSummaryVisible] = useState(false);
@@ -571,6 +572,14 @@ export default function PortalPage() {
     }
 
     const items = getCurrentOrderItems();
+    const submittedItems = items.map(item => {
+      const menuItem = activeRestaurant.menuItems.find(menuItem => menuItem.id === item.menuItemId);
+      return {
+        ...item,
+        name: menuItem?.name || '餐點',
+        unitPrice: menuItem ? getItemUnitPrice(menuItem) : 0
+      };
+    });
 
     if (items.length === 0) {
       setOrderError('請至少選擇一項餐點！');
@@ -605,6 +614,11 @@ export default function PortalPage() {
       }
 
       setOrderSuccess('訂單提交成功！');
+      setSubmittedOrder({
+        number: getOrderDisplayNumber(data.order),
+        items: submittedItems,
+        totalAmount: data.order.totalAmount ?? calculateTotal()
+      });
       fetchSchedules();
       refreshUser();
     } catch (err) {
@@ -984,7 +998,7 @@ export default function PortalPage() {
                     </h4>
 
                     <div className="border-b border-[#EAE8E4]">
-                      <div className="flex gap-1 overflow-x-auto pb-0 kaizen-scrollbar">
+                      <div className="no-scrollbar flex gap-1 overflow-x-auto pb-0">
                         {menuCategories.map(category => (
                           <button
                             key={category}
@@ -1377,6 +1391,62 @@ export default function PortalPage() {
               >
                 修改訂單內容
               </button>
+            </div>
+          </div>
+        )}
+
+        {submittedOrder && (
+          <div
+            className="fixed inset-0 z-[60] flex items-center justify-center bg-black/45 px-5 py-8"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="submitted-order-title"
+          >
+            <div className="w-full max-w-sm overflow-hidden rounded-2xl border border-[#EAE8E4] bg-white shadow-2xl">
+              <div className="border-b border-[#EAE8E4] px-6 py-5 text-center">
+                <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-green-50 text-2xl text-green-600">
+                  <i className="ti ti-circle-check"></i>
+                </div>
+                <h2 id="submitted-order-title" className="text-lg font-bold text-[#333333]">訂購完成</h2>
+                <p className="mt-1 text-xs font-medium text-[#888888]">請確認您的取餐編號與餐點</p>
+              </div>
+
+              <div className="space-y-4 px-6 py-5">
+                <div className="rounded-xl bg-[#FFF3EF] px-4 py-4 text-center">
+                  <p className="text-xs font-bold text-[#888888]">您的編號</p>
+                  <p className="mt-1 text-3xl font-bold tracking-wider text-[#EA5B3C]">{submittedOrder.number}</p>
+                </div>
+
+                <div>
+                  <p className="mb-2 text-xs font-bold text-[#888888]">訂購餐點</p>
+                  <div className="max-h-48 space-y-2 overflow-y-auto">
+                    {submittedOrder.items.map(item => (
+                      <div key={item.menuItemId} className="rounded-lg border border-[#EAE8E4] bg-[#F9F8F5] px-3 py-2.5">
+                        <div className="flex items-start justify-between gap-3 text-xs">
+                          <span className="font-bold text-[#333333]">{item.name} × {item.quantity}</span>
+                          <span className="shrink-0 font-bold text-[#EA5B3C]">NT$ {item.unitPrice * item.quantity}</span>
+                        </div>
+                        {item.note && <p className="mt-1 text-[11px] font-medium text-[#888888]">{item.note}</p>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between border-t border-[#EAE8E4] pt-4 text-sm font-bold">
+                  <span className="text-[#333333]">總計金額</span>
+                  <span className="text-lg text-[#EA5B3C]">NT$ {submittedOrder.totalAmount}</span>
+                </div>
+              </div>
+
+              <div className="border-t border-[#EAE8E4] bg-[#F9F8F5] px-6 py-4">
+                <button
+                  type="button"
+                  onClick={() => setSubmittedOrder(null)}
+                  className="w-full rounded-xl bg-[#EA5B3C] py-3 text-sm font-bold text-white shadow-sm transition-all hover:bg-[#333333]"
+                >
+                  已閱讀
+                </button>
+              </div>
             </div>
           </div>
         )}

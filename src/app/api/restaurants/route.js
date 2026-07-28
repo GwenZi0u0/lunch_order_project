@@ -5,6 +5,18 @@ import { getCurrentUser } from '@/lib/auth';
 const DEFAULT_CUSTOMIZATION_OPTIONS = ['\u98ef\u5c11', '\u63db\u83dc', '\u63db\u83dc+$20'];
 const CLOSED_MENU_ITEMS_KEY = 'closedMenuItemIds';
 const CATEGORY_ORDER_KEY_PREFIX = 'restaurantCategoryOrder:';
+const MENU_IMAGE_KEY_PREFIX = 'restaurantMenuImage:';
+
+function normalizeMenuImageDataUrl(value) {
+  if (!value) return '';
+  if (typeof value !== 'string' || !/^data:image\/(?:jpeg|png|webp);base64,/i.test(value)) {
+    throw new Error('Invalid menu image');
+  }
+  if (value.length > 3_000_000) {
+    throw new Error('Menu image is too large');
+  }
+  return value;
+}
 
 function parseClosedMenuItemIds(value) {
   try {
@@ -95,6 +107,13 @@ export async function GET(request) {
     const categoryOrderSettings = await prisma.siteSetting.findMany({
       where: { key: { startsWith: CATEGORY_ORDER_KEY_PREFIX } }
     });
+    const menuImageSettings = await prisma.siteSetting.findMany({
+      where: { key: { startsWith: MENU_IMAGE_KEY_PREFIX } }
+    });
+    const menuImageByRestaurantId = new Map(menuImageSettings.map(setting => [
+      setting.key.slice(MENU_IMAGE_KEY_PREFIX.length),
+      setting.value
+    ]));
     const categoryOrderByRestaurantId = new Map(categoryOrderSettings.map(setting => [
       setting.key.slice(CATEGORY_ORDER_KEY_PREFIX.length),
       (() => {
@@ -108,6 +127,7 @@ export async function GET(request) {
 
     return NextResponse.json(restaurants.map(restaurant => ({
       ...restaurant,
+      menuImageDataUrl: menuImageByRestaurantId.get(restaurant.id) || '',
       categoryOrder: normalizeCategoryOrder(
         categoryOrderByRestaurantId.get(restaurant.id),
         restaurant.menuItems
@@ -126,7 +146,7 @@ export async function POST(request) {
     }
 
     const body = await request.json();
-    const { name, phone, note, menuItems, categoryOrder } = body;
+    const { name, phone, note, menuItems, categoryOrder, menuImageDataUrl } = body;
 
     if (!name) {
       return NextResponse.json({ error: 'Name is required' }, { status: 400 });
@@ -179,6 +199,15 @@ export async function POST(request) {
         }
       });
 
+      const normalizedMenuImage = normalizeMenuImageDataUrl(menuImageDataUrl);
+      if (normalizedMenuImage) {
+        await tx.siteSetting.upsert({
+          where: { key: `${MENU_IMAGE_KEY_PREFIX}${newRest.id}` },
+          update: { value: normalizedMenuImage },
+          create: { key: `${MENU_IMAGE_KEY_PREFIX}${newRest.id}`, value: normalizedMenuImage }
+        });
+      }
+
       return newRest;
     });
 
@@ -189,6 +218,7 @@ export async function POST(request) {
 
     return NextResponse.json({
       ...finalRestaurant,
+      menuImageDataUrl: normalizeMenuImageDataUrl(menuImageDataUrl),
       categoryOrder: normalizeCategoryOrder(categoryOrder, finalRestaurant.menuItems)
     });
   } catch (error) {
@@ -204,7 +234,7 @@ export async function PUT(request) {
     }
 
     const body = await request.json();
-    const { id, name, phone, note, menuItems, categoryOrder } = body;
+    const { id, name, phone, note, menuItems, categoryOrder, menuImageDataUrl } = body;
 
     if (!id || !name) {
       return NextResponse.json({ error: 'Restaurant ID and name are required' }, { status: 400 });
@@ -271,6 +301,19 @@ export async function PUT(request) {
         create: { key: CLOSED_MENU_ITEMS_KEY, value: JSON.stringify([...closedIds]) },
       });
 
+      const normalizedMenuImage = normalizeMenuImageDataUrl(menuImageDataUrl);
+      if (normalizedMenuImage) {
+        await tx.siteSetting.upsert({
+          where: { key: `${MENU_IMAGE_KEY_PREFIX}${id}` },
+          update: { value: normalizedMenuImage },
+          create: { key: `${MENU_IMAGE_KEY_PREFIX}${id}`, value: normalizedMenuImage }
+        });
+      } else {
+        await tx.siteSetting.deleteMany({
+          where: { key: `${MENU_IMAGE_KEY_PREFIX}${id}` }
+        });
+      }
+
       const normalizedCategoryOrder = normalizeCategoryOrder(categoryOrder, menuItems);
       await tx.siteSetting.upsert({
         where: { key: `${CATEGORY_ORDER_KEY_PREFIX}${id}` },
@@ -291,6 +334,7 @@ export async function PUT(request) {
 
     return NextResponse.json({
       ...finalRestaurant,
+      menuImageDataUrl: normalizeMenuImageDataUrl(menuImageDataUrl),
       categoryOrder: normalizeCategoryOrder(categoryOrder, finalRestaurant.menuItems)
     });
   } catch (error) {

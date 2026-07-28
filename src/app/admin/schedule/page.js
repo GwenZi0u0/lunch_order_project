@@ -35,6 +35,19 @@ function splitExistingItemNote(menuItem, note) {
   return { selectedOptions, note: cleanedNote };
 }
 
+function formatItemNoteDisplay(note, menuItem) {
+  const noteParts = String(note || '').split(';').map(part => part.trim()).filter(Boolean);
+  const configuredOptions = parseCustomizationOptions(menuItem?.customizationOptions);
+  const configuredSet = new Set(configuredOptions);
+  const selectedSet = new Set(noteParts.filter(part => configuredSet.has(part)));
+  const freeNoteParts = noteParts.filter(part => !configuredSet.has(part));
+
+  return [
+    ...configuredOptions.filter(option => selectedSet.has(option)),
+    ...freeNoteParts
+  ].join(' ');
+}
+
 function getMenuItemCategory(menuItem) {
   return String(menuItem?.category || '\u672a\u5206\u985e').trim() || '\u672a\u5206\u985e';
 }
@@ -869,7 +882,7 @@ export default function AdminDashboard() {
     orders.forEach(order => {
       if (order.status === 'cancelled') return;
       order.orderItems.forEach(oi => {
-        const note = options.includeNotes ? (oi.note || '').trim() : '';
+        const note = options.includeNotes ? formatItemNoteDisplay(oi.note, oi.menuItem) : '';
         const menuItemId = oi.menuItemId;
         const name = oi.menuItem?.name || '????';
         const qty = oi.quantity;
@@ -879,7 +892,7 @@ export default function AdminDashboard() {
         if (summary[summaryKey]) {
           summary[summaryKey].qty += qty;
         } else {
-          summary[summaryKey] = { name, note, qty, price };
+          summary[summaryKey] = { name, note, qty, price, menuItem: oi.menuItem };
         }
       });
     });
@@ -954,7 +967,7 @@ export default function AdminDashboard() {
     : sortedActiveOrders;
   const orderCopyGroups = activeOrders.reduce((groups, order) => {
     (order.orderItems || []).forEach(oi => {
-      const note = (oi.note || '').trim();
+      const note = formatItemNoteDisplay(oi.note, oi.menuItem);
       const name = oi.menuItem?.name || '';
       if (!name) return;
 
@@ -1583,7 +1596,7 @@ export default function AdminDashboard() {
                               <span className="text-xs text-[#888888] block mt-1">單價: NT$ {item.price}</span>
                               {item.note && (
                                 <span className="mt-1 block text-xs font-bold text-[#EA5B3C]">
-                                  備註: {item.note}
+                                  備註: {formatItemNoteDisplay(item.note, item.menuItem)}
                                 </span>
                               )}
                             </div>
@@ -1835,7 +1848,7 @@ export default function AdminDashboard() {
                                           {oi.menuItem.name} <span className="text-[#888888]">x {oi.quantity}</span>
                                           {oi.note && (
                                             <span className="block text-[11px] font-bold text-[#EA5B3C]">
-                                              備註: {oi.note}
+                                              備註: {formatItemNoteDisplay(oi.note, oi.menuItem)}
                                             </span>
                                           )}
                                         </div>
@@ -1938,7 +1951,7 @@ export default function AdminDashboard() {
                     </div>
                     {oi.note && (
                       <div className="mt-2 text-xs font-bold text-[#EA5B3C]">
-                        備註: {oi.note}
+                        備註: {formatItemNoteDisplay(oi.note, oi.menuItem)}
                       </div>
                     )}
                   </div>

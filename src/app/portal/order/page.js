@@ -138,6 +138,10 @@ function getDisplayOrderNote(order) {
   return (order?.note || '').replace(/^([AB])區\s*[;；,，、]?\s*/i, '').trim();
 }
 
+function formatItemNoteDisplay(note) {
+  return String(note || '').replace(/\s*;\s*/g, ' ').trim();
+}
+
 export default function PortalPage() {
   const router = useRouter();
   const [user, setUser] = useState(null);
@@ -164,6 +168,7 @@ export default function PortalPage() {
   const [isOrderNoteTipOpen, setIsOrderNoteTipOpen] = useState(false);
   const [isOrderSummaryVisible, setIsOrderSummaryVisible] = useState(false);
   const [activeMenuCategory, setActiveMenuCategory] = useState('');
+  const [isMenuImageOpen, setIsMenuImageOpen] = useState(false);
   
   // Current system date/time check
   const [currentDateTime, setCurrentDateTime] = useState({ dateStr: '', timeStr: '' });
@@ -322,6 +327,7 @@ export default function PortalPage() {
 
   useEffect(() => {
     setActiveMenuCategory('');
+    setIsMenuImageOpen(false);
   }, [activeRestaurant?.id]);
 
   useEffect(() => {
@@ -386,8 +392,15 @@ export default function PortalPage() {
 
   const getMenuItemById = (menuItemId) => activeRestaurant?.menuItems.find(item => item.id === menuItemId);
 
+  const sortSelectedOptions = (menuItemId, selectedOptions = []) => {
+    const menuItem = getMenuItemById(menuItemId);
+    const configuredOptions = parseCustomizationOptions(menuItem?.customizationOptions);
+    const selectedSet = new Set(selectedOptions);
+    return configuredOptions.filter(option => selectedSet.has(option));
+  };
+
   const composeItemNote = (menuItemId) => {
-    const selectedOptions = itemCustomOptions[menuItemId] || [];
+    const selectedOptions = sortSelectedOptions(menuItemId, itemCustomOptions[menuItemId]);
     const freeNote = normalizeOrderText(itemNotes[menuItemId]);
     return [...selectedOptions, freeNote].filter(Boolean).join('; ');
   };
@@ -440,7 +453,10 @@ export default function PortalPage() {
 
     setOrderQuantities(prev => ({ ...prev, [editingMenuItem.id]: editingMenuItemDraft.quantity || 0 }));
     setItemNotes(prev => ({ ...prev, [editingMenuItem.id]: editingMenuItemDraft.note || '' }));
-    setItemCustomOptions(prev => ({ ...prev, [editingMenuItem.id]: editingMenuItemDraft.options || [] }));
+    setItemCustomOptions(prev => ({
+      ...prev,
+      [editingMenuItem.id]: sortSelectedOptions(editingMenuItem.id, editingMenuItemDraft.options)
+    }));
     closeMenuItemDialog();
   };
 
@@ -762,7 +778,7 @@ export default function PortalPage() {
                           {item.name}
                           {item.note && (
                             <span className="block truncate text-[11px] font-bold text-[#EA5B3C]">
-                              備註: {item.note}
+                              備註: {formatItemNoteDisplay(item.note)}
                             </span>
                           )}
                         </span>
@@ -923,17 +939,30 @@ export default function PortalPage() {
                 <div className="space-y-8">
                   {/* Restaurant Details */}
                   <div className="border-b border-[#EAE8E4] pb-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                    <div>
-                      <h3 className="text-2xl font-bold text-[#333333]">{activeRestaurant.name}</h3>
-                      {activeRestaurant.phone && (
-                        <p className="text-xs text-[#888888] mt-1">
-                          <i className="ti ti-phone"></i> 聯絡電話: {activeRestaurant.phone}
-                        </p>
+                    <div className="flex w-full items-start justify-between gap-4 md:w-auto">
+                      <div>
+                        <h3 className="text-2xl font-bold text-[#333333]">{activeRestaurant.name}</h3>
+                        {activeRestaurant.phone && (
+                          <p className="text-xs text-[#888888] mt-1">
+                            <i className="ti ti-phone"></i> 聯絡電話: {activeRestaurant.phone}
+                          </p>
+                        )}
+                      </div>
+                      {activeRestaurant.menuImageUrl && (
+                        <button
+                          type="button"
+                          onClick={() => setIsMenuImageOpen(true)}
+                          className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[#EAE8E4] bg-white text-lg text-[#888888] transition-all hover:border-[#EA5B3C] hover:text-[#EA5B3C]"
+                          aria-label="查看菜單圖片"
+                          title="查看菜單圖片"
+                        >
+                          <i className="ti ti-photo"></i>
+                        </button>
                       )}
                     </div>
 
-                    <div className="flex w-full flex-col gap-3 text-left md:w-auto md:flex-row md:items-center md:justify-end md:gap-8 md:text-right">
-                      <div>
+                    <div className="grid w-full grid-cols-2 gap-4 text-left md:w-auto md:flex md:items-center md:justify-end md:gap-8 md:text-right">
+                      <div className="min-w-0">
                         <span className="text-xs font-bold text-[#888888] block">截止訂購時間</span>
                         <span className="text-sm font-bold text-[#EA5B3C] flex items-center gap-1 mt-1 md:justify-end">
                           <i className="ti ti-alarm"></i>
@@ -942,7 +971,7 @@ export default function PortalPage() {
                             : activeSchedule.orderDeadline} 前
                         </span>
                       </div>
-                      <div>
+                      <div className="min-w-0 text-left">
                         <span className="relative inline-flex items-center gap-1 text-xs font-bold text-[#888888]" data-cumulative-tip>
                           目前累計金額
                           <button
@@ -956,7 +985,7 @@ export default function PortalPage() {
                             i
                           </button>
                           {isCumulativeTipOpen && (
-                            <span className="absolute left-0 top-full z-20 mt-2 w-[min(18rem,calc(100vw-3rem))] rounded-lg border border-[#EAE8E4] bg-white p-3 text-left text-[11px] font-bold leading-relaxed text-[#555555] shadow-lg md:left-auto md:right-0 md:w-56">
+                            <span className="absolute right-0 top-full z-20 mt-2 w-[min(18rem,calc(100vw-3rem))] rounded-lg border border-[#EAE8E4] bg-white p-3 text-left text-[11px] font-bold leading-relaxed text-[#555555] shadow-lg md:w-56">
                               這是大家目前已送出的訂單總額，可用來一起確認是否接近餐廳免運門檻。
                             </span>
                           )}
@@ -1045,7 +1074,7 @@ export default function PortalPage() {
                               </div>
                               {composeItemNote(item.id) && (
                                 <div className="mt-1 truncate text-[11px] font-bold text-[#888888]">
-                                  備註：{composeItemNote(item.id)}
+                                  備註：{formatItemNoteDisplay(composeItemNote(item.id))}
                                 </div>
                               )}
                             </div>
@@ -1426,7 +1455,7 @@ export default function PortalPage() {
                           <span className="font-bold text-[#333333]">{item.name} × {item.quantity}</span>
                           <span className="shrink-0 font-bold text-[#EA5B3C]">NT$ {item.unitPrice * item.quantity}</span>
                         </div>
-                        {item.note && <p className="mt-1 text-[11px] font-medium text-[#888888]">{item.note}</p>}
+                        {item.note && <p className="mt-1 text-[11px] font-medium text-[#888888]">{formatItemNoteDisplay(item.note)}</p>}
                       </div>
                     ))}
                   </div>
@@ -1446,6 +1475,42 @@ export default function PortalPage() {
                 >
                   已閱讀
                 </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {isMenuImageOpen && activeRestaurant?.menuImageUrl && (
+          <div
+            className="fixed inset-0 z-[70] flex items-center justify-center bg-black/55 px-4 py-6"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="menu-image-dialog-title"
+            onClick={() => setIsMenuImageOpen(false)}
+          >
+            <div
+              className="flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-[#EAE8E4] bg-white shadow-2xl"
+              onClick={event => event.stopPropagation()}
+            >
+              <div className="flex items-center justify-between border-b border-[#EAE8E4] px-5 py-4">
+                <h2 id="menu-image-dialog-title" className="text-base font-bold text-[#333333]">
+                  {activeRestaurant.name} 菜單
+                </h2>
+                <button
+                  type="button"
+                  onClick={() => setIsMenuImageOpen(false)}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#EAE8E4] bg-white text-[#888888] transition-all hover:border-[#EA5B3C] hover:text-[#EA5B3C]"
+                  aria-label="關閉菜單圖片"
+                >
+                  <i className="ti ti-x text-lg"></i>
+                </button>
+              </div>
+              <div className="overflow-auto bg-[#F9F8F5] p-3 kaizen-scrollbar sm:p-5">
+                <img
+                  src={activeRestaurant.menuImageUrl}
+                  alt={`${activeRestaurant.name} 菜單`}
+                  className="mx-auto h-auto max-w-full rounded-lg bg-white object-contain shadow-sm"
+                />
               </div>
             </div>
           </div>

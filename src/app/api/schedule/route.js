@@ -3,6 +3,7 @@ import prisma from '@/lib/db';
 import { getCurrentUser } from '@/lib/auth';
 
 const CATEGORY_ORDER_KEY_PREFIX = 'restaurantCategoryOrder:';
+const MENU_IMAGE_KEY_PREFIX = 'restaurantMenuImage:';
 const DEADLINE_DATE_KEY_PREFIX = 'scheduleOrderDeadlineDate:';
 
 // Helper to get date string YYYY-MM-DD
@@ -84,6 +85,13 @@ export async function GET(request) {
     const categoryOrderSettings = await prisma.siteSetting.findMany({
       where: { key: { startsWith: CATEGORY_ORDER_KEY_PREFIX } }
     });
+    const menuImageSettings = await prisma.siteSetting.findMany({
+      where: { key: { startsWith: MENU_IMAGE_KEY_PREFIX } }
+    });
+    const menuImageByRestaurantId = new Map(menuImageSettings.map(setting => [
+      setting.key.slice(MENU_IMAGE_KEY_PREFIX.length),
+      setting.value
+    ]));
     const deadlineDateSettings = await prisma.siteSetting.findMany({
       where: {
         key: {
@@ -125,6 +133,9 @@ export async function GET(request) {
         deliveredAt: sched.deliveredAt,
         restaurant: sched.restaurant ? {
           ...sched.restaurant,
+          menuImageUrl: menuImageByRestaurantId.has(sched.restaurant.id)
+            ? `/api/restaurant-menu-image?restaurantId=${sched.restaurant.id}`
+            : '',
           categoryOrder: categoryOrderByRestaurantId.get(sched.restaurant.id) || []
         } : null,
         userOrder: userOrder ? {

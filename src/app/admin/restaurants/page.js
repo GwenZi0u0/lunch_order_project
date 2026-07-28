@@ -70,6 +70,38 @@ function getMenuItemProteinPriority(itemName) {
   return 5;
 }
 
+function compressMenuImage(file) {
+  return new Promise((resolve, reject) => {
+    if (!file?.type?.startsWith('image/')) {
+      reject(new Error('請選擇圖片檔案。'));
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('圖片讀取失敗。'));
+    reader.onload = () => {
+      const image = new Image();
+      image.onerror = () => reject(new Error('圖片格式無法讀取。'));
+      image.onload = () => {
+        const maxDimension = 1800;
+        const scale = Math.min(1, maxDimension / Math.max(image.width, image.height));
+        const width = Math.max(1, Math.round(image.width * scale));
+        const height = Math.max(1, Math.round(image.height * scale));
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const context = canvas.getContext('2d');
+        context.fillStyle = '#FFFFFF';
+        context.fillRect(0, 0, width, height);
+        context.drawImage(image, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', 0.82));
+      };
+      image.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
 export default function RestaurantsPage() {
   const router = useRouter();
   const [user, setUser] = useState(null);
@@ -81,6 +113,8 @@ export default function RestaurantsPage() {
   const [newRestName, setNewRestName] = useState('');
   const [newRestPhone, setNewRestPhone] = useState('');
   const [newRestNote, setNewRestNote] = useState('');
+  const [newRestMenuImage, setNewRestMenuImage] = useState('');
+  const [isMenuImageProcessing, setIsMenuImageProcessing] = useState(false);
   const [menuItems, setMenuItems] = useState([]); // [{ name, price, category }] category maps to JSON "類型"
   const [categoryOrder, setCategoryOrder] = useState([]);
   const [draggedCategory, setDraggedCategory] = useState('');
@@ -107,10 +141,11 @@ export default function RestaurantsPage() {
   const [restaurantToDelete, setRestaurantToDelete] = useState(null);
   const [isDeletingRestaurant, setIsDeletingRestaurant] = useState(false);
 
-  const buildComparableRestaurant = (name, phone, note, items, orderedCategories = []) => ({
+  const buildComparableRestaurant = (name, phone, note, menuImageDataUrl, items, orderedCategories = []) => ({
     name: (name || '').trim(),
     phone: (phone || '').trim(),
     note: (note || '').trim(),
+    menuImageDataUrl: menuImageDataUrl || '',
     categoryOrder: orderedCategories,
     menuItems: (items || []).map(item => ({
       name: (item.name || '').trim(),
@@ -362,6 +397,7 @@ export default function RestaurantsPage() {
     setNewRestName('');
     setNewRestPhone('');
     setNewRestNote('');
+    setNewRestMenuImage('');
     setMenuItems([]);
     setCategoryOrder([]);
     setDraggedCategory('');
@@ -386,6 +422,7 @@ export default function RestaurantsPage() {
     setNewRestName(restaurant.name || '');
     setNewRestPhone(restaurant.phone || '');
     setNewRestNote(restaurant.note || '');
+    setNewRestMenuImage(restaurant.menuImageDataUrl || '');
     setMenuItems(editableItems);
     const initialCategoryOrder = [
       ...(restaurant.categoryOrder || []),
@@ -398,6 +435,7 @@ export default function RestaurantsPage() {
       restaurant.name,
       restaurant.phone,
       restaurant.note,
+      restaurant.menuImageDataUrl,
       editableItems,
       initialCategoryOrder
     ));
@@ -430,6 +468,7 @@ export default function RestaurantsPage() {
     setNewRestName(restaurant.name || '');
     setNewRestPhone(restaurant.phone || '');
     setNewRestNote(restaurant.note || '');
+    setNewRestMenuImage(restaurant.menuImageDataUrl || '');
     setMenuItems(previewItems);
     setCategoryOrder(previewCategoryOrder);
     setEditingMenuItemIndex(null);
@@ -459,10 +498,28 @@ export default function RestaurantsPage() {
     newRestName,
     newRestPhone,
     newRestNote,
+    newRestMenuImage,
     menuItems,
     displayedCategoryOrder
   );
   const hasEditChanges = !!editingRestaurantId && JSON.stringify(currentEditData) !== JSON.stringify(editingOriginalData);
+
+  const handleMenuImageChange = async event => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+
+    setIsMenuImageProcessing(true);
+    setStatusMsg({ text: '', type: '' });
+    try {
+      const dataUrl = await compressMenuImage(file);
+      setNewRestMenuImage(dataUrl);
+    } catch (error) {
+      setStatusMsg({ text: error.message, type: 'error' });
+    } finally {
+      setIsMenuImageProcessing(false);
+    }
+  };
 
   const handleCategoryDrop = targetCategory => {
     if (!draggedCategory || draggedCategory === targetCategory) {
@@ -575,6 +632,7 @@ export default function RestaurantsPage() {
           name: newRestName,
           phone: newRestPhone,
           note: newRestNote,
+          menuImageDataUrl: newRestMenuImage,
           menuItems,
           categoryOrder: displayedCategoryOrder
         })
@@ -819,6 +877,49 @@ export default function RestaurantsPage() {
                     <div className="whitespace-pre-wrap break-words text-xs leading-5 text-[#555555]">
                       <LinkifiedText value={newRestNote} />
                     </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-2 rounded-xl border border-[#EAE8E4] bg-[#F9F8F5] p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-xs font-bold text-[#333333]">菜單圖片</div>
+                    <div className="mt-1 text-[11px] font-medium text-[#888888]">訂購者可從餐廳名稱旁的圖片圖示展開閱覽。</div>
+                  </div>
+                  {!viewingRestaurantId && (
+                    <label className="inline-flex shrink-0 cursor-pointer items-center gap-1.5 rounded-lg border border-[#EAE8E4] bg-white px-3 py-2 text-xs font-bold text-[#555555] transition-all hover:border-[#EA5B3C] hover:text-[#EA5B3C]">
+                      <i className="ti ti-photo-up"></i>
+                      {isMenuImageProcessing ? '處理中...' : newRestMenuImage ? '更換圖片' : '匯入圖片'}
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp"
+                        onChange={handleMenuImageChange}
+                        disabled={isMenuImageProcessing}
+                        className="hidden"
+                      />
+                    </label>
+                  )}
+                </div>
+
+                {newRestMenuImage ? (
+                  <div className="relative overflow-hidden rounded-lg border border-[#EAE8E4] bg-white">
+                    <img src={newRestMenuImage} alt={`${newRestName || '餐廳'}菜單預覽`} className="max-h-72 w-full object-contain" />
+                    {!viewingRestaurantId && (
+                      <button
+                        type="button"
+                        onClick={() => setNewRestMenuImage('')}
+                        className="absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center rounded-full border border-red-100 bg-white/95 text-red-600 shadow-sm"
+                        aria-label="移除菜單圖片"
+                        title="移除圖片"
+                      >
+                        <i className="ti ti-trash"></i>
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <div className="rounded-lg border border-dashed border-[#D6D1CA] bg-white px-4 py-8 text-center text-xs font-medium text-[#99928A]">
+                    尚未匯入菜單圖片
                   </div>
                 )}
               </div>

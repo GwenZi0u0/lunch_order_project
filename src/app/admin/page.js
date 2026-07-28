@@ -16,6 +16,38 @@ function formatDate(date) {
   return [year, month, day].join('-');
 }
 
+function parseCustomizationOptions(value) {
+  if (Array.isArray(value)) {
+    return value.map(option => String(option).trim()).filter(Boolean);
+  }
+
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) {
+        return parsed.map(option => String(option).trim()).filter(Boolean);
+      }
+    } catch {
+      return value.split(/[\r\n,;|]+/).map(option => option.trim()).filter(Boolean);
+    }
+  }
+
+  return [];
+}
+
+function formatItemNoteDisplay(note, menuItem) {
+  const noteParts = String(note || '').split(';').map(part => part.trim()).filter(Boolean);
+  const configuredOptions = parseCustomizationOptions(menuItem?.customizationOptions);
+  const configuredSet = new Set(configuredOptions);
+  const selectedSet = new Set(noteParts.filter(part => configuredSet.has(part)));
+  const freeNoteParts = noteParts.filter(part => !configuredSet.has(part));
+
+  return [
+    ...configuredOptions.filter(option => selectedSet.has(option)),
+    ...freeNoteParts
+  ].join(' ');
+}
+
 function getWeeklyDates() {
   const dates = [];
   const now = new Date();
@@ -95,6 +127,7 @@ export default function AdminDashboard() {
   const [announcementMessage, setAnnouncementMessage] = useState('');
   const [copiedItemSummary, setCopiedItemSummary] = useState(false);
   const [copiedTodayOrders, setCopiedTodayOrders] = useState(false);
+  const [todayItemsDialogOpen, setTodayItemsDialogOpen] = useState(false);
   const [todayOrdersDialogOpen, setTodayOrdersDialogOpen] = useState(false);
   const [messageFormats, setMessageFormats] = useState([]);
   const [messageFormatDialogOpen, setMessageFormatDialogOpen] = useState(false);
@@ -600,10 +633,15 @@ export default function AdminDashboard() {
   const todayItemSummary = todayOrders.reduce((summary, order) => {
     order.orderItems.forEach(item => {
       const name = item.menuItem?.name || '未命名品項';
-      const note = (item.note || order.note || '').trim();
+      const note = formatItemNoteDisplay(item.note || order.note, item.menuItem);
       const summaryKey = `${item.menuItemId || name}__${note}`;
-      if (!summary[summaryKey]) summary[summaryKey] = { name, note, qty: 0, price: item.unitPrice };
+      if (!summary[summaryKey]) {
+        summary[summaryKey] = { name, note, qty: 0, price: item.unitPrice, menuItem: item.menuItem, orders: [] };
+      }
       summary[summaryKey].qty += item.quantity;
+      if (!summary[summaryKey].orders.some(existingOrder => existingOrder.id === order.id)) {
+        summary[summaryKey].orders.push(order);
+      }
     });
     return summary;
   }, {});
@@ -615,24 +653,15 @@ export default function AdminDashboard() {
   const isTodayWeekend = todayDateObject.getDay() === 0 || todayDateObject.getDay() === 6;
   const isTodayHoliday = Boolean(todaySchedule && !todaySchedule.isOpen) || isTodayWeekend;
   const todayRestaurantLabel = todaySchedule?.restaurant?.name || (isTodayHoliday ? '休假' : '未排定');
-  const todayTotalQuantity = todayItems.reduce((sum, item) => sum + item.qty, 0);
   const formatTodayItemSummaryText = () => {
     if (todayItems.length === 0) {
-      return `${todayDate} 品項總計\n今日尚無訂餐內容。`;
+      return '今日尚無訂餐內容。';
     }
 
-    const itemLines = todayItems.map(item => {
-      const noteText = item.note ? `（${item.note}）` : '';
-      return `${item.name}${noteText} x ${item.qty}`;
-    });
-
-    return [
-      `${todayDate} 品項總計`,
-      `本日餐廳：${todayRestaurantLabel}`,
-      ...itemLines,
-      `總份數：${todayTotalQuantity}`,
-      `總金額：NT$ ${todayTotalAmount}`
-    ].join('\n');
+    return todayItems.map(item => {
+      const noteText = formatItemNoteDisplay(item.note);
+      return `${item.name}${noteText ? `/${noteText}` : ''}*${item.qty}`;
+    }).join('\n');
   };
   const copyTodayItemSummary = async () => {
     try {
@@ -681,26 +710,31 @@ export default function AdminDashboard() {
       || (Number.isNaN(rawSerial) ? '--' : String(rawSerial).padStart(2, '0'));
     return `${groupKey}${serial}`;
   };
+  const getTodayItemOrderNumbers = item => (item.orders || [])
+    .map(order => getAreaOrderNumber(getSeatArea(order), order))
+    .filter(number => !number.endsWith('--'))
+    .sort((a, b) => {
+      const areaCompare = a[0].localeCompare(b[0]);
+      return areaCompare || Number(a.slice(1)) - Number(b.slice(1));
+    });
   const formatTodayOrdersCopyText = () => {
-    const orderLines = todayOrdersBySeatArea.flatMap(group => (
+    const areaSections = todayOrdersBySeatArea.map(group => (
       group.orders.flatMap(order => {
         const orderNumber = getAreaOrderNumber(group.key, order);
         const customerLabel = `${orderNumber} ${displayUserName(order.user?.name)}`;
         const itemLines = (order.orderItems || []).map(item => {
           const itemName = item.menuItem?.name || '未命名品項';
-          const itemNote = (item.note || '').trim();
-          return `${itemName}${itemNote ? `(${itemNote})` : ''}*${item.quantity}`;
+          const itemNote = formatItemNoteDisplay(item.note, item.menuItem);
+          const quantityText = item.quantity > 1 ? ` *${item.quantity}` : '';
+          return `${customerLabel} ${itemName}${itemNote ? `/${itemNote}` : ''}${quantityText}`;
         });
 
         if (itemLines.length === 0) return [customerLabel];
-        return [
-          `${customerLabel} ${itemLines[0]}`,
-          ...itemLines.slice(1).map(itemLine => `    ${itemLine}`)
-        ];
+        return itemLines;
       })
     ));
 
-    return [todayDate.slice(5), ...orderLines].join('\n');
+    return areaSections.map(lines => lines.join('\n')).join('\n----\n');
   };
   const copyTodayOrders = async () => {
     try {
@@ -791,6 +825,16 @@ export default function AdminDashboard() {
                     >
                       <i className="ti ti-copy text-sm"></i>
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => setTodayItemsDialogOpen(true)}
+                      disabled={todayItems.length === 0}
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[#EAE8E4] bg-white text-[#888888] transition-all hover:border-[#EA5B3C] hover:text-[#EA5B3C] disabled:cursor-not-allowed disabled:opacity-40"
+                      title="展開"
+                      aria-label="展開品項總計"
+                    >
+                      <i className="ti ti-arrows-maximize text-sm"></i>
+                    </button>
                   </div>
                 </div>
                 <div className="max-h-[240px] overflow-y-auto pr-1 space-y-2 kaizen-scrollbar">
@@ -799,7 +843,7 @@ export default function AdminDashboard() {
                       <span className="min-w-0">
                         <span className="block font-bold text-[#333333] truncate">{item.name}</span>
                         {item.note && (
-                          <span className="mt-1 block truncate text-[11px] text-[#888888]">備註：{item.note}</span>
+                          <span className="mt-1 block truncate text-[11px] text-[#888888]">備註：{formatItemNoteDisplay(item.note, item.menuItem)}</span>
                         )}
                       </span>
                       <span className="shrink-0 text-[#888888]">x {item.qty}</span>
@@ -867,7 +911,7 @@ export default function AdminDashboard() {
                               <span className="min-w-0">
                                 <span className="block truncate">{item.menuItem?.name || '未命名品項'}</span>
                                 {item.note && (
-                                  <span className="mt-0.5 block truncate text-[11px] text-[#888888]">備註：{item.note}</span>
+                                  <span className="mt-0.5 block truncate text-[11px] text-[#888888]">備註：{formatItemNoteDisplay(item.note, item.menuItem)}</span>
                                 )}
                               </span>
                               <span className="shrink-0">x {item.quantity}</span>
@@ -1106,6 +1150,57 @@ export default function AdminDashboard() {
 
       </main>
 
+      {todayItemsDialogOpen && (
+        <div
+          className="fixed inset-0 z-[60] flex items-end justify-center bg-black/40 px-4 py-4 sm:items-center"
+          onClick={() => setTodayItemsDialogOpen(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="today-items-dialog-title"
+            className="flex max-h-[88vh] w-full max-w-[680px] flex-col overflow-hidden rounded-xl border border-[#EAE8E4] bg-white shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-[#EAE8E4] px-5 py-4 sm:px-6">
+              <div>
+                <p className="text-xs font-bold tracking-widest text-[#888888]">{todayDate}</p>
+                <h3 id="today-items-dialog-title" className="mt-1 flex items-center gap-2 text-lg font-bold text-[#333333]">
+                  <i className="ti ti-list-check text-[#EA5B3C]"></i>
+                  品項總計
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setTodayItemsDialogOpen(false)}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#EAE8E4] bg-white text-[#888888] transition-all hover:border-[#EA5B3C] hover:text-[#EA5B3C]"
+                aria-label="關閉品項總計"
+              >
+                <i className="ti ti-x text-lg"></i>
+              </button>
+            </div>
+
+            <div className="overflow-y-auto p-5 kaizen-scrollbar sm:p-6">
+              <div className="divide-y divide-[#EAE8E4]">
+                {todayItems.map(item => {
+                  const orderNumbers = getTodayItemOrderNumbers(item);
+                  return (
+                    <div key={`${item.name}-${item.note || 'no-note'}`} className="py-3 text-sm leading-6">
+                      <span className="font-bold text-[#333333]">{item.name}</span>
+                      {item.note && <span className="text-[#888888]">/{item.note}</span>}
+                      <span className="ml-1 font-bold text-[#EA5B3C]">*{item.qty}</span>
+                      <span className="ml-2 text-xs font-bold text-[#888888]">
+                        [編號:{orderNumbers.join('、')}]
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {todayOrdersDialogOpen && (
         <div
           className="fixed inset-0 z-[60] flex items-end justify-center bg-black/40 px-4 py-4 sm:items-center"
@@ -1160,7 +1255,7 @@ export default function AdminDashboard() {
                                 <span className="ml-0.5 font-bold text-[#EA5B3C]">*{item.quantity}</span>
                               )}
                               {item.note && (
-                                <span className="text-[#888888]">／備註：{item.note}</span>
+                                <span className="text-[#888888]">／備註：{formatItemNoteDisplay(item.note, item.menuItem)}</span>
                               )}
                             </span>
                           ))}

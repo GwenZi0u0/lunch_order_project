@@ -77,6 +77,10 @@ function getDisplayOrderNote(order) {
   return (order?.note || '').replace(/^([AB])區\s*[;；,，、]?\s*/i, '').trim();
 }
 
+function formatItemNoteDisplay(note) {
+  return String(note || '').replace(/\s*;\s*/g, ' ').trim();
+}
+
 export default function PortalPage() {
   const router = useRouter();
   const [user, setUser] = useState(null);
@@ -392,6 +396,12 @@ export default function PortalPage() {
   const walletAmount = `${user.balance < 0 ? '－' : ''}NT$ ${Math.abs(user.balance)}`;
   const pendingHoldAmount = user.pendingHoldAmount || 0;
   const availableBalance = user.availableBalance ?? (user.balance - pendingHoldAmount);
+  const companyOrdersBySeatArea = ['A', 'B'].map(area => ({
+    area,
+    orders: companyOrders
+      .filter(order => (order.seatArea || 'A') === area)
+      .sort((a, b) => Number(a.orderNumberDisplay || 0) - Number(b.orderNumberDisplay || 0))
+  })).filter(group => group.orders.length > 0);
 
   return (
     <>
@@ -925,28 +935,34 @@ export default function PortalPage() {
                 <p className="py-10 text-center text-sm font-bold text-[#888888]">今天還沒有人送出訂單</p>
               )}
 
-              {!companyOrdersLoading && !companyOrdersError && companyOrders.map(order => {
-                const displayNumber = `${order.seatArea || 'A'}${order.orderNumberDisplay || '--'}`;
-                const orderDetails = order.items.flatMap(item => {
-                  const itemLabel = `${item.name}${item.quantity > 1 ? ` x ${item.quantity}` : ''}`;
-                  return item.note
-                    ? [itemLabel, `備註：${item.note}`]
-                    : [itemLabel];
-                });
-                return (
-                  <div key={order.id} className="rounded-xl border border-[#EAE8E4] bg-[#F9F8F5] px-4 py-3">
-                    <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                      <span className="shrink-0 text-xs font-bold text-[#EA5B3C]">
-                        {displayNumber}
-                      </span>
-                      <span className="shrink-0 text-sm font-bold text-[#333333]">{order.userName}</span>
-                      <span className="min-w-0 text-xs font-bold leading-5 text-[#666666]">
-                        {orderDetails.join('／')}
-                      </span>
-                    </div>
-                  </div>
-                );
-              })}
+              {!companyOrdersLoading && !companyOrdersError && companyOrdersBySeatArea.map((group, groupIndex) => (
+                <div key={group.area} className="space-y-3">
+                  {groupIndex > 0 && (
+                    <div className="border-t-2 border-dashed border-[#D6D1CA]" aria-hidden="true"></div>
+                  )}
+                  {group.orders.map(order => {
+                    const displayNumber = `${group.area}${order.orderNumberDisplay || '--'}`;
+                    const orderDetails = order.items.map(item => {
+                      const itemNote = formatItemNoteDisplay(item.note);
+                      const quantityText = item.quantity > 1 ? ` *${item.quantity}` : '';
+                      return `${item.name}${itemNote ? `/${itemNote}` : ''}${quantityText}`;
+                    });
+                    return (
+                      <div key={order.id} className="rounded-xl border border-[#EAE8E4] bg-[#F9F8F5] px-4 py-3">
+                        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                          <span className="shrink-0 text-xs font-bold text-[#EA5B3C]">
+                            {displayNumber}
+                          </span>
+                          <span className="shrink-0 text-sm font-bold text-[#333333]">{order.userName}</span>
+                          <span className="min-w-0 text-xs font-bold leading-5 text-[#666666]">
+                            {orderDetails.join('／')}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ))}
             </div>
           </div>
         </div>

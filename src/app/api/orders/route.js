@@ -70,6 +70,38 @@ function getCustomizationExtraAmount(value) {
   return Array.from(matches).reduce((sum, match) => sum + (parseInt(match[1], 10) || 0), 0);
 }
 
+function parseCustomizationOptions(value) {
+  if (Array.isArray(value)) {
+    return value.map(option => String(option).trim()).filter(Boolean);
+  }
+
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) {
+        return parsed.map(option => String(option).trim()).filter(Boolean);
+      }
+    } catch {
+      return value.split(/[\r\n,;|]+/).map(option => option.trim()).filter(Boolean);
+    }
+  }
+
+  return [];
+}
+
+function normalizeItemNote(menuItem, value) {
+  const noteParts = String(value || '').split(';').map(part => part.trim()).filter(Boolean);
+  const configuredOptions = parseCustomizationOptions(menuItem?.customizationOptions);
+  const configuredSet = new Set(configuredOptions);
+  const selectedSet = new Set(noteParts.filter(part => configuredSet.has(part)));
+  const freeNoteParts = noteParts.filter(part => !configuredSet.has(part));
+
+  return [
+    ...configuredOptions.filter(option => selectedSet.has(option)),
+    ...freeNoteParts
+  ].join('; ');
+}
+
 export async function GET(request) {
   try {
     const user = await getCurrentUser(request);
@@ -105,7 +137,10 @@ export async function GET(request) {
               quantity: true,
               note: true,
               menuItem: {
-                select: { name: true }
+                select: {
+                  name: true,
+                  customizationOptions: true
+                }
               }
             }
           }
@@ -121,7 +156,7 @@ export async function GET(request) {
           id: item.id,
           name: item.menuItem.name,
           quantity: item.quantity,
-          note: item.note
+          note: normalizeItemNote(item.menuItem, item.note)
         }))
       })));
     }
@@ -263,7 +298,7 @@ export async function POST(request) {
     let totalAmount = 0;
     const orderItemsData = items.map(item => {
       const dbItem = menuItems.find(mi => mi.id === item.menuItemId);
-      const note = typeof item.note === 'string' ? item.note.trim() : '';
+      const note = normalizeItemNote(dbItem, item.note);
       const price = dbItem.price + getCustomizationExtraAmount(note);
       const quantity = parseInt(item.quantity, 10) || 1;
       totalAmount += price * quantity;

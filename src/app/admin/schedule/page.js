@@ -199,6 +199,7 @@ export default function AdminDashboard() {
   
   // Scheduling state
   const [selectedRestaurantId, setSelectedRestaurantId] = useState('');
+  const [restaurantConfigs, setRestaurantConfigs] = useState([]);
   const [orderDeadlineDate, setOrderDeadlineDate] = useState('');
   const [orderDeadline, setOrderDeadline] = useState('09:40');
   const [isHoliday, setIsHoliday] = useState(false);
@@ -397,7 +398,9 @@ export default function AdminDashboard() {
   const todaySchedule = schedules.find(s => s.date === todayDate);
   const weeklyDates = getWeeklyDates();
   const selectedDateIsHoliday = activeSchedule ? !activeSchedule.isOpen && !activeSchedule.deliveredAt : isHoliday;
-  const activeMenuItems = activeSchedule?.restaurant?.menuItems || [];
+  const activeMenuItems = activeSchedule?.restaurantConfigs?.length
+    ? activeSchedule.restaurantConfigs.flatMap(config => config.restaurant?.menuItems || [])
+    : activeSchedule?.restaurant?.menuItems || [];
   const availableOrderMenuCategories = Array.from(new Set(activeMenuItems.map(getMenuItemCategory)));
   const savedOrderMenuCategoryOrder = Array.isArray(activeSchedule?.restaurant?.categoryOrder)
     ? activeSchedule.restaurant.categoryOrder.filter(category => availableOrderMenuCategories.includes(category))
@@ -479,11 +482,25 @@ export default function AdminDashboard() {
       setOrderDeadlineDate(activeSchedule.orderDeadlineDate || activeSchedule.date);
       setOrderDeadline(activeSchedule.orderDeadline || '09:40');
       setIsHoliday(!activeSchedule.isOpen && !activeSchedule.deliveredAt);
+      setRestaurantConfigs((activeSchedule.restaurantConfigs?.length
+        ? activeSchedule.restaurantConfigs
+        : activeSchedule.restaurantId
+          ? [{
+              restaurantId: activeSchedule.restaurantId,
+              orderDeadlineDate: activeSchedule.orderDeadlineDate || activeSchedule.date,
+              orderDeadline: activeSchedule.orderDeadline || '09:40'
+            }]
+          : []).map(config => ({
+            restaurantId: config.restaurantId,
+            orderDeadlineDate: config.orderDeadlineDate || selectedDate,
+            orderDeadline: config.orderDeadline || '09:40'
+          })));
     } else {
       setSelectedRestaurantId('');
       setOrderDeadlineDate(selectedDate);
       setOrderDeadline('09:40');
       setIsHoliday(isWeekendDate(selectedDate));
+      setRestaurantConfigs([{ restaurantId: '', orderDeadlineDate: selectedDate, orderDeadline: '09:40' }]);
     }
     setMessage({ text: '', type: '' });
     setOrderEditor(null);
@@ -497,7 +514,8 @@ export default function AdminDashboard() {
     isOpenValue,
     clearOrdersOnRestaurantChange,
     successMessage,
-    savingSection
+    savingSection,
+    restaurantConfigsValue
   }) => {
     setSavingScheduleSection(savingSection);
     setMessage({ text: '', type: '' });
@@ -512,7 +530,8 @@ export default function AdminDashboard() {
           orderDeadlineDate: orderDeadlineDateValue || selectedDate,
           orderDeadline: orderDeadlineValue,
           isOpen: isOpenValue,
-          clearOrdersOnRestaurantChange
+          clearOrdersOnRestaurantChange,
+          restaurantConfigs: restaurantConfigsValue
         })
       });
 
@@ -528,6 +547,39 @@ export default function AdminDashboard() {
     } finally {
       setSavingScheduleSection('');
     }
+  };
+
+  const handleSaveRestaurantConfigs = async () => {
+    if (isScheduleLocked || isPastSelectedDate) return;
+    const normalizedConfigs = isHoliday ? [] : restaurantConfigs.filter(config => config.restaurantId);
+    if (!isHoliday && normalizedConfigs.length === 0) {
+      setMessage({ text: '請至少選擇一間餐廳！', type: 'error' });
+      return;
+    }
+    if (normalizedConfigs.some((config, index) => normalizedConfigs.findIndex(item => item.restaurantId === config.restaurantId) !== index)) {
+      setMessage({ text: '同一間餐廳不可重複加入。', type: 'error' });
+      return;
+    }
+    if (normalizedConfigs.some(config => config.orderDeadlineDate > selectedDate)) {
+      setMessage({ text: '訂單截止日期不可晚於供餐日期。', type: 'error' });
+      return;
+    }
+    const activeOrderCount = activeSchedule?.orders?.filter(order => order.status !== 'cancelled').length || 0;
+    const previousIds = (activeSchedule?.restaurantConfigs || []).map(config => config.restaurantId).join(',');
+    const nextIds = normalizedConfigs.map(config => config.restaurantId).join(',');
+    const shouldClearOrders = activeOrderCount > 0 && previousIds !== nextIds;
+    if (shouldClearOrders && !confirm('此日期已有訂購者訂餐，變更餐廳將清除當日所有訂單，確定繼續嗎？')) return;
+
+    await persistScheduleSettings({
+      restaurantId: normalizedConfigs[0]?.restaurantId || null,
+      orderDeadlineDateValue: normalizedConfigs[0]?.orderDeadlineDate || selectedDate,
+      orderDeadlineValue: normalizedConfigs[0]?.orderDeadline || '09:40',
+      isOpenValue: !isHoliday,
+      clearOrdersOnRestaurantChange: shouldClearOrders,
+      restaurantConfigsValue: normalizedConfigs,
+      successMessage: '當日餐廳與截止時間已成功儲存！',
+      savingSection: 'restaurants'
+    });
   };
 
   const handleSaveRestaurantSetting = async () => {
@@ -895,7 +947,14 @@ export default function AdminDashboard() {
         if (summary[summaryKey]) {
           summary[summaryKey].qty += qty;
         } else {
-          summary[summaryKey] = { name, note, qty, price, menuItem: oi.menuItem };
+          summary[summaryKey] = {
+            name,
+            note,
+            qty,
+            price,
+            menuItem: oi.menuItem,
+            restaurantName: restaurants.find(restaurant => restaurant.id === oi.menuItem?.restaurantId)?.name || '餐廳'
+          };
         }
       });
     });
@@ -975,12 +1034,14 @@ export default function AdminDashboard() {
       if (!name) return;
 
       const category = oi.menuItem?.category || '';
+      const restaurantName = restaurants.find(restaurant => restaurant.id === oi.menuItem?.restaurantId)?.name || '餐廳';
       const isAlaCarte = category.includes('\u55ae\u9ede') || category.includes('\u52a0\u9ede');
-      const key = `${name}__${note}__${isAlaCarte ? 'alaCarte' : 'meal'}`;
+      const key = `${restaurantName}__${name}__${note}__${isAlaCarte ? 'alaCarte' : 'meal'}`;
 
       if (!groups[key]) {
         groups[key] = {
           name,
+          restaurantName,
           note,
           qty: 0,
           isAlaCarte,
@@ -1007,7 +1068,7 @@ export default function AdminDashboard() {
   const orderCopyText = [
     `日期: ${formatMonthDay(selectedDate)}`,
     '',
-    ...orderCopyItems.map(item => `${item.name}${item.note ? ` ${item.note}` : ''} *${item.qty}`),
+    ...orderCopyItems.map(item => `${item.restaurantName}｜${item.name}${item.note ? ` ${item.note}` : ''} *${item.qty}`),
     '',
     `共計${copyMealCount}份餐，${copyAlaCarteCount}份單點`,
     `總金額$${totalOrderAmount}`
@@ -1018,7 +1079,7 @@ export default function AdminDashboard() {
         const areaCompare = a[0].localeCompare(b[0]);
         return areaCompare || Number(a.slice(1)) - Number(b.slice(1));
       });
-      return `${item.name}${item.note ? ` ${item.note}` : ''} *${item.qty} [編號:${sortedOrderNumbers.join('、')}]`;
+      return `${item.restaurantName}｜${item.name}${item.note ? ` ${item.note}` : ''} *${item.qty} [編號:${sortedOrderNumbers.join('、')}]`;
     })
     .join('\n');
 
@@ -1384,63 +1445,76 @@ export default function AdminDashboard() {
                   </button>
                 </div>
 
-                <div className="flex items-end gap-2">
-                  <div className="min-w-0 flex-1 space-y-1.5">
-                    <label className="text-xs font-bold text-[#888888]">指定當日餐廳</label>
-                    <select
-                      value={selectedRestaurantId}
-                      onChange={(e) => setSelectedRestaurantId(e.target.value)}
-                      disabled={isHoliday || isPastSelectedDate || isScheduleLocked}
-                      className="w-full text-xs pl-3 pr-5 py-2 border border-[#EAE8E4] rounded-lg focus:outline-none focus:border-[#EA5B3C] bg-white font-medium disabled:bg-[#F9F8F5] disabled:text-[#B8B2AA] disabled:cursor-not-allowed"
-                    >
-                      <option value="">-- 請選擇餐廳 --</option>
-                      {restaurants.map(rest => (
-                        <option key={rest.id} value={rest.id}>{rest.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleSaveRestaurantSetting}
-                    disabled={isPastSelectedDate || isScheduleLocked || Boolean(savingScheduleSection) || (!isHoliday && !selectedRestaurantId)}
-                    className="shrink-0 px-4 py-3 text-xs font-bold bg-[#EA5B3C] text-white rounded-xl shadow-sm hover:bg-[#333333] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {savingScheduleSection === 'restaurant' ? '儲存中' : '儲存'}
-                  </button>
-                </div>
-
-                <div className="flex items-end gap-2">
-                  <div className="min-w-0 flex-1 space-y-1.5">
-                    <label className="text-xs font-bold text-[#888888]">訂單截止時間</label>
-                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                      <input
-                        type="date"
-                        aria-label="訂單截止日期"
-                        value={orderDeadlineDate}
-                        max={selectedDate}
-                        onChange={(e) => setOrderDeadlineDate(e.target.value)}
+                {!isHoliday && (
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <label className="text-xs font-bold text-[#888888]">指定當日餐廳</label>
+                      <button
+                        type="button"
+                        onClick={() => setRestaurantConfigs(configs => [...configs, { restaurantId: '', orderDeadlineDate: selectedDate, orderDeadline: '09:40' }])}
                         disabled={isPastSelectedDate || isScheduleLocked}
-                        className="w-full text-xs px-3 py-2 border border-[#EAE8E4] rounded-lg focus:outline-none focus:border-[#EA5B3C] bg-white font-medium disabled:bg-[#F9F8F5] disabled:text-[#B8B2AA] disabled:cursor-not-allowed"
-                      />
-                      <input
-                        type="time"
-                        aria-label="訂單截止時間"
-                        value={orderDeadline}
-                        onChange={(e) => setOrderDeadline(e.target.value)}
-                        disabled={isPastSelectedDate || isScheduleLocked}
-                        className="w-full text-xs px-3 py-2 border border-[#EAE8E4] rounded-lg focus:outline-none focus:border-[#EA5B3C] bg-white font-medium disabled:bg-[#F9F8F5] disabled:text-[#B8B2AA] disabled:cursor-not-allowed"
-                      />
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[#EA5B3C] bg-[#FFF3EF] text-[#EA5B3C] disabled:cursor-not-allowed disabled:opacity-50"
+                        aria-label="新增餐廳"
+                        title="新增餐廳"
+                      >
+                        <i className="ti ti-plus"></i>
+                      </button>
                     </div>
+                    {restaurantConfigs.map((config, index) => (
+                      <div key={index} className="space-y-3 rounded-xl border border-[#EAE8E4] bg-[#F9F8F5] p-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-xs font-bold text-[#333333]">餐廳{['一','二','三','四','五','六'][index] || index + 1}</span>
+                          {restaurantConfigs.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => setRestaurantConfigs(configs => configs.filter((_, configIndex) => configIndex !== index))}
+                              className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-red-200 bg-white text-red-600"
+                              aria-label={`移除餐廳${index + 1}`}
+                            >
+                              <i className="ti ti-minus"></i>
+                            </button>
+                          )}
+                        </div>
+                        <select
+                          value={config.restaurantId}
+                          onChange={(e) => setRestaurantConfigs(configs => configs.map((item, configIndex) => configIndex === index ? { ...item, restaurantId: e.target.value } : item))}
+                          disabled={isPastSelectedDate || isScheduleLocked}
+                          className="w-full rounded-lg border border-[#EAE8E4] bg-white px-3 py-2 text-xs font-medium focus:border-[#EA5B3C] focus:outline-none disabled:cursor-not-allowed disabled:bg-[#F9F8F5]"
+                          aria-label={`餐廳${index + 1}`}
+                        >
+                          <option value="">-- 請選擇餐廳 --</option>
+                          {restaurants.map(rest => <option key={rest.id} value={rest.id}>{rest.name}</option>)}
+                        </select>
+                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                          <input
+                            type="date"
+                            value={config.orderDeadlineDate}
+                            max={selectedDate}
+                            onChange={(e) => setRestaurantConfigs(configs => configs.map((item, configIndex) => configIndex === index ? { ...item, orderDeadlineDate: e.target.value } : item))}
+                            className="w-full rounded-lg border border-[#EAE8E4] bg-white px-3 py-2 text-xs"
+                            aria-label={`餐廳${index + 1}截止日期`}
+                          />
+                          <input
+                            type="time"
+                            value={config.orderDeadline}
+                            onChange={(e) => setRestaurantConfigs(configs => configs.map((item, configIndex) => configIndex === index ? { ...item, orderDeadline: e.target.value } : item))}
+                            className="w-full rounded-lg border border-[#EAE8E4] bg-white px-3 py-2 text-xs"
+                            aria-label={`餐廳${index + 1}截止時間`}
+                          />
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                  <button
-                    type="button"
-                    onClick={handleSaveDeadlineSetting}
-                    disabled={isPastSelectedDate || isScheduleLocked || Boolean(savingScheduleSection)}
-                    className="shrink-0 px-4 py-3 text-xs font-bold bg-[#EA5B3C] text-white rounded-xl shadow-sm hover:bg-[#333333] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {savingScheduleSection === 'deadline' ? '儲存中' : '儲存'}
-                  </button>
-                </div>
+                )}
+
+                <button
+                  type="button"
+                  onClick={handleSaveRestaurantConfigs}
+                  disabled={isPastSelectedDate || isScheduleLocked || Boolean(savingScheduleSection)}
+                  className="w-full rounded-xl bg-[#EA5B3C] py-3 text-xs font-bold text-white shadow-sm transition-all hover:bg-[#333333] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {savingScheduleSection === 'restaurants' ? '儲存中...' : '儲存當日餐廳設定'}
+                </button>
 
                 {isPastSelectedDate && (
                   <div className="rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-xs font-bold text-orange-700">
@@ -1657,6 +1731,7 @@ export default function AdminDashboard() {
                         {itemSummaries.map(item => (
                           <div key={`${item.name}-${item.note || 'default'}`} className="p-4 bg-[#F9F8F5] border border-[#EAE8E4] rounded-lg flex justify-between items-center">
                             <div>
+                              <span className="mb-1 block text-[10px] font-bold text-[#EA5B3C]">{item.restaurantName}</span>
                               <span className="font-bold text-sm text-[#333333]">{item.name}</span>
                               <span className="text-xs text-[#888888] block mt-1">單價: NT$ {item.price}</span>
                               {item.note && (

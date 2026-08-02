@@ -168,6 +168,7 @@ export default function PortalPage() {
   const [isOrderSummaryVisible, setIsOrderSummaryVisible] = useState(false);
   const [activeMenuCategory, setActiveMenuCategory] = useState('');
   const [isMenuImageOpen, setIsMenuImageOpen] = useState(false);
+  const [activeRestaurantId, setActiveRestaurantId] = useState('');
   
   // Current system date/time check
   const [currentDateTime, setCurrentDateTime] = useState({ dateStr: '', timeStr: '' });
@@ -282,7 +283,20 @@ export default function PortalPage() {
 
   // Find schedule details for selected date
   const activeSchedule = schedules.find(s => s.date === selectedDate);
-  const activeRestaurant = activeSchedule?.restaurant || null;
+  const restaurantConfigs = activeSchedule?.restaurantConfigs?.length
+    ? activeSchedule.restaurantConfigs
+    : activeSchedule?.restaurant
+      ? [{
+          restaurantId: activeSchedule.restaurant.id,
+          orderDeadlineDate: activeSchedule.orderDeadlineDate || activeSchedule.date,
+          orderDeadline: activeSchedule.orderDeadline || '09:40',
+          restaurant: activeSchedule.restaurant
+        }]
+      : [];
+  const activeRestaurantConfig = restaurantConfigs.find(config => config.restaurantId === activeRestaurantId)
+    || restaurantConfigs[0]
+    || null;
+  const activeRestaurant = activeRestaurantConfig?.restaurant || null;
   const availableMenuCategories = Array.from(new Set(
     (activeRestaurant?.menuItems || []).map(getMenuCategory)
   ));
@@ -328,6 +342,10 @@ export default function PortalPage() {
   }, [allowNextWeekMenu, activeWeekTab]);
 
   useEffect(() => {
+    setActiveRestaurantId(restaurantConfigs[0]?.restaurantId || '');
+  }, [selectedDate, activeSchedule?.id]);
+
+  useEffect(() => {
     setActiveMenuCategory('');
     setIsMenuImageOpen(false);
   }, [activeRestaurant?.id]);
@@ -356,7 +374,9 @@ export default function PortalPage() {
 
     if (schedule.userOrder) {
       schedule.userOrder.items.forEach(item => {
-        const menuItem = schedule.restaurant?.menuItems?.find(mi => mi.id === item.menuItemId);
+        const menuItem = (schedule.restaurantConfigs?.length
+          ? schedule.restaurantConfigs.flatMap(config => config.restaurant?.menuItems || [])
+          : schedule.restaurant?.menuItems || []).find(mi => mi.id === item.menuItemId);
         const parsedNote = splitExistingItemNote(menuItem, item.note || '');
         const normalizedNote = normalizeOrderText(item.note);
         const key = `${item.menuItemId}::${normalizedNote}`;
@@ -397,7 +417,11 @@ export default function PortalPage() {
     setOrderSuccess('');
   }, [selectedDate, activeSchedule]);
 
-  const getMenuItemById = (menuItemId) => activeRestaurant?.menuItems.find(item => item.id === menuItemId);
+  const getMenuItemById = (menuItemId) => restaurantConfigs
+    .flatMap(config => config.restaurant?.menuItems || [])
+    .find(item => item.id === menuItemId);
+  const getRestaurantForMenuItem = (menuItemId) => restaurantConfigs
+    .find(config => config.restaurant?.menuItems?.some(item => item.id === menuItemId))?.restaurant || null;
 
   const sortSelectedOptions = (menuItemId, selectedOptions = []) => {
     const menuItem = getMenuItemById(menuItemId);
@@ -509,24 +533,29 @@ export default function PortalPage() {
     });
   };
 
-  // Calculate order closed status
-  const isClosed = () => {
+  // Calculate order closed status for each restaurant.
+  const isRestaurantConfigClosed = (config = activeRestaurantConfig) => {
     if (!activeSchedule) return true;
     if (isPreviewMode) return false;
     if (!activeSchedule.isOpen) return true;
     
     const { dateStr: currentDate, timeStr: currentTime } = currentDateTime;
-    const deadlineDate = activeSchedule.orderDeadlineDate || activeSchedule.date;
+    const deadlineDate = config?.orderDeadlineDate || activeSchedule.orderDeadlineDate || activeSchedule.date;
     if (currentDate > deadlineDate) return true;
     if (currentDate === deadlineDate) {
-      const deadline = activeSchedule.orderDeadline || '09:40';
+      const deadline = config?.orderDeadline || activeSchedule.orderDeadline || '09:40';
       return currentTime >= deadline;
     }
     return false;
   };
+  const isClosed = () => isRestaurantConfigClosed(activeRestaurantConfig);
+  const cartHasClosedRestaurant = cartItems.some(cartItem => {
+    const config = restaurantConfigs.find(item => item.restaurant?.menuItems?.some(menuItem => menuItem.id === cartItem.menuItemId));
+    return isRestaurantConfigClosed(config);
+  });
 
   const calculateTotal = () => {
-    if (!activeRestaurant) return 0;
+    if (!activeSchedule) return 0;
     return cartItems.reduce((sum, item) => sum + getCartItemUnitPrice(item) * item.quantity, 0);
   };
 
@@ -596,7 +625,11 @@ export default function PortalPage() {
   }, [shouldShowModifyShortcut, shouldShowConfirmOrderShortcut]);
 
   const handlePlaceOrder = async () => {
-    if (isPreviewMode || isClosed()) return;
+    if (isPreviewMode) return;
+    if (cartHasClosedRestaurant) {
+      setOrderError('訂購清單中包含已截止訂購的餐廳，請先移除該餐廳餐點。');
+      return;
+    }
     
     if (activeSchedule.userOrder && !hasOrderChanges()) return;
 
@@ -607,7 +640,7 @@ export default function PortalPage() {
 
     const items = getCurrentOrderItems();
     const submittedItems = items.map(item => {
-      const menuItem = activeRestaurant.menuItems.find(menuItem => menuItem.id === item.menuItemId);
+      const menuItem = getMenuItemById(item.menuItemId);
       return {
         ...item,
         name: menuItem?.name || '餐點',
@@ -933,7 +966,9 @@ export default function PortalPage() {
                   >
                     <div className="text-[11px] md:text-xs text-[#888888] md:mb-1 font-bold leading-tight">{d.label}</div>
                     <div className="hidden md:block text-sm font-bold text-[#333333] truncate">
-                      {isHolidayCard ? '\u4f11\u5047' : (sched?.restaurant ? sched.restaurant.name : '（未排定）')}
+                      {isHolidayCard ? '\u4f11\u5047' : (sched?.restaurantConfigs?.length
+                        ? sched.restaurantConfigs.map(config => config.restaurant?.name).filter(Boolean).join('、')
+                        : sched?.restaurant ? sched.restaurant.name : '（未排定）')}
                     </div>
                     {/* Status Badge */}
                     {isHolidayCard && (
@@ -960,6 +995,28 @@ export default function PortalPage() {
           {/* Menu Selection (Col-span 2) */}
           <div className="order-2 lg:order-1 lg:col-span-2 space-y-6">
             <div className="c-box">
+              {restaurantConfigs.length > 1 && (
+                <div className="mb-6 space-y-3 border-b border-[#EAE8E4] pb-5">
+                  <div className="text-xs font-bold text-[#888888]">選擇餐廳</div>
+                  <div className="flex flex-wrap gap-2">
+                    {restaurantConfigs.map(config => (
+                      <button
+                        key={config.restaurantId}
+                        type="button"
+                        onClick={() => setActiveRestaurantId(config.restaurantId)}
+                        aria-expanded={config.restaurantId === activeRestaurantConfig?.restaurantId}
+                        className={`rounded-full border px-4 py-2 text-xs font-bold transition-all ${
+                          config.restaurantId === activeRestaurantConfig?.restaurantId
+                            ? 'border-[#EA5B3C] bg-[#EA5B3C] text-white'
+                            : 'border-[#EAE8E4] bg-white text-[#555555] hover:border-[#EA5B3C]'
+                        }`}
+                      >
+                        {config.restaurant?.name || '餐廳'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
               {activeRestaurant ? (
                 <div className="space-y-8">
                   {/* Restaurant Details */}
@@ -991,9 +1048,9 @@ export default function PortalPage() {
                         <span className="text-xs font-bold text-[#888888] block">截止訂購時間</span>
                         <span className="text-sm font-bold text-[#EA5B3C] flex items-center gap-1 mt-1 md:justify-end">
                           <i className="ti ti-alarm"></i>
-                          {activeSchedule.orderDeadlineDate && activeSchedule.orderDeadlineDate !== activeSchedule.date
-                            ? `${activeSchedule.orderDeadlineDate} ${activeSchedule.orderDeadline}`
-                            : activeSchedule.orderDeadline} 前
+                          {activeRestaurantConfig?.orderDeadlineDate && activeRestaurantConfig.orderDeadlineDate !== activeSchedule.date
+                            ? `${activeRestaurantConfig.orderDeadlineDate} ${activeRestaurantConfig.orderDeadline}`
+                            : activeRestaurantConfig?.orderDeadline || activeSchedule.orderDeadline} 前
                         </span>
                       </div>
                       <div className="min-w-0 text-left">
@@ -1160,8 +1217,10 @@ export default function PortalPage() {
                         .map(note => note.trim())
                         .filter(Boolean);
                       const itemActionLabel = composedNote ? `${item.name}（${formatItemNoteDisplay(composedNote)}）` : item.name;
+                      const itemRestaurant = getRestaurantForMenuItem(cartItem.menuItemId);
                       return (
                         <div key={cartItem.key} className="space-y-2 rounded-lg border border-[#EAE8E4] bg-[#F9F8F5] p-3 text-xs">
+                          <div className="text-[10px] font-bold text-[#EA5B3C]">{itemRestaurant?.name || '餐廳'}</div>
                           <div className="flex items-center justify-between gap-2">
                             <span className="text-[#333333] font-bold truncate">{item.name}</span>
                             <div className="flex shrink-0 items-center gap-1 rounded-full border border-[#EAE8E4] bg-white px-1 py-0.5">
@@ -1381,7 +1440,7 @@ export default function PortalPage() {
                           )}
                           
                           <button
-                            disabled={isPreviewMode || isClosed() || isSubmitting || calculateTotal() === 0 || !seatArea || isBelowAvailableLimit || (activeSchedule.userOrder && !hasOrderChanges())}
+                            disabled={isPreviewMode || cartHasClosedRestaurant || isSubmitting || calculateTotal() === 0 || !seatArea || isBelowAvailableLimit || (activeSchedule.userOrder && !hasOrderChanges())}
                             onClick={handlePlaceOrder}
                             className="flex-[2] py-3 text-xs font-bold bg-[#EA5B3C] text-white rounded-xl shadow-sm hover:bg-[#333333] hover:shadow-md transition-all disabled:opacity-50 disabled:cursor-not-allowed text-center"
                           >

@@ -5,6 +5,7 @@ import { getCurrentUser } from '@/lib/auth';
 const CATEGORY_ORDER_KEY_PREFIX = 'restaurantCategoryOrder:';
 const MENU_IMAGE_KEY_PREFIX = 'restaurantMenuImage:';
 const DEADLINE_DATE_KEY_PREFIX = 'scheduleOrderDeadlineDate:';
+const SCHEDULE_RESTAURANTS_KEY_PREFIX = 'scheduleRestaurants:';
 
 // Helper to get date string YYYY-MM-DD
 function formatDate(date) {
@@ -105,6 +106,31 @@ export async function GET(request) {
         setting.value
       ])
     );
+    const scheduleRestaurantSettings = await prisma.siteSetting.findMany({
+      where: {
+        key: {
+          in: schedules.map(schedule => `${SCHEDULE_RESTAURANTS_KEY_PREFIX}${schedule.date}`)
+        }
+      }
+    });
+    const restaurantConfigsByDate = new Map(scheduleRestaurantSettings.map(setting => {
+      try {
+        const parsed = JSON.parse(setting.value || '[]');
+        return [setting.key.slice(SCHEDULE_RESTAURANTS_KEY_PREFIX.length), Array.isArray(parsed) ? parsed : []];
+      } catch {
+        return [setting.key.slice(SCHEDULE_RESTAURANTS_KEY_PREFIX.length), []];
+      }
+    }));
+    const configuredRestaurantIds = Array.from(new Set(
+      Array.from(restaurantConfigsByDate.values()).flatMap(configs => configs.map(config => config.restaurantId)).filter(Boolean)
+    ));
+    const configuredRestaurants = configuredRestaurantIds.length > 0
+      ? await prisma.restaurant.findMany({
+          where: { id: { in: configuredRestaurantIds } },
+          include: { menuItems: { where: { isAvailable: true } } }
+        })
+      : [];
+    const configuredRestaurantById = new Map(configuredRestaurants.map(restaurant => [restaurant.id, restaurant]));
     const categoryOrderByRestaurantId = new Map(categoryOrderSettings.map(setting => {
       let order = [];
       try {
@@ -123,6 +149,32 @@ export async function GET(request) {
       // Calculate order statistics for administrators
       const orderCount = sched.orders.filter(o => o.status !== 'cancelled').length;
       
+      const savedRestaurantConfigs = restaurantConfigsByDate.get(sched.date) || [];
+      const fallbackRestaurantConfigs = sched.restaurantId ? [{
+        restaurantId: sched.restaurantId,
+        orderDeadlineDate: deadlineDateByScheduleDate.get(sched.date) || sched.date,
+        orderDeadline: sched.orderDeadline || '09:40'
+      }] : [];
+      const restaurantConfigs = (savedRestaurantConfigs.length > 0 ? savedRestaurantConfigs : fallbackRestaurantConfigs)
+        .map(config => {
+          const restaurant = configuredRestaurantById.get(config.restaurantId)
+            || (sched.restaurantId === config.restaurantId ? sched.restaurant : null);
+          if (!restaurant) return null;
+          return {
+            restaurantId: config.restaurantId,
+            orderDeadlineDate: config.orderDeadlineDate || sched.date,
+            orderDeadline: config.orderDeadline || '09:40',
+            restaurant: {
+              ...restaurant,
+              menuImageUrl: menuImageByRestaurantId.has(restaurant.id)
+                ? `/api/restaurant-menu-image?restaurantId=${restaurant.id}`
+                : '',
+              categoryOrder: categoryOrderByRestaurantId.get(restaurant.id) || []
+            }
+          };
+        })
+        .filter(Boolean);
+
       return {
         id: sched.id,
         date: sched.date,
@@ -138,6 +190,7 @@ export async function GET(request) {
             : '',
           categoryOrder: categoryOrderByRestaurantId.get(sched.restaurant.id) || []
         } : null,
+        restaurantConfigs,
         userOrder: userOrder ? {
           id: userOrder.id,
           orderNumber: userOrder.orderNumber,
@@ -198,16 +251,34 @@ export async function POST(request) {
       orderDeadline,
       orderDeadlineDate,
       isOpen = true,
-      clearOrdersOnRestaurantChange = false
+      clearOrdersOnRestaurantChange = false,
+      restaurantConfigs
     } = body;
     const scheduleIsOpen = Boolean(isOpen);
-    const normalizedRestaurantId = scheduleIsOpen ? restaurantId : null;
+    const normalizedRestaurantConfigs = scheduleIsOpen
+      ? (Array.isArray(restaurantConfigs) && restaurantConfigs.length > 0
+          ? restaurantConfigs
+          : [{ restaurantId, orderDeadlineDate: orderDeadlineDate || date, orderDeadline: orderDeadline || '09:40' }])
+        .filter(config => config?.restaurantId)
+        .map(config => ({
+          restaurantId: config.restaurantId,
+          orderDeadlineDate: config.orderDeadlineDate || date,
+          orderDeadline: config.orderDeadline || '09:40'
+        }))
+      : [];
+    const normalizedRestaurantId = normalizedRestaurantConfigs[0]?.restaurantId || null;
 
     if (!date || (scheduleIsOpen && !normalizedRestaurantId)) {
       return NextResponse.json({ error: 'Date and Restaurant ID are required' }, { status: 400 });
     }
     if (orderDeadlineDate && orderDeadlineDate > date) {
       return NextResponse.json({ error: '訂單截止日期不可晚於供餐日期。' }, { status: 400 });
+    }
+    if (normalizedRestaurantConfigs.some(config => config.orderDeadlineDate > date)) {
+      return NextResponse.json({ error: '訂單截止日期不可晚於供餐日期。' }, { status: 400 });
+    }
+    if (new Set(normalizedRestaurantConfigs.map(config => config.restaurantId)).size !== normalizedRestaurantConfigs.length) {
+      return NextResponse.json({ error: '同一間餐廳不可重複加入。' }, { status: 400 });
     }
 
     const today = formatDate(new Date());
@@ -275,6 +346,14 @@ export async function POST(request) {
         create: {
           key: `${DEADLINE_DATE_KEY_PREFIX}${date}`,
           value: orderDeadlineDate || date
+        }
+      });
+      await tx.siteSetting.upsert({
+        where: { key: `${SCHEDULE_RESTAURANTS_KEY_PREFIX}${date}` },
+        update: { value: JSON.stringify(normalizedRestaurantConfigs) },
+        create: {
+          key: `${SCHEDULE_RESTAURANTS_KEY_PREFIX}${date}`,
+          value: JSON.stringify(normalizedRestaurantConfigs)
         }
       });
 

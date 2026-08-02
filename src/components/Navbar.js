@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 
-export default function Navbar({ user }) {
+export default function Navbar({ user, interactionDisabled = false }) {
   const router = useRouter();
   const pathname = usePathname();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -19,11 +19,13 @@ export default function Navbar({ user }) {
   }, [pathname]);
 
   const navigateTo = (href) => {
+    if (interactionDisabled) return;
     setIsMenuOpen(false);
     router.push(href);
   };
 
   const handleLogout = async () => {
+    if (interactionDisabled) return;
     try {
       const res = await fetch('/api/auth', {
         method: 'POST',
@@ -66,7 +68,11 @@ export default function Navbar({ user }) {
     : '訂購者';
 
   return (
-    <header className="sticky top-0 z-50 bg-[#F9F8F5]/90 backdrop-blur-md border-b border-[#EAE8E4] px-4 sm:px-6 py-4 transition-all duration-300">
+    <header
+      inert={interactionDisabled ? '' : undefined}
+      aria-disabled={interactionDisabled || undefined}
+      className={`sticky top-0 z-50 bg-[#F9F8F5]/90 backdrop-blur-md border-b border-[#EAE8E4] px-4 sm:px-6 py-4 transition-all duration-300 ${interactionDisabled ? 'pointer-events-none select-none' : ''}`}
+    >
       <div className="flex justify-between items-center gap-3">
         <div className="flex items-center gap-6 min-w-0">
           <div

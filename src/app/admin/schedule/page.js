@@ -228,6 +228,9 @@ export default function AdminDashboard() {
   const [historyMessage, setHistoryMessage] = useState('');
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [activeInfoTooltip, setActiveInfoTooltip] = useState('');
+  const [isSchedulePanelExpanded, setIsSchedulePanelExpanded] = useState(true);
+  const [isStatisticsPanelExpanded, setIsStatisticsPanelExpanded] = useState(true);
+  const [isNotificationPanelExpanded, setIsNotificationPanelExpanded] = useState(true);
 
   useEffect(() => {
     // Check authentication and role
@@ -1286,10 +1289,35 @@ export default function AdminDashboard() {
           {/* Scheduling Setup Panel (Col-span 1) */}
           <div className="space-y-6">
             <div className="bg-white border border-[#EAE8E4] rounded-xl shadow-sm p-6 space-y-6">
-              <h3 className="font-bold text-base text-[#333333] border-b border-[#EAE8E4] pb-3 flex items-center gap-2">
-                <i className="ti ti-settings text-lg text-[#EA5B3C]"></i> 供餐排程設定
-              </h3>
+              <div className="flex items-center justify-between gap-3 border-b border-[#EAE8E4] pb-3">
+                <h3 className="flex items-center gap-2 text-base font-bold text-[#333333]">
+                  <i className="ti ti-settings text-lg text-[#EA5B3C]"></i> 供餐排程設定
+                </h3>
+                <div className="flex shrink-0 items-center gap-2">
+                  <a
+                    href={`/portal/order?week=${activeWeekTab}&date=${selectedDate}&preview=1`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-[#EAE8E4] bg-white px-3 py-2 text-xs font-bold text-[#555555] transition-all hover:border-[#EA5B3C] hover:text-[#EA5B3C]"
+                  >
+                    <i className="ti ti-external-link text-base"></i>
+                    預覽前台
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => setIsSchedulePanelExpanded(expanded => !expanded)}
+                    aria-expanded={isSchedulePanelExpanded}
+                    aria-label={isSchedulePanelExpanded ? '收合供餐排程設定' : '展開供餐排程設定'}
+                    title={isSchedulePanelExpanded ? '收合' : '展開'}
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#EAE8E4] bg-white text-[#888888] transition-all hover:border-[#EA5B3C] hover:text-[#EA5B3C]"
+                  >
+                    <i className={`ti ${isSchedulePanelExpanded ? 'ti-chevron-up' : 'ti-chevron-down'} text-base`}></i>
+                  </button>
+                </div>
+              </div>
 
+              {isSchedulePanelExpanded && (
+                <>
               {message.text && (
                 <div className={`p-3 text-xs rounded-lg flex items-center gap-1.5 ${
                   message.type === 'success' 
@@ -1476,49 +1504,72 @@ export default function AdminDashboard() {
                 </div>
               )}
 
-              <div className="border-t border-[#EAE8E4] pt-4 space-y-3">
-                <h4 className="text-xs font-bold text-[#888888] tracking-widest uppercase flex items-center gap-1.5">
-                  <i className="ti ti-bell"></i>
-                  Windows 通知
-                  <span
-                    className="relative inline-flex"
-                    onMouseEnter={() => setActiveInfoTooltip('windows')}
-                    onMouseLeave={() => setActiveInfoTooltip('')}
-                  >
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setActiveInfoTooltip(prev => prev === 'windows' ? '' : 'windows');
-                      }}
-                      className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-[#D6D1CA] bg-white text-[10px] font-bold normal-case tracking-normal text-[#888888] focus:outline-none focus:border-[#EA5B3C] focus:text-[#EA5B3C]"
-                      aria-label="Windows 通知說明"
-                    >
-                      i
-                    </button>
-                    <span className={`pointer-events-none absolute left-0 top-full z-20 mt-2 w-56 rounded-lg border border-[#EAE8E4] bg-white px-3 py-2 text-[11px] font-bold leading-5 tracking-normal text-[#555555] shadow-[0_10px_24px_rgba(0,0,0,0.12)] transition-opacity ${
-                      activeInfoTooltip === 'windows' ? 'opacity-100' : 'opacity-0'
-                    }`}>
-                      成員需先點選右下角「啟用通知」，並保持網站開啟，才會收到 Windows 右下角通知。
-                    </span>
-                  </span>
-                </h4>
-                <textarea
-                  value={manualNotification}
-                  onChange={(e) => setManualNotification(e.target.value)}
-                  rows={3}
-                  className="w-full resize-none text-xs leading-5 px-3 py-2 border border-[#EAE8E4] rounded-lg focus:outline-none focus:border-[#EA5B3C] bg-white"
-                  placeholder="輸入要提醒所有人的通知內容"
-                />
+                </>
+              )}
+            </div>
+
+            <div className="rounded-xl border border-[#EAE8E4] bg-white p-6 shadow-sm">
+              <div className={`flex items-center justify-between gap-3 ${isNotificationPanelExpanded ? 'border-b border-[#EAE8E4] pb-3' : ''}`}>
+                <h3 className="flex items-center gap-2 text-base font-bold text-[#333333]">
+                  <i className="ti ti-bell text-lg text-[#EA5B3C]"></i>
+                  系統通知設定
+                </h3>
                 <button
                   type="button"
-                  onClick={handleSendManualNotification}
-                  disabled={isSendingNotification || !manualNotification.trim()}
-                  className="w-full py-3 text-xs font-bold bg-[#333333] text-white rounded-xl shadow-sm hover:bg-[#EA5B3C] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  onClick={() => setIsNotificationPanelExpanded(expanded => !expanded)}
+                  aria-expanded={isNotificationPanelExpanded}
+                  aria-label={isNotificationPanelExpanded ? '收合系統通知設定' : '展開系統通知設定'}
+                  title={isNotificationPanelExpanded ? '收合' : '展開'}
+                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#EAE8E4] bg-white text-[#888888] transition-all hover:border-[#EA5B3C] hover:text-[#EA5B3C]"
                 >
-                  {isSendingNotification ? '發送中...' : '手動通知所有人'}
+                  <i className={`ti ${isNotificationPanelExpanded ? 'ti-chevron-up' : 'ti-chevron-down'} text-base`}></i>
                 </button>
               </div>
+
+              {isNotificationPanelExpanded && (
+                <div className="space-y-3 pt-5">
+                  <h4 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-widest text-[#888888]">
+                    Windows 通知
+                    <span
+                      className="relative inline-flex"
+                      onMouseEnter={() => setActiveInfoTooltip('windows')}
+                      onMouseLeave={() => setActiveInfoTooltip('')}
+                    >
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setActiveInfoTooltip(prev => prev === 'windows' ? '' : 'windows');
+                        }}
+                        className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-[#D6D1CA] bg-white text-[10px] font-bold normal-case tracking-normal text-[#888888] focus:outline-none focus:border-[#EA5B3C] focus:text-[#EA5B3C]"
+                        aria-label="Windows 通知說明"
+                      >
+                        i
+                      </button>
+                      <span className={`pointer-events-none absolute left-0 top-full z-20 mt-2 w-56 rounded-lg border border-[#EAE8E4] bg-white px-3 py-2 text-[11px] font-bold leading-5 tracking-normal text-[#555555] shadow-[0_10px_24px_rgba(0,0,0,0.12)] transition-opacity ${
+                        activeInfoTooltip === 'windows' ? 'opacity-100' : 'opacity-0'
+                      }`}>
+                        成員需先點選右下角「啟用通知」，並保持網站開啟，才會收到 Windows 右下角通知。
+                      </span>
+                    </span>
+                  </h4>
+                  <textarea
+                    value={manualNotification}
+                    onChange={(e) => setManualNotification(e.target.value)}
+                    rows={3}
+                    className="w-full resize-none rounded-lg border border-[#EAE8E4] bg-white px-3 py-2 text-xs leading-5 focus:border-[#EA5B3C] focus:outline-none"
+                    placeholder="輸入要提醒所有人的通知內容"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleSendManualNotification}
+                    disabled={isSendingNotification || !manualNotification.trim()}
+                    className="w-full rounded-xl bg-[#333333] py-3 text-xs font-bold text-white shadow-sm transition-all hover:bg-[#EA5B3C] disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {isSendingNotification ? '發送中...' : '手動通知所有人'}
+                  </button>
+                </div>
+              )}
             </div>
           </div>
 
@@ -1539,14 +1590,28 @@ export default function AdminDashboard() {
                   </h3>
                 </div>
 
-                {activeSchedule && (
-                  <div className="text-right">
-                    <span className="text-xs font-bold text-[#888888] block">今日總份數</span>
-                    <span className="text-2xl font-bold text-[#EA5B3C]">{totalQuantity} 份</span>
-                  </div>
-                )}
+                <div className="flex items-center gap-3">
+                  {activeSchedule && (
+                    <div className="text-right">
+                      <span className="text-xs font-bold text-[#888888] block">今日總份數</span>
+                      <span className="text-2xl font-bold text-[#EA5B3C]">{totalQuantity} 份</span>
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setIsStatisticsPanelExpanded(expanded => !expanded)}
+                    aria-expanded={isStatisticsPanelExpanded}
+                    aria-label={isStatisticsPanelExpanded ? '收合當日統計資訊' : '展開當日統計資訊'}
+                    title={isStatisticsPanelExpanded ? '收合' : '展開'}
+                    className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#EAE8E4] bg-white text-[#888888] transition-all hover:border-[#EA5B3C] hover:text-[#EA5B3C]"
+                  >
+                    <i className={`ti ${isStatisticsPanelExpanded ? 'ti-chevron-up' : 'ti-chevron-down'} text-base`}></i>
+                  </button>
+                </div>
               </div>
 
+              {isStatisticsPanelExpanded && (
+                <>
               {activeSchedule ? (
                 <>
                   {/* Aggregated Menu Item Quantities - FOR RESTAURANT CALLS */}
@@ -1915,6 +1980,8 @@ export default function AdminDashboard() {
                   <h4 className="font-bold text-[#333333] text-sm">今天沒有安排供餐排程</h4>
                   <p>請使用左側設定面板為此日期指定餐廳以開放成員訂購。</p>
                 </div>
+              )}
+                </>
               )}
 
             </div>

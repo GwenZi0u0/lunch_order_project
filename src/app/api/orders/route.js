@@ -285,12 +285,12 @@ export async function POST(request) {
     }
 
     // Resolve menu items prices
-    const menuItemIds = items.map(i => i.menuItemId);
+    const menuItemIds = [...new Set(items.map(i => i.menuItemId))];
     const menuItems = await prisma.menuItem.findMany({
       where: { id: { in: menuItemIds } }
     });
 
-    if (menuItems.length !== items.length) {
+    if (menuItems.length !== menuItemIds.length) {
       return NextResponse.json({ error: 'Some menu items were not found' }, { status: 400 });
     }
 

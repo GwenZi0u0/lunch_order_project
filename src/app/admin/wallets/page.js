@@ -49,6 +49,7 @@ export default function WalletsManagementPage() {
   const [user, setUser] = useState(null);
   const [users, setUsers] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
+  const [showDebtorsOnly, setShowDebtorsOnly] = useState(false);
   const [transactions, setTransactions] = useState([]);
   const [selectedLedgerUserId, setSelectedLedgerUserId] = useState('');
   const [ledgerStartDate, setLedgerStartDate] = useState('');
@@ -291,11 +292,20 @@ export default function WalletsManagementPage() {
     }
   };
 
-  // Filter users based on search
-  const filteredUsers = users.filter(u => 
-    u.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    u.email.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const positiveBalanceUsers = users.filter(u => Number(u.balance) > 0);
+  const debtorUsers = users.filter(u => Number(u.balance) < 0);
+  const positiveBalanceTotal = positiveBalanceUsers.reduce((total, u) => total + Number(u.balance), 0);
+  const debtBalanceTotal = debtorUsers.reduce((total, u) => total + Math.abs(Number(u.balance)), 0);
+  const normalizedSearchTerm = searchTerm.trim().toLowerCase();
+
+  // Filter users based on search and account status
+  const filteredUsers = users.filter(u => {
+    const matchesSearch = u.name.toLowerCase().includes(normalizedSearchTerm) ||
+      u.email.toLowerCase().includes(normalizedSearchTerm);
+    const matchesAccountStatus = !showDebtorsOnly || Number(u.balance) < 0;
+
+    return matchesSearch && matchesAccountStatus;
+  });
 
   const openWalletAction = (targetUser, mode) => {
     setSelectedUser(targetUser);
@@ -493,6 +503,34 @@ export default function WalletsManagementPage() {
           </div>
         )}
 
+        <section aria-label="全站錢包餘額統計" className="grid grid-cols-2 gap-3 sm:gap-4">
+          <div className="rounded-2xl border border-green-200 bg-green-50 px-4 py-5 sm:px-6">
+            <div className="flex items-center gap-2 text-xs font-bold text-green-700">
+              <i className="ti ti-trending-up text-lg"></i>
+              <span>正餘額總額</span>
+            </div>
+            <div className="mt-2 text-xl font-bold text-green-600 sm:text-2xl">
+              NT$ {positiveBalanceTotal.toLocaleString('zh-TW')}
+            </div>
+            <div className="mt-1 text-[10px] font-bold text-green-700/70 sm:text-xs">
+              {positiveBalanceUsers.length} 位成員
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-5 sm:px-6">
+            <div className="flex items-center gap-2 text-xs font-bold text-red-700">
+              <i className="ti ti-trending-down text-lg"></i>
+              <span>欠款總額</span>
+            </div>
+            <div className="mt-2 text-xl font-bold text-red-600 sm:text-2xl">
+              NT$ {debtBalanceTotal.toLocaleString('zh-TW')}
+            </div>
+            <div className="mt-1 text-[10px] font-bold text-red-700/70 sm:text-xs">
+              {debtorUsers.length} 位成員
+            </div>
+          </div>
+        </section>
+
         <section className="grid grid-cols-1 lg:grid-cols-4 gap-4">
           
           {/* User List and Search (Col-span 3) */}
@@ -503,16 +541,30 @@ export default function WalletsManagementPage() {
                   成員錢包名冊與狀態
                 </h3>
                 
-                {/* Search Input */}
-                <div className="relative w-full md:w-[250px]">
-                  <input
-                    type="text"
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    placeholder="搜尋姓名或 Email..."
-                    className="w-full text-xs pl-8 pr-3 py-2 border border-[#EAE8E4] rounded-lg focus:outline-none focus:border-[#EA5B3C]"
-                  />
-                  <i className="ti ti-search absolute left-2.5 top-2.5 text-[#888888]"></i>
+                <div className="flex w-full items-center gap-2 md:w-auto">
+                  <button
+                    type="button"
+                    aria-pressed={showDebtorsOnly}
+                    onClick={() => setShowDebtorsOnly(current => !current)}
+                    className={`shrink-0 rounded-lg border px-3 py-2 text-xs font-bold transition-all ${showDebtorsOnly
+                      ? 'border-red-500 bg-red-500 text-white'
+                      : 'border-red-200 bg-white text-red-600 hover:border-red-500'
+                    }`}
+                  >
+                    欠款戶
+                  </button>
+
+                  {/* Search Input */}
+                  <div className="relative min-w-0 flex-1 md:w-[250px] md:flex-none">
+                    <input
+                      type="text"
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      placeholder="搜尋姓名或 Email..."
+                      className="w-full text-xs pl-8 pr-3 py-2 border border-[#EAE8E4] rounded-lg focus:outline-none focus:border-[#EA5B3C]"
+                    />
+                    <i className="ti ti-search absolute left-2.5 top-2.5 text-[#888888]"></i>
+                  </div>
                 </div>
               </div>
 
@@ -953,8 +1005,8 @@ export default function WalletsManagementPage() {
                             </span>
                           </span>
                         </td>
-                        <td className={`py-3 font-bold ${tx.amount >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                          <span className="hidden sm:inline">{tx.amount >= 0 ? '＋' : '－'}</span>NT$ {Math.abs(tx.amount)}
+                        <td className={`py-3 font-bold ${tx.amount > 0 ? 'text-green-600' : tx.amount < 0 ? 'text-red-600' : 'text-[#888888]'}`}>
+                          NT$ {Math.abs(tx.amount)}
                         </td>
                         <td className="py-3 text-[#555555]">
                           {tx.source || (tx.type === 'charge' ? '訂單扣款' : '-')}

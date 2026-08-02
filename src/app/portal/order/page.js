@@ -149,11 +149,10 @@ export default function PortalPage() {
   const [selectedDate, setSelectedDate] = useState('');
   const [activeWeekTab, setActiveWeekTab] = useState('current'); // 'current' or 'next'
   const [allowNextWeekMenu, setAllowNextWeekMenu] = useState(true);
+  const [isPreviewMode, setIsPreviewMode] = useState(false);
   
   // Order state
-  const [orderQuantities, setOrderQuantities] = useState({}); // { menuItemId: quantity }
-  const [itemNotes, setItemNotes] = useState({}); // { menuItemId: note }
-  const [itemCustomOptions, setItemCustomOptions] = useState({}); // { menuItemId: string[] }
+  const [cartItems, setCartItems] = useState([]);
   const [editingMenuItemId, setEditingMenuItemId] = useState('');
   const [editingMenuItemDraft, setEditingMenuItemDraft] = useState({ quantity: 0, note: '', options: [] });
   const [orderNote, setOrderNote] = useState('');
@@ -195,12 +194,15 @@ export default function PortalPage() {
     updateTime();
     
     // Default selection
-    const weekTarget = new URLSearchParams(window.location.search).get('week');
+    const searchParams = new URLSearchParams(window.location.search);
+    const weekTarget = searchParams.get('week');
+    const dateTarget = searchParams.get('date');
+    setIsPreviewMode(searchParams.get('preview') === '1');
     if (weekTarget === 'next') {
-      setSelectedDate(getDefaultDateForWeek('next'));
+      setSelectedDate(/^\d{4}-\d{2}-\d{2}$/.test(dateTarget || '') ? dateTarget : getDefaultDateForWeek('next'));
       setActiveWeekTab('next');
     } else {
-      setSelectedDate(getDefaultDateForWeek('current'));
+      setSelectedDate(/^\d{4}-\d{2}-\d{2}$/.test(dateTarget || '') ? dateTarget : getDefaultDateForWeek('current'));
       setActiveWeekTab('current');
     }
 
@@ -339,9 +341,7 @@ export default function PortalPage() {
 
   const resetOrderDraft = (schedule = activeSchedule) => {
     if (!schedule) {
-      setOrderQuantities({});
-      setItemNotes({});
-      setItemCustomOptions({});
+      setCartItems([]);
       setEditingMenuItemId('');
       setEditingMenuItemDraft({ quantity: 0, note: '', options: [] });
       setOrderNote('');
@@ -352,17 +352,26 @@ export default function PortalPage() {
     }
 
     const userOrderSeatArea = schedule.userOrder?.seatArea || 'A';
-    const quantities = {};
-    const notes = {};
-    const customOptions = {};
+    const restoredCartItems = [];
 
     if (schedule.userOrder) {
       schedule.userOrder.items.forEach(item => {
         const menuItem = schedule.restaurant?.menuItems?.find(mi => mi.id === item.menuItemId);
         const parsedNote = splitExistingItemNote(menuItem, item.note || '');
-        quantities[item.menuItemId] = item.quantity;
-        notes[item.menuItemId] = parsedNote.note;
-        customOptions[item.menuItemId] = parsedNote.selectedOptions;
+        const normalizedNote = normalizeOrderText(item.note);
+        const key = `${item.menuItemId}::${normalizedNote}`;
+        const matchingItem = restoredCartItems.find(cartItem => cartItem.key === key);
+        if (matchingItem) {
+          matchingItem.quantity += item.quantity;
+        } else {
+          restoredCartItems.push({
+            key,
+            menuItemId: item.menuItemId,
+            quantity: item.quantity,
+            note: parsedNote.note,
+            options: parsedNote.selectedOptions
+          });
+        }
       });
     }
 
@@ -370,9 +379,7 @@ export default function PortalPage() {
     setSeatArea(userOrderSeatArea);
     setUseSavedOrderNote(false);
     setSaveOrderPreference(false);
-    setOrderQuantities(quantities);
-    setItemNotes(notes);
-    setItemCustomOptions(customOptions);
+    setCartItems(restoredCartItems);
     setEditingMenuItemId('');
     setEditingMenuItemDraft({ quantity: 0, note: '', options: [] });
   };
@@ -399,29 +406,30 @@ export default function PortalPage() {
     return configuredOptions.filter(option => selectedSet.has(option));
   };
 
-  const composeItemNote = (menuItemId) => {
-    const selectedOptions = sortSelectedOptions(menuItemId, itemCustomOptions[menuItemId]);
-    const freeNote = normalizeOrderText(itemNotes[menuItemId]);
+  const composeCartItemNote = (cartItem) => {
+    const selectedOptions = sortSelectedOptions(cartItem.menuItemId, cartItem.options);
+    const freeNote = normalizeOrderText(cartItem.note);
     return [...selectedOptions, freeNote].filter(Boolean).join('; ');
   };
 
-  const getItemExtraAmount = (menuItemId) => {
-    return (itemCustomOptions[menuItemId] || []).reduce((sum, option) => {
+  const getCartItemExtraAmount = (cartItem) => {
+    return (cartItem.options || []).reduce((sum, option) => {
       return sum + getCustomizationExtraAmount(option);
     }, 0);
   };
 
-  const getItemUnitPrice = (item) => {
-    return item.price + getItemExtraAmount(item.id);
+  const getCartItemUnitPrice = (cartItem) => {
+    const menuItem = getMenuItemById(cartItem.menuItemId);
+    return (menuItem?.price || 0) + getCartItemExtraAmount(cartItem);
   };
 
   const openMenuItemDialog = (item) => {
     if (isClosed()) return;
     setEditingMenuItemId(item.id);
     setEditingMenuItemDraft({
-      quantity: orderQuantities[item.id] || 1,
+      quantity: 1,
       note: '',
-      options: itemCustomOptions[item.id] || []
+      options: []
     });
   };
 
@@ -451,30 +459,42 @@ export default function PortalPage() {
   const applyMenuItemDialog = () => {
     if (!editingMenuItem) return;
 
-    setOrderQuantities(prev => ({ ...prev, [editingMenuItem.id]: editingMenuItemDraft.quantity || 0 }));
-    setItemNotes(prev => ({ ...prev, [editingMenuItem.id]: editingMenuItemDraft.note || '' }));
-    setItemCustomOptions(prev => ({
-      ...prev,
-      [editingMenuItem.id]: sortSelectedOptions(editingMenuItem.id, editingMenuItemDraft.options)
-    }));
+    const options = sortSelectedOptions(editingMenuItem.id, editingMenuItemDraft.options);
+    const note = normalizeOrderText(editingMenuItemDraft.note);
+    const composedNote = [...options, note].filter(Boolean).join('; ');
+    const key = `${editingMenuItem.id}::${composedNote}`;
+
+    setCartItems(prev => {
+      const matchingItem = prev.find(item => item.key === key);
+      if (matchingItem) {
+        return prev.map(item => item.key === key
+          ? { ...item, quantity: item.quantity + editingMenuItemDraft.quantity }
+          : item);
+      }
+
+      return [...prev, {
+        key,
+        menuItemId: editingMenuItem.id,
+        quantity: editingMenuItemDraft.quantity,
+        note,
+        options
+      }];
+    });
     closeMenuItemDialog();
   };
 
-  const removeOrderItem = (menuItemId) => {
+  const removeOrderItem = (cartItemKey) => {
     if (isClosed() || isSubmitting) return;
-    setOrderQuantities(prev => ({ ...prev, [menuItemId]: 0 }));
-    setItemNotes(prev => ({ ...prev, [menuItemId]: '' }));
-    setItemCustomOptions(prev => ({ ...prev, [menuItemId]: [] }));
+    setCartItems(prev => prev.filter(item => item.key !== cartItemKey));
   };
 
-  const updateOrderItemQuantity = (menuItemId, delta) => {
+  const updateOrderItemQuantity = (cartItemKey, delta) => {
     if (isClosed() || isSubmitting) return;
-    const next = Math.max(0, (orderQuantities[menuItemId] || 0) + delta);
-    setOrderQuantities(prev => ({ ...prev, [menuItemId]: next }));
-    if (next === 0) {
-      setItemNotes(prev => ({ ...prev, [menuItemId]: '' }));
-      setItemCustomOptions(prev => ({ ...prev, [menuItemId]: [] }));
-    }
+    setCartItems(prev => prev
+      .map(item => item.key === cartItemKey
+        ? { ...item, quantity: Math.max(0, item.quantity + delta) }
+        : item)
+      .filter(item => item.quantity > 0));
   };
 
   const handleSeatAreaToggle = (area) => {
@@ -492,6 +512,7 @@ export default function PortalPage() {
   // Calculate order closed status
   const isClosed = () => {
     if (!activeSchedule) return true;
+    if (isPreviewMode) return false;
     if (!activeSchedule.isOpen) return true;
     
     const { dateStr: currentDate, timeStr: currentTime } = currentDateTime;
@@ -506,22 +527,19 @@ export default function PortalPage() {
 
   const calculateTotal = () => {
     if (!activeRestaurant) return 0;
-    return activeRestaurant.menuItems.reduce((sum, item) => {
-      const qty = orderQuantities[item.id] || 0;
-      return sum + getItemUnitPrice(item) * qty;
-    }, 0);
+    return cartItems.reduce((sum, item) => sum + getCartItemUnitPrice(item) * item.quantity, 0);
   };
 
   const normalizeOrderText = (value) => (value || '').trim();
 
-  const getCurrentOrderItems = () => Object.entries(orderQuantities)
-    .filter(([_, qty]) => qty > 0)
-    .map(([menuItemId, qty]) => ({
-      menuItemId,
-      quantity: qty,
-      note: composeItemNote(menuItemId)
+  const getCurrentOrderItems = () => cartItems
+    .filter(item => item.quantity > 0)
+    .map(item => ({
+      menuItemId: item.menuItemId,
+      quantity: item.quantity,
+      note: composeCartItemNote(item)
     }))
-    .sort((a, b) => a.menuItemId.localeCompare(b.menuItemId));
+    .sort((a, b) => a.menuItemId.localeCompare(b.menuItemId) || a.note.localeCompare(b.note));
 
   const hasOrderChanges = () => {
     if (!activeSchedule?.userOrder) return true;
@@ -536,7 +554,7 @@ export default function PortalPage() {
         quantity: item.quantity,
         note: normalizeOrderText(item.note)
       }))
-      .sort((a, b) => a.menuItemId.localeCompare(b.menuItemId));
+      .sort((a, b) => a.menuItemId.localeCompare(b.menuItemId) || a.note.localeCompare(b.note));
 
     return JSON.stringify(currentItems) !== JSON.stringify(originalItems);
   };
@@ -578,7 +596,7 @@ export default function PortalPage() {
   }, [shouldShowModifyShortcut, shouldShowConfirmOrderShortcut]);
 
   const handlePlaceOrder = async () => {
-    if (isClosed()) return;
+    if (isPreviewMode || isClosed()) return;
     
     if (activeSchedule.userOrder && !hasOrderChanges()) return;
 
@@ -593,7 +611,9 @@ export default function PortalPage() {
       return {
         ...item,
         name: menuItem?.name || '餐點',
-        unitPrice: menuItem ? getItemUnitPrice(menuItem) : 0
+        unitPrice: menuItem
+          ? menuItem.price + getCustomizationExtraAmount(item.note)
+          : 0
       };
     });
 
@@ -645,7 +665,7 @@ export default function PortalPage() {
   };
 
   const handleCancelOrder = async () => {
-    if (isClosed() || !activeSchedule.userOrder) return;
+    if (isPreviewMode || isClosed() || !activeSchedule.userOrder) return;
 
     if (!confirm('您確定要取消此筆午餐訂單嗎？')) return;
 
@@ -664,8 +684,7 @@ export default function PortalPage() {
       }
 
       setOrderSuccess('訂單已取消！');
-      setOrderQuantities({});
-      setItemNotes({});
+      setCartItems([]);
       setOrderNote('');
       setSeatArea('A');
       setUseSavedOrderNote(false);
@@ -727,9 +746,15 @@ export default function PortalPage() {
 
   return (
     <>
-      <Navbar user={user} />
+      <Navbar user={user} interactionDisabled={isPreviewMode} />
 
       <main className="flex-1 max-w-[1200px] w-full mx-auto px-6 py-10 space-y-10">
+        {isPreviewMode && (
+          <div className="flex items-center justify-center gap-2 rounded-xl border border-[#EA5B3C]/30 bg-[#FFF3EF] px-4 py-3 text-xs font-bold text-[#EA5B3C]">
+            <i className="ti ti-eye text-lg"></i>
+            預覽模式｜可操作畫面，無法送出訂單
+          </div>
+        )}
         
         {/* Wallet Banner */}
         <section className="bg-white rounded-xl border border-[#EAE8E4] p-6 shadow-sm">
@@ -1051,37 +1076,32 @@ export default function PortalPage() {
 
                     <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                       {visibleMenuItems.map(item => {
-                        const qty = orderQuantities[item.id] || 0;
+                        const cartQuantity = cartItems
+                          .filter(cartItem => cartItem.menuItemId === item.id)
+                          .reduce((total, cartItem) => total + cartItem.quantity, 0);
                         return (
                           <button
                             type="button"
                             key={item.id}
                             disabled={isClosed()}
                             onClick={() => openMenuItemDialog(item)}
-                            className={`flex w-full items-center justify-between rounded-xl border p-4 text-left transition-all disabled:cursor-not-allowed disabled:opacity-60 ${
-                              qty > 0 ? 'border-[#EA5B3C] bg-[#FFF9F6]' : 'border-[#EAE8E4]'
-                            }`}
+                            className="relative flex w-full items-center justify-between rounded-xl border border-[#EAE8E4] p-4 text-left transition-all hover:border-[#EA5B3C] disabled:cursor-not-allowed disabled:opacity-60"
                           >
+                            {cartQuantity > 0 && (
+                              <span className="absolute left-0 top-0 ml-[2px] mt-[2px] inline-flex h-7 min-w-7 -translate-x-1/3 -translate-y-1/2 items-center justify-center rounded-full border-2 border-white bg-[#EA5B3C] px-1.5 text-xs font-bold text-white shadow-sm">
+                                {cartQuantity}
+                              </span>
+                            )}
                             <div className="min-w-0">
                               <div className="text-sm font-bold text-[#333333]">{item.name}</div>
                               <div className="mt-1 text-xs font-bold text-[#EA5B3C]">
-                                NT$ {getItemUnitPrice(item)}
-                                {getItemExtraAmount(item.id) > 0 && (
-                                  <span className="ml-1 text-[11px] text-[#888888]">
-                                    (含加價 +{getItemExtraAmount(item.id)})
-                                  </span>
-                                )}
+                                NT$ {item.price}
                               </div>
-                              {composeItemNote(item.id) && (
-                                <div className="mt-1 truncate text-[11px] font-bold text-[#888888]">
-                                  備註：{formatItemNoteDisplay(composeItemNote(item.id))}
-                                </div>
-                              )}
                             </div>
 
                             <div className="flex shrink-0 items-center gap-2">
-                              <span className="inline-flex h-9 min-w-9 items-center justify-center rounded-full border border-[#EAE8E4] bg-white px-3 text-sm font-bold text-[#333333]">
-                                {qty}
+                              <span className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#EAE8E4] bg-white text-[#888888]">
+                                <i className="ti ti-plus text-sm"></i>
                               </span>
                               <i className="ti ti-chevron-right text-lg text-[#C9C3BB]"></i>
                             </div>
@@ -1131,45 +1151,47 @@ export default function PortalPage() {
                   )}
 
                   <div className="space-y-4">
-                    {activeRestaurant.menuItems.map(item => {
-                      const qty = orderQuantities[item.id] || 0;
-                      if (qty === 0) return null;
-                      const itemNoteParts = composeItemNote(item.id)
+                    {cartItems.map(cartItem => {
+                      const item = getMenuItemById(cartItem.menuItemId);
+                      if (!item || cartItem.quantity === 0) return null;
+                      const composedNote = composeCartItemNote(cartItem);
+                      const itemNoteParts = composedNote
                         .split(';')
                         .map(note => note.trim())
                         .filter(Boolean);
+                      const itemActionLabel = composedNote ? `${item.name}（${formatItemNoteDisplay(composedNote)}）` : item.name;
                       return (
-                        <div key={item.id} className="space-y-2 rounded-lg border border-[#EAE8E4] bg-[#F9F8F5] p-3 text-xs">
+                        <div key={cartItem.key} className="space-y-2 rounded-lg border border-[#EAE8E4] bg-[#F9F8F5] p-3 text-xs">
                           <div className="flex items-center justify-between gap-2">
                             <span className="text-[#333333] font-bold truncate">{item.name}</span>
                             <div className="flex shrink-0 items-center gap-1 rounded-full border border-[#EAE8E4] bg-white px-1 py-0.5">
                               <button
                                 type="button"
                                 disabled={isClosed() || isSubmitting}
-                                onClick={() => updateOrderItemQuantity(item.id, -1)}
+                                onClick={() => updateOrderItemQuantity(cartItem.key, -1)}
                                 className="flex h-6 w-6 items-center justify-center rounded-full text-[#888888] transition-all hover:bg-[#F9F8F5] hover:text-[#EA5B3C] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-[#888888]"
-                                aria-label={`減少 ${item.name} 數量`}
+                                aria-label={`減少 ${itemActionLabel} 數量`}
                               >
                                 <i className="ti ti-minus text-xs"></i>
                               </button>
-                              <span className="min-w-4 text-center text-xs font-bold text-[#333333]">{qty}</span>
+                              <span className="min-w-4 text-center text-xs font-bold text-[#333333]">{cartItem.quantity}</span>
                               <button
                                 type="button"
                                 disabled={isClosed() || isSubmitting}
-                                onClick={() => updateOrderItemQuantity(item.id, 1)}
+                                onClick={() => updateOrderItemQuantity(cartItem.key, 1)}
                                 className="flex h-6 w-6 items-center justify-center rounded-full text-[#888888] transition-all hover:bg-[#F9F8F5] hover:text-[#EA5B3C] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-[#888888]"
-                                aria-label={`增加 ${item.name} 數量`}
+                                aria-label={`增加 ${itemActionLabel} 數量`}
                               >
                                 <i className="ti ti-plus text-xs"></i>
                               </button>
                             </div>
-                            <span className="text-[#333333] font-bold shrink-0">NT$ {getItemUnitPrice(item) * qty}</span>
+                            <span className="text-[#333333] font-bold shrink-0">NT$ {getCartItemUnitPrice(cartItem) * cartItem.quantity}</span>
                             <button
                               type="button"
                               disabled={isClosed() || isSubmitting}
-                              onClick={() => removeOrderItem(item.id)}
+                              onClick={() => removeOrderItem(cartItem.key)}
                               className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-[#EAE8E4] bg-white text-[#888888] transition-all hover:border-red-200 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-[#EAE8E4] disabled:hover:text-[#888888]"
-                              aria-label={`刪除 ${item.name}`}
+                              aria-label={`刪除 ${itemActionLabel}`}
                               title="刪除餐點"
                             >
                               <i className="ti ti-trash text-sm"></i>
@@ -1359,7 +1381,7 @@ export default function PortalPage() {
                           )}
                           
                           <button
-                            disabled={isClosed() || isSubmitting || calculateTotal() === 0 || !seatArea || isBelowAvailableLimit || (activeSchedule.userOrder && !hasOrderChanges())}
+                            disabled={isPreviewMode || isClosed() || isSubmitting || calculateTotal() === 0 || !seatArea || isBelowAvailableLimit || (activeSchedule.userOrder && !hasOrderChanges())}
                             onClick={handlePlaceOrder}
                             className="flex-[2] py-3 text-xs font-bold bg-[#EA5B3C] text-white rounded-xl shadow-sm hover:bg-[#333333] hover:shadow-md transition-all disabled:opacity-50 disabled:cursor-not-allowed text-center"
                           >
@@ -1368,7 +1390,7 @@ export default function PortalPage() {
                         </div>
                         {activeSchedule.userOrder && !isClosed() && (
                           <button
-                            disabled={isSubmitting}
+                            disabled={isPreviewMode || isSubmitting}
                             onClick={handleCancelOrder}
                             className="w-full py-3 text-xs font-bold border border-[#EAE8E4] text-[#888888] hover:text-red-600 hover:border-red-200 rounded-xl transition-all bg-white"
                           >
@@ -1584,7 +1606,8 @@ export default function PortalPage() {
                 <button
                   type="button"
                   onClick={applyMenuItemDialog}
-                  className="flex-[1.5] rounded-xl bg-[#EA5B3C] py-3 text-xs font-bold text-white shadow-sm transition-all hover:bg-[#333333]"
+                  disabled={editingMenuItemQty === 0}
+                  className="flex-[1.5] rounded-xl bg-[#EA5B3C] py-3 text-xs font-bold text-white shadow-sm transition-all hover:bg-[#333333] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-[#EA5B3C]"
                 >
                   加入訂購清單
                 </button>

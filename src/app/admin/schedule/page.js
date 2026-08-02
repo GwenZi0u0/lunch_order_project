@@ -513,6 +513,7 @@ export default function AdminDashboard() {
     orderDeadlineValue,
     isOpenValue,
     clearOrdersOnRestaurantChange,
+    clearRestaurantIds,
     successMessage,
     savingSection,
     restaurantConfigsValue
@@ -531,6 +532,7 @@ export default function AdminDashboard() {
           orderDeadline: orderDeadlineValue,
           isOpen: isOpenValue,
           clearOrdersOnRestaurantChange,
+          clearRestaurantIds,
           restaurantConfigs: restaurantConfigsValue
         })
       });
@@ -565,10 +567,19 @@ export default function AdminDashboard() {
       return;
     }
     const activeOrderCount = activeSchedule?.orders?.filter(order => order.status !== 'cancelled').length || 0;
-    const previousIds = (activeSchedule?.restaurantConfigs || []).map(config => config.restaurantId).join(',');
-    const nextIds = normalizedConfigs.map(config => config.restaurantId).join(',');
-    const shouldClearOrders = activeOrderCount > 0 && previousIds !== nextIds;
-    if (shouldClearOrders && !confirm('此日期已有訂購者訂餐，變更餐廳將清除當日所有訂單，確定繼續嗎？')) return;
+    const previousConfigs = activeSchedule?.restaurantConfigs || [];
+    const changedSlots = previousConfigs
+      .map((config, index) => ({ index, restaurantId: config.restaurantId }))
+      .filter(({ index, restaurantId }) => restaurantId && normalizedConfigs[index]?.restaurantId !== restaurantId);
+    const clearRestaurantIds = changedSlots.map(slot => slot.restaurantId);
+    const shouldClearOrders = activeOrderCount > 0 && clearRestaurantIds.length > 0;
+    if (shouldClearOrders) {
+      const affectedLabels = changedSlots.map(slot => `餐廳${slot.index + 1}`).join('、');
+      if (!confirm(
+        `此日期已有訂購內容，以下餐廳設定有變動：${affectedLabels}\n\n` +
+        '繼續儲存只會清除上述餐廳的訂單內容，其他未變動餐廳的訂單會保留。確定繼續嗎？'
+      )) return;
+    }
 
     await persistScheduleSettings({
       restaurantId: normalizedConfigs[0]?.restaurantId || null,
@@ -576,6 +587,7 @@ export default function AdminDashboard() {
       orderDeadlineValue: normalizedConfigs[0]?.orderDeadline || '09:40',
       isOpenValue: !isHoliday,
       clearOrdersOnRestaurantChange: shouldClearOrders,
+      clearRestaurantIds,
       restaurantConfigsValue: normalizedConfigs,
       successMessage: '當日餐廳與截止時間已成功儲存！',
       savingSection: 'restaurants'

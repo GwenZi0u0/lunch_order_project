@@ -252,6 +252,7 @@ export async function POST(request) {
       orderDeadlineDate,
       isOpen = true,
       clearOrdersOnRestaurantChange = false,
+      clearRestaurantIds = [],
       restaurantConfigs
     } = body;
     const scheduleIsOpen = Boolean(isOpen);
@@ -299,10 +300,25 @@ export async function POST(request) {
         }
       });
 
-      const restaurantChanged = existingSchedule
-        && existingSchedule.restaurantId
-        && normalizedRestaurantId
-        && existingSchedule.restaurantId !== normalizedRestaurantId;
+      const existingRestaurantSetting = await tx.siteSetting.findUnique({
+        where: { key: `${SCHEDULE_RESTAURANTS_KEY_PREFIX}${date}` }
+      });
+      let previousRestaurantConfigs = [];
+      try {
+        previousRestaurantConfigs = existingRestaurantSetting?.value
+          ? JSON.parse(existingRestaurantSetting.value)
+          : [];
+      } catch {
+        previousRestaurantConfigs = [];
+      }
+      if (previousRestaurantConfigs.length === 0 && existingSchedule?.restaurantId) {
+        previousRestaurantConfigs = [{ restaurantId: existingSchedule.restaurantId }];
+      }
+      const changedRestaurantIds = previousRestaurantConfigs
+        .filter((config, index) => config?.restaurantId && normalizedRestaurantConfigs[index]?.restaurantId !== config.restaurantId)
+        .map(config => config.restaurantId);
+      const requestedClearIds = new Set(Array.isArray(clearRestaurantIds) ? clearRestaurantIds : []);
+      const restaurantChanged = changedRestaurantIds.length > 0;
       const hasActiveOrders = (existingSchedule?.orders?.length || 0) > 0;
 
       if (restaurantChanged && hasActiveOrders && !clearOrdersOnRestaurantChange) {
@@ -310,15 +326,29 @@ export async function POST(request) {
       }
 
       if (restaurantChanged && hasActiveOrders && clearOrdersOnRestaurantChange) {
-        await tx.order.updateMany({
-          where: {
-            scheduleId: existingSchedule.id,
-            status: { not: 'cancelled' }
-          },
-          data: {
-            status: 'cancelled'
-          }
+        const restaurantIdsToClear = changedRestaurantIds.filter(id => requestedClearIds.has(id));
+        if (restaurantIdsToClear.length !== changedRestaurantIds.length) {
+          throw new Error('Restaurant change requires clearing existing orders');
+        }
+
+        const affectedOrders = await tx.order.findMany({
+          where: { scheduleId: existingSchedule.id, status: { not: 'cancelled' } },
+          include: { orderItems: { include: { menuItem: { select: { restaurantId: true } } } } }
         });
+
+        for (const order of affectedOrders) {
+          const itemsToRemove = order.orderItems.filter(item => restaurantIdsToClear.includes(item.menuItem.restaurantId));
+          if (itemsToRemove.length === 0) continue;
+
+          await tx.orderItem.deleteMany({ where: { id: { in: itemsToRemove.map(item => item.id) } } });
+          const remainingItems = order.orderItems.filter(item => !restaurantIdsToClear.includes(item.menuItem.restaurantId));
+          if (remainingItems.length === 0) {
+            await tx.order.update({ where: { id: order.id }, data: { status: 'cancelled', totalAmount: 0 } });
+          } else {
+            const totalAmount = remainingItems.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0);
+            await tx.order.update({ where: { id: order.id }, data: { totalAmount } });
+          }
+        }
       }
 
       const savedSchedule = await tx.weeklySchedule.upsert({

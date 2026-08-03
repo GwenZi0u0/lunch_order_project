@@ -568,7 +568,7 @@ export default function WalletsManagementPage() {
                 </div>
               </div>
 
-              <div className="md:hidden space-y-3">
+              <div className="max-h-[828px] space-y-3 overflow-y-auto overflow-x-hidden pr-1 kaizen-scrollbar [scrollbar-gutter:stable] md:hidden">
                 {filteredUsers.length === 0 ? (
                   <div className="rounded-lg border border-[#EAE8E4] bg-white px-4 py-8 text-center text-xs font-bold text-[#888888]">
                     找不到相符的成員。

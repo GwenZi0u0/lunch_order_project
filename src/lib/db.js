@@ -1,7 +1,23 @@
 import { PrismaClient } from '@prisma/client';
 
+const getDatabaseUrl = () => {
+  const rawUrl = process.env.DATABASE_URL;
+  if (!rawUrl) return rawUrl;
+
+  try {
+    const url = new URL(rawUrl);
+    url.searchParams.set('connection_limit', '1');
+    return url.toString();
+  } catch {
+    return rawUrl;
+  }
+};
+
 const prismaClientSingleton = () => {
-  return new PrismaClient();
+  const databaseUrl = getDatabaseUrl();
+  return new PrismaClient(databaseUrl
+    ? { datasources: { db: { url: databaseUrl } } }
+    : undefined);
 };
 
 const globalForPrisma = global;

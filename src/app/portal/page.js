@@ -449,48 +449,44 @@ export default function PortalPage() {
             </div>
 
             {todayOrder ? (
-              <div className="rounded-lg border border-[#EAE8E4] bg-[#F9F8F5] overflow-hidden">
-                <div className="bg-white px-4 py-3">
-                  <div className="space-y-1">
-                    <span className="block text-[11px] font-bold tracking-widest text-[#888888]">
-                      {'\u4eca\u65e5\u8a02\u55ae\u7de8\u865f'}
-                    </span>
-                    <div className="flex items-center gap-2">
-                      <span className="inline-flex min-w-12 items-center justify-center rounded-full border border-[#EA5B3C]/20 bg-[#FFF3EF] px-3 py-1.5 text-sm font-bold text-[#EA5B3C]">
-                        {getOrderDisplayNumber(todayOrder)}
-                      </span>
-                    </div>
+              <>
+                <div className="flex items-center justify-between rounded-lg border border-[#EAE8E4] bg-white px-4 py-3">
+                  <span className="text-[11px] font-bold tracking-widest text-[#888888]">今日訂單號碼為</span>
+                  <span className="inline-flex min-w-12 items-center justify-center rounded-full border border-[#EA5B3C]/20 bg-[#FFF3EF] px-3 py-1.5 text-sm font-bold text-[#EA5B3C]">
+                    {getOrderDisplayNumber(todayOrder)}
+                  </span>
+                </div>
+
+                <div className="rounded-lg border border-[#EAE8E4] bg-[#F9F8F5] overflow-hidden">
+                  <div className="max-h-[180px] overflow-y-auto bg-white px-4 py-3 kaizen-scrollbar">
+                      {todayOrder.items.map(item => (
+                        <div key={item.id} className="grid grid-cols-[1fr_auto_auto] items-center gap-3 border-b border-[#EAE8E4] py-2 text-xs last:border-b-0">
+                        <span className="font-bold text-[#333333] truncate">
+                          {item.name}
+                          {item.note && (
+                            <span className="block truncate text-[11px] font-bold text-[#EA5B3C]">
+                              備註: {item.note}
+                            </span>
+                          )}
+                        </span>
+                        <span className="rounded-full bg-[#F9F8F5] px-2 py-0.5 font-bold text-[#888888] shrink-0">x {item.quantity}</span>
+                        <span className="font-bold text-[#EA5B3C] shrink-0">NT$ {item.unitPrice * item.quantity}</span>
+                      </div>
+                    ))}
                   </div>
-                </div>
 
-                <div className="max-h-[180px] overflow-y-auto bg-white px-4 py-3 kaizen-scrollbar">
-                    {todayOrder.items.map(item => (
-                      <div key={item.id} className="grid grid-cols-[1fr_auto_auto] items-center gap-3 border-b border-[#EAE8E4] py-2 text-xs last:border-b-0">
-                      <span className="font-bold text-[#333333] truncate">
-                        {item.name}
-                        {item.note && (
-                          <span className="block truncate text-[11px] font-bold text-[#EA5B3C]">
-                            備註: {item.note}
-                          </span>
-                        )}
-                      </span>
-                      <span className="rounded-full bg-[#F9F8F5] px-2 py-0.5 font-bold text-[#888888] shrink-0">x {item.quantity}</span>
-                      <span className="font-bold text-[#EA5B3C] shrink-0">NT$ {item.unitPrice * item.quantity}</span>
-                    </div>
-                  ))}
-                </div>
+                  <div className="flex items-center justify-between border-t border-[#EAE8E4] bg-[#F9F8F5] px-4 py-3">
+                    <span className="text-[11px] font-bold tracking-widest text-[#888888]">今日訂單金額</span>
+                    <span className="text-xl font-bold text-[#EA5B3C]">NT$ {todayOrder.totalAmount}</span>
+                  </div>
 
-                <div className="flex items-center justify-between border-t border-[#EAE8E4] bg-[#F9F8F5] px-4 py-3">
-                  <span className="text-[11px] font-bold tracking-widest text-[#888888]">今日訂單金額</span>
-                  <span className="text-xl font-bold text-[#EA5B3C]">NT$ {todayOrder.totalAmount}</span>
+                  {getDisplayOrderNote(todayOrder) && (
+                    <p className="border-t border-[#EAE8E4] bg-white px-4 py-3 text-xs leading-5 text-[#888888]">
+                      備註：{getDisplayOrderNote(todayOrder)}
+                    </p>
+                  )}
                 </div>
-
-                {getDisplayOrderNote(todayOrder) && (
-                  <p className="border-t border-[#EAE8E4] bg-white px-4 py-3 text-xs leading-5 text-[#888888]">
-                    備註：{getDisplayOrderNote(todayOrder)}
-                  </p>
-                )}
-              </div>
+              </>
             ) : (
               <div className="rounded-lg border border-[#EAE8E4] bg-[#F9F8F5] px-4 py-8 text-center text-xs text-[#888888]">
                 今日尚未訂購餐點。

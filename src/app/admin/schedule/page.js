@@ -6,6 +6,28 @@ import Navbar from '@/components/Navbar';
 
 const DEFAULT_CUSTOMIZATION_OPTIONS = ['飯少', '換菜', '換菜+$20'];
 
+function MarkdownPreview({ content }) {
+  const renderInline = text => String(text || '').split(/(\*\*.*?\*\*)/g).filter(Boolean).map((part, index) => (
+    part.startsWith('**') && part.endsWith('**')
+      ? <strong key={index}>{part.slice(2, -2)}</strong>
+      : <span key={index}>{part}</span>
+  ));
+
+  return (
+    <div className="space-y-1.5 text-xs leading-6 text-[#555555]">
+      {String(content || '').split(/\r?\n/).map((line, index) => {
+        if (!line.trim()) return <div key={index} className="h-2" />;
+        if (line.startsWith('### ')) return <h6 key={index} className="text-sm font-bold text-[#333333]">{renderInline(line.slice(4))}</h6>;
+        if (line.startsWith('## ')) return <h5 key={index} className="text-base font-bold text-[#333333]">{renderInline(line.slice(3))}</h5>;
+        if (line.startsWith('# ')) return <h4 key={index} className="text-lg font-bold text-[#333333]">{renderInline(line.slice(2))}</h4>;
+        if (/^[-*]\s+/.test(line)) return <div key={index} className="flex gap-2"><span>•</span><span>{renderInline(line.replace(/^[-*]\s+/, ''))}</span></div>;
+        if (/^\d+\.\s+/.test(line)) return <div key={index}>{renderInline(line)}</div>;
+        return <p key={index}>{renderInline(line)}</p>;
+      })}
+    </div>
+  );
+}
+
 function parseCustomizationOptions(value) {
   if (Array.isArray(value)) {
     return value.map(option => String(option).trim()).filter(Boolean);
@@ -81,12 +103,6 @@ function formatDate(date) {
   if (day.length < 2) day = '0' + day;
 
   return [year, month, day].join('-');
-}
-
-function formatMonthDay(dateStr) {
-  const [, month, day] = String(dateStr || '').split('-');
-  if (!month || !day) return '';
-  return `${Number(month)}/${Number(day)}`;
 }
 
 function getWeeklyDates() {
@@ -200,6 +216,7 @@ export default function AdminDashboard() {
   // Scheduling state
   const [selectedRestaurantId, setSelectedRestaurantId] = useState('');
   const [restaurantConfigs, setRestaurantConfigs] = useState([]);
+  const [dailyAnnouncement, setDailyAnnouncement] = useState('');
   const [orderDeadlineDate, setOrderDeadlineDate] = useState('');
   const [orderDeadline, setOrderDeadline] = useState('09:40');
   const [isHoliday, setIsHoliday] = useState(false);
@@ -231,6 +248,7 @@ export default function AdminDashboard() {
   const [activeInfoTooltip, setActiveInfoTooltip] = useState('');
   const [isSchedulePanelExpanded, setIsSchedulePanelExpanded] = useState(true);
   const [isStatisticsPanelExpanded, setIsStatisticsPanelExpanded] = useState(true);
+  const [collapsedRestaurantStatistics, setCollapsedRestaurantStatistics] = useState({});
   const [isNotificationPanelExpanded, setIsNotificationPanelExpanded] = useState(true);
 
   useEffect(() => {
@@ -398,7 +416,16 @@ export default function AdminDashboard() {
   const todaySchedule = schedules.find(s => s.date === todayDate);
   const weeklyDates = getWeeklyDates();
   const selectedDateIsHoliday = activeSchedule ? !activeSchedule.isOpen && !activeSchedule.deliveredAt : isHoliday;
-  const activeMenuItems = activeSchedule?.restaurantConfigs?.length
+  const scheduledOrderRestaurants = activeSchedule?.restaurantConfigs?.length
+    ? activeSchedule.restaurantConfigs
+    : activeSchedule?.restaurant
+      ? [{ restaurantId: activeSchedule.restaurantId, restaurant: activeSchedule.restaurant }]
+      : [];
+  const allActiveMenuItems = scheduledOrderRestaurants.flatMap(config => config.restaurant?.menuItems || []);
+  const selectedOrderRestaurantId = orderEditor?.restaurantId || scheduledOrderRestaurants[0]?.restaurantId || '';
+  const activeMenuItems = selectedOrderRestaurantId
+    ? scheduledOrderRestaurants.find(config => config.restaurantId === selectedOrderRestaurantId)?.restaurant?.menuItems || []
+    : activeSchedule?.restaurantConfigs?.length
     ? activeSchedule.restaurantConfigs.flatMap(config => config.restaurant?.menuItems || [])
     : activeSchedule?.restaurant?.menuItems || [];
   const availableOrderMenuCategories = Array.from(new Set(activeMenuItems.map(getMenuItemCategory)));
@@ -495,12 +522,14 @@ export default function AdminDashboard() {
             orderDeadlineDate: config.orderDeadlineDate || selectedDate,
             orderDeadline: config.orderDeadline || '09:40'
           })));
+      setDailyAnnouncement(activeSchedule.dailyAnnouncement || '');
     } else {
       setSelectedRestaurantId('');
       setOrderDeadlineDate(selectedDate);
       setOrderDeadline('09:40');
       setIsHoliday(isWeekendDate(selectedDate));
       setRestaurantConfigs([{ restaurantId: '', orderDeadlineDate: selectedDate, orderDeadline: '09:40' }]);
+      setDailyAnnouncement('');
     }
     setMessage({ text: '', type: '' });
     setOrderEditor(null);
@@ -516,7 +545,8 @@ export default function AdminDashboard() {
     clearRestaurantIds,
     successMessage,
     savingSection,
-    restaurantConfigsValue
+    restaurantConfigsValue,
+    dailyAnnouncementValue
   }) => {
     setSavingScheduleSection(savingSection);
     setMessage({ text: '', type: '' });
@@ -533,7 +563,8 @@ export default function AdminDashboard() {
           isOpen: isOpenValue,
           clearOrdersOnRestaurantChange,
           clearRestaurantIds,
-          restaurantConfigs: restaurantConfigsValue
+          restaurantConfigs: restaurantConfigsValue,
+          ...(dailyAnnouncementValue !== undefined ? { dailyAnnouncement: dailyAnnouncementValue } : {})
         })
       });
 
@@ -591,6 +622,41 @@ export default function AdminDashboard() {
       restaurantConfigsValue: normalizedConfigs,
       successMessage: '當日餐廳與截止時間已成功儲存！',
       savingSection: 'restaurants'
+    });
+  };
+
+  const handleSaveDailyAnnouncement = async () => {
+    if (isScheduleLocked || isPastSelectedDate) return;
+    if (!activeSchedule) {
+      setMessage({ text: '請先儲存當日餐廳與截止時間設定。', type: 'error' });
+      return;
+    }
+
+    const savedConfigs = activeSchedule.restaurantConfigs?.length
+      ? activeSchedule.restaurantConfigs.map(config => ({
+          restaurantId: config.restaurantId,
+          orderDeadlineDate: config.orderDeadlineDate || selectedDate,
+          orderDeadline: config.orderDeadline || '09:40'
+        }))
+      : activeSchedule.restaurantId
+        ? [{
+            restaurantId: activeSchedule.restaurantId,
+            orderDeadlineDate: activeSchedule.orderDeadlineDate || selectedDate,
+            orderDeadline: activeSchedule.orderDeadline || '09:40'
+          }]
+        : [];
+
+    await persistScheduleSettings({
+      restaurantId: savedConfigs[0]?.restaurantId || null,
+      orderDeadlineDateValue: savedConfigs[0]?.orderDeadlineDate || selectedDate,
+      orderDeadlineValue: savedConfigs[0]?.orderDeadline || '09:40',
+      isOpenValue: activeSchedule.isOpen,
+      clearOrdersOnRestaurantChange: false,
+      clearRestaurantIds: [],
+      restaurantConfigsValue: savedConfigs,
+      dailyAnnouncementValue: dailyAnnouncement,
+      successMessage: '當日餐廳公告已成功儲存！',
+      savingSection: 'announcement'
     });
   };
 
@@ -709,6 +775,7 @@ export default function AdminDashboard() {
     setOrderMenuCategory('');
     setOrderEditor({
       orderId: null,
+      restaurantId: scheduledOrderRestaurants[0]?.restaurantId || '',
       userId: '',
       seatArea: 'A',
       note: '',
@@ -723,7 +790,7 @@ export default function AdminDashboard() {
     const itemNotes = {};
     const itemCustomOptions = {};
     order.orderItems.forEach(item => {
-      const menuItem = activeMenuItems.find(menu => menu.id === item.menuItemId);
+      const menuItem = allActiveMenuItems.find(menu => menu.id === item.menuItemId);
       const parsedNote = splitExistingItemNote(menuItem, item.note || '');
       quantities[item.menuItemId] = item.quantity;
       itemNotes[item.menuItemId] = parsedNote.note;
@@ -735,6 +802,9 @@ export default function AdminDashboard() {
     setOrderMenuCategory('');
     setOrderEditor({
       orderId: order.id,
+      restaurantId: allActiveMenuItems.find(menu => menu.id === order.orderItems[0]?.menuItemId)?.restaurantId
+        || scheduledOrderRestaurants[0]?.restaurantId
+        || '',
       userId: order.userId,
       seatArea: ['A', 'B'].includes(order.seatArea) ? order.seatArea : 'A',
       note: order.note || '',
@@ -751,16 +821,6 @@ export default function AdminDashboard() {
       quantities: {
         ...prev.quantities,
         [menuItemId]: quantity
-      }
-    }));
-  };
-
-  const updateOrderItemNote = (menuItemId, value) => {
-    setOrderEditor(prev => ({
-      ...prev,
-      itemNotes: {
-        ...(prev.itemNotes || {}),
-        [menuItemId]: value
       }
     }));
   };
@@ -965,6 +1025,7 @@ export default function AdminDashboard() {
             qty,
             price,
             menuItem: oi.menuItem,
+            restaurantId: oi.menuItem?.restaurantId || '',
             restaurantName: restaurants.find(restaurant => restaurant.id === oi.menuItem?.restaurantId)?.name || '餐廳'
           };
         }
@@ -983,6 +1044,35 @@ export default function AdminDashboard() {
   const itemSummaries = getOrderedItemsSummary();
   const totalQuantity = itemSummaries.reduce((sum, item) => sum + item.qty, 0);
   const totalOrderAmount = itemSummaries.reduce((sum, item) => sum + item.price * item.qty, 0);
+  const configuredSummaryRestaurants = activeSchedule?.restaurantConfigs?.length
+    ? activeSchedule.restaurantConfigs
+    : (activeSchedule?.restaurantId
+        ? [{ restaurantId: activeSchedule.restaurantId, restaurant: activeSchedule.restaurant }]
+        : []);
+  const restaurantSummaryGroups = configuredSummaryRestaurants.map((config, index) => {
+    const items = itemSummaries.filter(item => item.restaurantId === config.restaurantId);
+    const restaurant = config.restaurant || restaurants.find(item => item.id === config.restaurantId);
+    return {
+      restaurantId: config.restaurantId,
+      label: `餐廳${['一', '二', '三', '四', '五', '六'][index] || index + 1}`,
+      name: restaurant?.name || items[0]?.restaurantName || '餐廳',
+      items,
+      quantity: items.reduce((sum, item) => sum + item.qty, 0),
+      amount: items.reduce((sum, item) => sum + item.price * item.qty, 0)
+    };
+  });
+  const configuredSummaryRestaurantIds = new Set(configuredSummaryRestaurants.map(config => config.restaurantId));
+  const unassignedSummaryItems = itemSummaries.filter(item => !configuredSummaryRestaurantIds.has(item.restaurantId));
+  if (unassignedSummaryItems.length > 0) {
+    restaurantSummaryGroups.push({
+      restaurantId: 'legacy',
+      label: '其他餐廳',
+      name: '歷史訂單',
+      items: unassignedSummaryItems,
+      quantity: unassignedSummaryItems.reduce((sum, item) => sum + item.qty, 0),
+      amount: unassignedSummaryItems.reduce((sum, item) => sum + item.price * item.qty, 0)
+    });
+  }
   const historyOrders = historySchedule?.orders?.filter(order => order.status !== 'cancelled') || [];
   const historyItemSummaries = getOrderSummaryFromOrders(historyOrders);
   const historyTotalQuantity = historyItemSummaries.reduce((sum, item) => sum + item.qty, 0);
@@ -1071,20 +1161,9 @@ export default function AdminDashboard() {
     return groups;
   }, {});
   const orderCopyItems = Object.values(orderCopyGroups).sort((a, b) => a.name.localeCompare(b.name, 'zh-Hant'));
-  const copyMealCount = orderCopyItems
-    .filter(item => !item.isAlaCarte)
-    .reduce((sum, item) => sum + item.qty, 0);
-  const copyAlaCarteCount = orderCopyItems
-    .filter(item => item.isAlaCarte)
-    .reduce((sum, item) => sum + item.qty, 0);
-  const orderCopyText = [
-    `日期: ${formatMonthDay(selectedDate)}`,
-    '',
-    ...orderCopyItems.map(item => `${item.restaurantName}｜${item.name}${item.note ? ` ${item.note}` : ''} *${item.qty}`),
-    '',
-    `共計${copyMealCount}份餐，${copyAlaCarteCount}份單點`,
-    `總金額$${totalOrderAmount}`
-  ].join('\n').trim();
+  const orderCopyText = orderCopyItems
+    .map(item => `${item.name}${item.note ? ` ${item.note}` : ''} *${item.qty}`)
+    .join('\n');
   const numberedOrderCopyText = orderCopyItems
     .map(item => {
       const sortedOrderNumbers = [...item.orderNumbers].sort((a, b) => {
@@ -1134,6 +1213,27 @@ export default function AdminDashboard() {
   const handleCopyNumberedOrderSummary = () => {
     if (!orderCopyItems.length) return;
     return copyOrderText(numberedOrderCopyText, '已複製編號統整。');
+  };
+
+  const handleCopyRestaurantOrderSummary = group => {
+    if (!group.items.length) return;
+    const text = group.items
+      .map(item => `${item.name}${item.note ? ` ${formatItemNoteDisplay(item.note, item.menuItem)}` : ''} *${item.qty}`)
+      .join('\n');
+    return copyOrderText(text, `已複製${group.name}訂單。`);
+  };
+
+  const handleCopyRestaurantNumberedSummary = group => {
+    const items = orderCopyItems.filter(item => item.restaurantName === group.name);
+    if (!items.length) return;
+    const text = items.map(item => {
+      const orderNumbers = [...item.orderNumbers].sort((a, b) => {
+        const areaCompare = a[0].localeCompare(b[0]);
+        return areaCompare || Number(a.slice(1)) - Number(b.slice(1));
+      });
+      return `${item.name}${item.note ? ` ${item.note}` : ''} *${item.qty} [編號:${orderNumbers.join('、')}]`;
+    }).join('\n');
+    return copyOrderText(text, `已複製${group.name}編號統整。`);
   };
 
   if (!user) {
@@ -1460,7 +1560,7 @@ export default function AdminDashboard() {
                 {!isHoliday && (
                   <div className="space-y-3">
                     <div className="flex items-center justify-between gap-3">
-                      <label className="text-xs font-bold text-[#888888]">指定當日餐廳</label>
+                      <label className="text-xs font-bold text-[#888888]">餐廳與截止時間設定</label>
                       <button
                         type="button"
                         onClick={() => setRestaurantConfigs(configs => [...configs, { restaurantId: '', orderDeadlineDate: selectedDate, orderDeadline: '09:40' }])}
@@ -1525,7 +1625,7 @@ export default function AdminDashboard() {
                   disabled={isPastSelectedDate || isScheduleLocked || Boolean(savingScheduleSection)}
                   className="w-full rounded-xl bg-[#EA5B3C] py-3 text-xs font-bold text-white shadow-sm transition-all hover:bg-[#333333] disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  {savingScheduleSection === 'restaurants' ? '儲存中...' : '儲存當日餐廳設定'}
+                  {savingScheduleSection === 'restaurants' ? '儲存中...' : '儲存餐廳與截止時間'}
                 </button>
 
                 {isPastSelectedDate && (
@@ -1592,6 +1692,42 @@ export default function AdminDashboard() {
 
                 </>
               )}
+            </div>
+
+            <div className="rounded-xl border border-[#EAE8E4] bg-white p-6 shadow-sm">
+              <div className="mb-5 border-b border-[#EAE8E4] pb-3">
+                <h3 className="flex items-center gap-2 text-base font-bold text-[#333333]">
+                  <i className="ti ti-speakerphone text-lg text-[#EA5B3C]"></i>
+                  當日餐廳公告
+                </h3>
+                <p className="mt-1 text-[10px] text-[#AAA39A]">供餐日期：{selectedDate}・支援 Markdown 標題、粗體、項目符號與編號清單。</p>
+              </div>
+              <div className="space-y-3">
+                <textarea
+                  id="daily-schedule-announcement"
+                  value={dailyAnnouncement}
+                  onChange={(event) => setDailyAnnouncement(event.target.value)}
+                  disabled={isPastSelectedDate || isScheduleLocked}
+                  rows={5}
+                  placeholder={'例如：\n## 今日公告\n- 請於截止時間前完成訂購\n- **餐具請自備**'}
+                  className="w-full resize-y rounded-lg border border-[#EAE8E4] bg-white px-3 py-2 font-mono text-xs leading-5 text-[#333333] focus:border-[#EA5B3C] focus:outline-none disabled:cursor-not-allowed disabled:bg-[#F9F8F5]"
+                  aria-label="當日餐廳公告 Markdown 編輯器"
+                />
+                <div className="rounded-lg border border-dashed border-[#D6D1CA] bg-[#F9F8F5] p-3">
+                  <p className="mb-2 text-[10px] font-bold tracking-widest text-[#888888]">預覽</p>
+                  {dailyAnnouncement.trim()
+                    ? <MarkdownPreview content={dailyAnnouncement} />
+                    : <p className="text-xs text-[#AAA39A]">尚未輸入公告內容。</p>}
+                </div>
+                <button
+                  type="button"
+                  onClick={handleSaveDailyAnnouncement}
+                  disabled={isPastSelectedDate || isScheduleLocked || Boolean(savingScheduleSection)}
+                  className="w-full rounded-xl bg-[#EA5B3C] py-3 text-xs font-bold text-white shadow-sm transition-all hover:bg-[#333333] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {savingScheduleSection === 'announcement' ? '儲存中...' : '儲存餐廳公告'}
+                </button>
+              </div>
             </div>
 
             <div className="rounded-xl border border-[#EAE8E4] bg-white p-6 shadow-sm">
@@ -1671,29 +1807,11 @@ export default function AdminDashboard() {
                     {activeSchedule
                       ? selectedDateIsHoliday
                         ? '\u5047\u671f\u4e0d\u958b\u653e\u8a02\u9910'
-                        : `${activeSchedule.restaurant?.name || '\u672a\u6392\u5b9a'} \u8a02\u9910\u7d50\u679c`
+                        : '\u9910\u5ef3\u8a02\u9910\u7d50\u679c'
                       : '\u5c1a\u672a\u5efa\u7acb\u6392\u7a0b'}
                   </h3>
                 </div>
 
-                <div className="flex items-center gap-3">
-                  {activeSchedule && (
-                    <div className="text-right">
-                      <span className="text-xs font-bold text-[#888888] block">今日總份數</span>
-                      <span className="text-2xl font-bold text-[#EA5B3C]">{totalQuantity} 份</span>
-                    </div>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => setIsStatisticsPanelExpanded(expanded => !expanded)}
-                    aria-expanded={isStatisticsPanelExpanded}
-                    aria-label={isStatisticsPanelExpanded ? '收合當日統計資訊' : '展開當日統計資訊'}
-                    title={isStatisticsPanelExpanded ? '收合' : '展開'}
-                    className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#EAE8E4] bg-white text-[#888888] transition-all hover:border-[#EA5B3C] hover:text-[#EA5B3C]"
-                  >
-                    <i className={`ti ${isStatisticsPanelExpanded ? 'ti-chevron-up' : 'ti-chevron-down'} text-base`}></i>
-                  </button>
-                </div>
               </div>
 
               {isStatisticsPanelExpanded && (
@@ -1702,34 +1820,12 @@ export default function AdminDashboard() {
                 <>
                   {/* Aggregated Menu Item Quantities - FOR RESTAURANT CALLS */}
                   <div className="space-y-4">
-                    <h4 className="font-bold text-sm text-[#333333] border-l-4 border-l-[#EA5B3C] pl-2.5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                      <span>餐點總計</span>
-                      <span className="flex flex-wrap items-center gap-2 text-xs font-bold text-[#888888]">
-                        <span>
-                          總消費額: <span className="text-[#333333]">NT$ {totalOrderAmount}</span>
-                        </span>
-                        <button
-                          type="button"
-                          onClick={handleCopyOrderSummary}
-                          disabled={orderCopyItems.length === 0}
-                          className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#EA5B3C] bg-[#FFF3EF] text-[#EA5B3C] transition-all hover:bg-[#FFE7DE] disabled:cursor-not-allowed disabled:opacity-50"
-                          aria-label="複製訂單"
-                          title="複製訂單"
-                        >
-                          <i className="ti ti-copy text-sm"></i>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handleCopyNumberedOrderSummary}
-                          disabled={orderCopyItems.length === 0}
-                          className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#EA5B3C] bg-white text-[#EA5B3C] transition-all hover:bg-[#FFF3EF] disabled:cursor-not-allowed disabled:opacity-50"
-                          aria-label="複製編號統整"
-                          title="複製編號統整"
-                        >
-                          <i className="ti ti-list-numbers text-sm"></i>
-                        </button>
-                      </span>
-                    </h4>
+                    <div className="space-y-2 border-l-4 border-l-[#EA5B3C] pl-2.5">
+                      <h4 className="text-sm font-bold text-[#333333]">當日餐廳公告</h4>
+                      {activeSchedule.dailyAnnouncement?.trim()
+                        ? <MarkdownPreview content={activeSchedule.dailyAnnouncement} />
+                        : <p className="text-xs text-[#888888]">今日尚未設定餐廳公告。</p>}
+                    </div>
                     {copyOrderMessage && (
                       <p className="text-[11px] font-bold text-[#888888]">{copyOrderMessage}</p>
                     )}
@@ -1739,24 +1835,80 @@ export default function AdminDashboard() {
                         今天尚未有任何成員訂餐。
                       </div>
                     ) : (
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {itemSummaries.map(item => (
-                          <div key={`${item.name}-${item.note || 'default'}`} className="p-4 bg-[#F9F8F5] border border-[#EAE8E4] rounded-lg flex justify-between items-center">
-                            <div>
-                              <span className="mb-1 block text-[10px] font-bold text-[#EA5B3C]">{item.restaurantName}</span>
-                              <span className="font-bold text-sm text-[#333333]">{item.name}</span>
-                              <span className="text-xs text-[#888888] block mt-1">單價: NT$ {item.price}</span>
-                              {item.note && (
-                                <span className="mt-1 block text-xs font-bold text-[#EA5B3C]">
-                                  備註: {formatItemNoteDisplay(item.note, item.menuItem)}
-                                </span>
-                              )}
+                      <div className="space-y-5">
+                        {restaurantSummaryGroups.map(group => (
+                          <section key={group.restaurantId} className="space-y-3 rounded-md border border-[#EAE8E4] bg-white p-3 sm:p-4">
+                            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#EAE8E4] pb-3">
+                              <div className="min-w-0">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="text-base font-bold text-[#333333]">{group.name}訂餐統計</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleCopyRestaurantOrderSummary(group)}
+                                    disabled={group.items.length === 0}
+                                    className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[#EA5B3C] bg-[#FFF3EF] text-[#EA5B3C] transition-all hover:bg-[#FFE7DE] disabled:cursor-not-allowed disabled:opacity-50"
+                                    aria-label={`複製${group.name}訂單`}
+                                    title="複製訂單"
+                                  >
+                                    <i className="ti ti-copy text-sm"></i>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleCopyRestaurantNumberedSummary(group)}
+                                    disabled={!orderCopyItems.some(item => item.restaurantName === group.name)}
+                                    className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[#EA5B3C] bg-white text-[#EA5B3C] transition-all hover:bg-[#FFF3EF] disabled:cursor-not-allowed disabled:opacity-50"
+                                    aria-label={`複製${group.name}編號統整`}
+                                    title="複製編號統整"
+                                  >
+                                    <i className="ti ti-list-numbers text-sm"></i>
+                                  </button>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <div className="text-right font-bold">
+                                  <span className="block text-[10px] text-[#888888]">今日總份數</span>
+                                  <span className="block text-xl text-[#EA5B3C]">{group.quantity} 份</span>
+                                  <span className="text-[11px] text-[#888888]">NT$ {group.amount}</span>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => setCollapsedRestaurantStatistics(current => ({
+                                    ...current,
+                                    [group.restaurantId]: !current[group.restaurantId]
+                                  }))}
+                                  aria-expanded={!collapsedRestaurantStatistics[group.restaurantId]}
+                                  aria-label={collapsedRestaurantStatistics[group.restaurantId] ? `展開${group.name}訂餐統計` : `收合${group.name}訂餐統計`}
+                                  title={collapsedRestaurantStatistics[group.restaurantId] ? '展開' : '收合'}
+                                  className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[#EAE8E4] bg-white text-[#888888] transition-all hover:border-[#EA5B3C] hover:text-[#EA5B3C]"
+                                >
+                                  <i className={`ti ${collapsedRestaurantStatistics[group.restaurantId] ? 'ti-chevron-down' : 'ti-chevron-up'} text-sm`}></i>
+                                </button>
+                              </div>
                             </div>
-                            <div className="text-right">
-                              <span className="text-lg font-bold text-[#EA5B3C]">{item.qty}</span>
-                              <span className="text-xs font-bold text-[#333333] ml-1">份</span>
-                            </div>
-                          </div>
+                            {!collapsedRestaurantStatistics[group.restaurantId] && (group.items.length === 0 ? (
+                              <p className="py-4 text-center text-xs text-[#888888]">此餐廳目前沒有訂餐品項。</p>
+                            ) : (
+                              <div className={`grid grid-cols-1 gap-3 md:grid-cols-2 ${group.items.length > 3 ? 'max-h-[465px] overflow-y-auto pr-1 kaizen-scrollbar md:max-h-none md:overflow-visible md:pr-0' : ''}`}>
+                                {group.items.map(item => (
+                                  <div key={`${item.name}-${item.note || 'default'}`} className="flex items-center justify-between rounded-lg border border-[#EAE8E4] bg-[#F9F8F5] p-4">
+                                    <div className="min-w-0">
+                                      <span className="font-bold text-sm text-[#333333]">{item.name}</span>
+                                      <span className="text-xs text-[#888888] block mt-1">單價: NT$ {item.price}</span>
+                                      {item.note && (
+                                        <span className="mt-1 block text-xs font-bold text-[#EA5B3C]">
+                                          備註: {formatItemNoteDisplay(item.note, item.menuItem)}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="shrink-0 text-right">
+                                      <span className="text-lg font-bold text-[#EA5B3C]">{item.qty}</span>
+                                      <span className="text-xs font-bold text-[#333333] ml-1">份</span>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            ))}
+                          </section>
                         ))}
                       </div>
                     )}
@@ -1793,7 +1945,7 @@ export default function AdminDashboard() {
 
                     {orderEditor && (
                       <div className="rounded-xl border border-[#EAE8E4] bg-[#F9F8F5] p-4 space-y-4">
-                        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                        <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
                           <div className="relative space-y-1.5">
                             <label className="text-xs font-bold text-[#888888]">{'\u6210\u54e1'}</label>
                             <div className="relative">
@@ -1836,6 +1988,31 @@ export default function AdminDashboard() {
                                 )}
                               </div>
                             )}
+                          </div>
+                          <div className="space-y-1.5">
+                            <label className="text-xs font-bold text-[#888888]">餐廳</label>
+                            <select
+                              value={selectedOrderRestaurantId}
+                              onChange={(event) => {
+                                setOrderMenuCategory('');
+                                setOrderEditor(previous => ({
+                                  ...previous,
+                                  restaurantId: event.target.value,
+                                  quantities: {},
+                                  itemNotes: {},
+                                  itemCustomOptions: {}
+                                }));
+                              }}
+                              disabled={Boolean(orderEditor.orderId)}
+                              className="w-full rounded-lg border border-[#EAE8E4] bg-white px-3 py-2 text-xs font-medium text-[#333333] focus:border-[#EA5B3C] focus:outline-none disabled:bg-[#F2EFEA] disabled:text-[#888888]"
+                              aria-label="選擇加單餐廳"
+                            >
+                              {scheduledOrderRestaurants.map(config => (
+                                <option key={config.restaurantId} value={config.restaurantId}>
+                                  {config.restaurant?.name || '未命名餐廳'}
+                                </option>
+                              ))}
+                            </select>
                           </div>
                           <div className="space-y-1.5">
                             <label className="text-xs font-bold text-[#888888]">{'\u985e\u578b'}</label>
@@ -1921,13 +2098,6 @@ export default function AdminDashboard() {
                                   );
                                 })}
                               </div>
-                              <input
-                                type="text"
-                                value={orderEditor.itemNotes?.[item.id] || ''}
-                                onChange={(e) => updateOrderItemNote(item.id, e.target.value)}
-                                placeholder="此餐點備註"
-                                className="w-full text-xs px-3 py-2 border border-[#EAE8E4] rounded-lg focus:outline-none focus:border-[#EA5B3C]"
-                              />
                             </div>
                           ))}
                           {sortedOrderMenuItems.length === 0 && (

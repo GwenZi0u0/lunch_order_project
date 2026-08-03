@@ -6,6 +6,7 @@ const CATEGORY_ORDER_KEY_PREFIX = 'restaurantCategoryOrder:';
 const MENU_IMAGE_KEY_PREFIX = 'restaurantMenuImage:';
 const DEADLINE_DATE_KEY_PREFIX = 'scheduleOrderDeadlineDate:';
 const SCHEDULE_RESTAURANTS_KEY_PREFIX = 'scheduleRestaurants:';
+const SCHEDULE_ANNOUNCEMENT_KEY_PREFIX = 'scheduleAnnouncement:';
 
 // Helper to get date string YYYY-MM-DD
 function formatDate(date) {
@@ -113,6 +114,17 @@ export async function GET(request) {
         }
       }
     });
+    const scheduleAnnouncementSettings = await prisma.siteSetting.findMany({
+      where: {
+        key: {
+          in: schedules.map(schedule => `${SCHEDULE_ANNOUNCEMENT_KEY_PREFIX}${schedule.date}`)
+        }
+      }
+    });
+    const announcementByScheduleDate = new Map(scheduleAnnouncementSettings.map(setting => [
+      setting.key.slice(SCHEDULE_ANNOUNCEMENT_KEY_PREFIX.length),
+      setting.value || ''
+    ]));
     const restaurantConfigsByDate = new Map(scheduleRestaurantSettings.map(setting => {
       try {
         const parsed = JSON.parse(setting.value || '[]');
@@ -191,6 +203,7 @@ export async function GET(request) {
           categoryOrder: categoryOrderByRestaurantId.get(sched.restaurant.id) || []
         } : null,
         restaurantConfigs,
+        dailyAnnouncement: announcementByScheduleDate.get(sched.date) || '',
         userOrder: userOrder ? {
           id: userOrder.id,
           orderNumber: userOrder.orderNumber,
@@ -245,6 +258,7 @@ export async function POST(request) {
     }
 
     const body = await request.json();
+    const shouldUpdateDailyAnnouncement = Object.prototype.hasOwnProperty.call(body, 'dailyAnnouncement');
     const {
       date,
       restaurantId,
@@ -253,7 +267,8 @@ export async function POST(request) {
       isOpen = true,
       clearOrdersOnRestaurantChange = false,
       clearRestaurantIds = [],
-      restaurantConfigs
+      restaurantConfigs,
+      dailyAnnouncement = ''
     } = body;
     const scheduleIsOpen = Boolean(isOpen);
     const normalizedRestaurantConfigs = scheduleIsOpen
@@ -386,6 +401,16 @@ export async function POST(request) {
           value: JSON.stringify(normalizedRestaurantConfigs)
         }
       });
+      if (shouldUpdateDailyAnnouncement) {
+        await tx.siteSetting.upsert({
+          where: { key: `${SCHEDULE_ANNOUNCEMENT_KEY_PREFIX}${date}` },
+          update: { value: String(dailyAnnouncement || '') },
+          create: {
+            key: `${SCHEDULE_ANNOUNCEMENT_KEY_PREFIX}${date}`,
+            value: String(dailyAnnouncement || '')
+          }
+        });
+      }
 
       return savedSchedule;
     });

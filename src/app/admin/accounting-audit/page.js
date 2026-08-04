@@ -28,16 +28,9 @@ function getMonthDays(monthDate) {
 }
 
 function getDateLabel(startDate, endDate) {
-  if (!startDate) return '最近 7 天';
+  if (!startDate) return '全部日期';
   if (!endDate || startDate === endDate) return startDate;
   return `${startDate} - ${endDate}`;
-}
-
-function getRecentSevenDayRange() {
-  const end = new Date();
-  const start = new Date(end);
-  start.setDate(end.getDate() - 6);
-  return { startDate: toDateKey(start), endDate: toDateKey(end) };
 }
 
 function getAuditDateBounds() {
@@ -67,14 +60,11 @@ export default function AccountingAuditPage() {
   const [calendarMonth, setCalendarMonth] = useState(() => new Date());
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState('');
+  const [visibleTransactionCount, setVisibleTransactionCount] = useState(6);
 
   const fetchTransactions = ({ userId = selectedUserId, from = startDate, to = endDate } = {}) => {
     const params = new URLSearchParams({ action: 'history' });
-    if (!from && !to) {
-      const recentRange = getRecentSevenDayRange();
-      from = recentRange.startDate;
-      to = recentRange.endDate;
-    }
+    setVisibleTransactionCount(6);
     if (userId) params.set('userId', userId);
     if (from) params.set('startDate', from);
     if (to) params.set('endDate', to);
@@ -148,6 +138,7 @@ export default function AccountingAuditPage() {
   const latestCalendarMonth = new Date(auditDateBounds.today.getFullYear(), auditDateBounds.today.getMonth(), 1);
   const canViewPreviousMonth = calendarMonth > earliestCalendarMonth;
   const canViewNextMonth = calendarMonth < latestCalendarMonth;
+  const visibleTransactions = transactions.slice(0, visibleTransactionCount);
 
   if (!user) return <div className="flex min-h-screen items-center justify-center bg-[#F9F8F5] text-sm font-bold text-[#888888]">載入中...</div>;
 
@@ -255,10 +246,11 @@ export default function AccountingAuditPage() {
           {loading ? <div className="py-12 text-center text-xs text-[#888888]">載入帳務軌跡中...</div> : transactions.length === 0 ? (
             <div className="py-12 text-center text-xs text-[#888888]">{selectedUserId ? '此成員尚無任何交易明細與變動日誌。' : '系統尚無任何交易明細與變動日誌。'}</div>
           ) : (
-            <div className="max-h-[520px] overflow-auto kaizen-scrollbar">
+            <div className="space-y-4">
+              <div className="overflow-auto kaizen-scrollbar">
               <table className="min-w-[760px] w-full border-collapse text-left text-xs">
                 <thead className="sticky top-0 z-10 bg-white"><tr className="border-b border-[#EAE8E4] font-bold text-[#888888]"><th className="py-3">交易日期</th><th className="py-3">對象成員</th><th className="py-3">異動金額</th><th className="py-3">來源</th><th className="py-3">操作經手人</th><th className="py-3">備註</th></tr></thead>
-                <tbody className="divide-y divide-[#EAE8E4]">{transactions.map(transaction => (
+                <tbody className="divide-y divide-[#EAE8E4]">{visibleTransactions.map(transaction => (
                   <tr key={transaction.id} className="hover:bg-[#F9F8F5]/30">
                     <td className="py-3">{new Date(transaction.createdAt).toLocaleString('zh-TW', { hour12: false })}</td>
                     <td className="py-3 font-bold"><span className="group relative inline-flex">{getDisplayName(transaction.user?.name)}<span className="pointer-events-none absolute left-full top-1/2 z-20 ml-2 -translate-y-1/2 whitespace-nowrap rounded-lg border border-[#EAE8E4] bg-white px-2.5 py-1.5 text-[10px] font-bold text-[#555555] opacity-0 shadow-lg group-hover:opacity-100">{transaction.user?.email}</span></span></td>
@@ -269,6 +261,16 @@ export default function AccountingAuditPage() {
                   </tr>
                 ))}</tbody>
               </table>
+              </div>
+              {visibleTransactionCount < transactions.length && (
+                <button
+                  type="button"
+                  onClick={() => setVisibleTransactionCount(current => Math.min(current + 10, transactions.length))}
+                  className="flex w-full items-center justify-center gap-2 rounded-xl border border-[#EAE8E4] bg-[#F9F8F5] px-4 py-3 text-xs font-bold text-[#555555] transition-all hover:border-[#EA5B3C] hover:bg-white hover:text-[#EA5B3C]"
+                >
+                  查看更多
+                </button>
+              )}
             </div>
           )}
         </section>

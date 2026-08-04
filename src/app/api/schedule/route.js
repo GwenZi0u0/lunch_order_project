@@ -186,6 +186,25 @@ export async function GET(request) {
           };
         })
         .filter(Boolean);
+      const activeOrders = sched.orders.filter(order => order.status !== 'cancelled');
+      const restaurantStats = restaurantConfigs.map(config => {
+        const matchingOrderIds = new Set();
+        let totalAmount = 0;
+
+        activeOrders.forEach(order => {
+          order.orderItems.forEach(item => {
+            if (item.menuItem?.restaurantId !== config.restaurantId) return;
+            matchingOrderIds.add(order.id);
+            totalAmount += item.unitPrice * item.quantity;
+          });
+        });
+
+        return {
+          restaurantId: config.restaurantId,
+          totalOrders: matchingOrderIds.size,
+          totalAmount
+        };
+      });
 
       return {
         id: sched.id,
@@ -224,7 +243,8 @@ export async function GET(request) {
         } : null,
         stats: {
           totalOrders: orderCount,
-          totalAmount: sched.orders.filter(o => o.status !== 'cancelled').reduce((sum, o) => sum + o.totalAmount, 0)
+          totalAmount: activeOrders.reduce((sum, order) => sum + order.totalAmount, 0),
+          restaurants: restaurantStats
         },
         orders: user.role === 'admin'
           ? sched.orders.map(order => ({

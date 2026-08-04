@@ -142,8 +142,18 @@ function formatItemNoteDisplay(note) {
 }
 
 function getFreeShippingThreshold(note) {
-  const match = String(note || '').match(/([\d,]+)\s*(?:元)?\s*(?:免運|免外送費)/);
-  return match ? Number(match[1].replace(/,/g, '')) || 0 : 0;
+  const rule = String(note || '');
+  const patterns = [
+    /([\d,]+)\s*(?:元)?\s*(?:免運|免外送費)/,
+    /(?:滿|低消|最低消費|外送門檻)[^\d]{0,8}(?:NT\$|\$)?\s*([\d,]+)/i,
+    /(?:NT\$|\$)\s*([\d,]+)/i,
+    /([\d,]+)\s*元/
+  ];
+  const match = patterns.map(pattern => rule.match(pattern)).find(Boolean);
+  if (match) return Number(match[1].replace(/,/g, '')) || 0;
+  const amounts = Array.from(rule.matchAll(/[\d,]+/g))
+    .map(result => Number(result[0].replace(/,/g, '')) || 0);
+  return amounts.length > 0 ? Math.max(...amounts) : 0;
 }
 
 function MarkdownPreview({ content }) {
@@ -801,7 +811,10 @@ export default function PortalPage() {
   const editingMenuItem = getMenuItemById(editingMenuItemId);
   const editingMenuItemQty = editingMenuItem ? editingMenuItemDraft.quantity || 0 : 0;
   const editingMenuItemOptions = editingMenuItem ? parseCustomizationOptions(editingMenuItem.customizationOptions) : [];
-  const currentCumulativeAmount = activeSchedule?.stats?.totalAmount || 0;
+  const activeRestaurantStats = activeSchedule?.stats?.restaurants?.find(
+    stats => stats.restaurantId === activeRestaurant?.id
+  );
+  const currentCumulativeAmount = activeRestaurantStats?.totalAmount ?? activeSchedule?.stats?.totalAmount ?? 0;
   const freeShippingThreshold = getFreeShippingThreshold(activeRestaurant?.note);
   const cumulativeProgress = freeShippingThreshold
     ? Math.min(100, Math.round((currentCumulativeAmount / freeShippingThreshold) * 100))
@@ -1158,15 +1171,13 @@ export default function PortalPage() {
                               className={`h-full rounded-full transition-all duration-500 ${cumulativeProgress >= 100 ? 'bg-green-500' : 'bg-[#EA5B3C]'}`}
                               style={{ width: `${cumulativeProgress}%` }}
                             />
-                            {cumulativeProgress > 0 && (
-                              <span
-                                className={`absolute top-1/2 inline-flex h-5 w-5 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-white text-xs shadow-sm transition-all duration-500 ${cumulativeProgress >= 100 ? 'text-green-600' : 'text-[#EA5B3C]'}`}
-                                style={{ left: `${cumulativeProgress}%` }}
-                                aria-hidden="true"
-                              >
-                                <i className="ti ti-paw"></i>
-                              </span>
-                            )}
+                            <span
+                              className={`absolute top-1/2 inline-flex h-5 w-5 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-white text-xs shadow-sm transition-all duration-500 ${cumulativeProgress >= 100 ? 'text-green-600' : 'text-[#EA5B3C]'}`}
+                              style={{ left: `clamp(0.625rem, ${cumulativeProgress}%, calc(100% - 0.625rem))` }}
+                              aria-hidden="true"
+                            >
+                              <i className="ti ti-paw"></i>
+                            </span>
                           </div>
                         </div>
                       </div>

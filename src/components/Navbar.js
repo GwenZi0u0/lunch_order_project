@@ -49,6 +49,7 @@ export default function Navbar({ user, interactionDisabled = false }) {
         { label: '訂餐統計', href: '/admin/order-stats', icon: 'ti ti-chart-bar' },
         { label: '餐廳管理', href: '/admin/restaurants', icon: 'ti ti-tools-kitchen-2' },
         { label: '儲值管理', href: '/admin/wallets', icon: 'ti ti-wallet' },
+        { label: '帳務軌跡', href: '/admin/accounting-audit', icon: 'ti ti-file-invoice' },
       ]
     : [
         { label: '訂購者首頁', href: '/portal', icon: 'ti ti-home' },

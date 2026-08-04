@@ -1057,8 +1057,8 @@ export default function PortalPage() {
                   </div>
 
                   {/* Restaurant Details */}
-                  <div className="border-b border-[#EAE8E4] pb-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                    <div className="flex w-full items-start justify-between gap-4 md:w-auto">
+                  <div className="flex flex-col items-start gap-4 border-b border-[#EAE8E4] pb-6">
+                    <div className="flex w-full items-start justify-between gap-4">
                       <div>
                         <h3 className="text-2xl font-bold text-[#333333]">{activeRestaurant.name}</h3>
                         {activeRestaurant.phone && (
@@ -1067,36 +1067,46 @@ export default function PortalPage() {
                           </p>
                         )}
                       </div>
-                      {activeRestaurant.menuImageUrl && (
-                        <button
-                          type="button"
-                          onClick={() => setIsMenuImageOpen(true)}
-                          className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[#EAE8E4] bg-white text-lg text-[#888888] transition-all hover:border-[#EA5B3C] hover:text-[#EA5B3C]"
-                          aria-label="查看菜單圖片"
-                          title="查看菜單圖片"
-                        >
-                          <i className="ti ti-photo"></i>
-                        </button>
-                      )}
+                      <div className="flex shrink-0 items-center gap-3">
+                        {activeRestaurant.menuImageUrl && (
+                          <button
+                            type="button"
+                            onClick={() => setIsMenuImageOpen(true)}
+                            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[#EAE8E4] bg-white text-lg text-[#888888] transition-all hover:border-[#EA5B3C] hover:text-[#EA5B3C]"
+                            aria-label="查看菜單圖片"
+                            title="查看菜單圖片"
+                          >
+                            <i className="ti ti-photo"></i>
+                          </button>
+                        )}
+                        <div className="min-w-0">
+                          <span className="block text-xs font-bold text-[#888888]">截止訂購時間</span>
+                          <span className="mt-1 flex items-center gap-1 whitespace-nowrap text-sm font-bold text-[#EA5B3C]">
+                            <i className="ti ti-alarm text-base"></i>
+                            {activeRestaurantConfig?.orderDeadlineDate && activeRestaurantConfig.orderDeadlineDate !== activeSchedule.date
+                              ? `${activeRestaurantConfig.orderDeadlineDate} ${activeRestaurantConfig.orderDeadline}`
+                              : activeRestaurantConfig?.orderDeadline || activeSchedule.orderDeadline} 前
+                          </span>
+                        </div>
+                      </div>
                     </div>
 
-                    <div className="grid w-full grid-cols-1 gap-4 text-left md:w-[20rem]">
-                      <div className="min-w-0">
-                        <span className="text-xs font-bold text-[#888888] block">截止訂購時間</span>
-                        <span className="mt-1 flex items-center gap-1 text-sm font-bold text-[#EA5B3C]">
-                          <i className="ti ti-alarm"></i>
-                          {activeRestaurantConfig?.orderDeadlineDate && activeRestaurantConfig.orderDeadlineDate !== activeSchedule.date
-                            ? `${activeRestaurantConfig.orderDeadlineDate} ${activeRestaurantConfig.orderDeadline}`
-                            : activeRestaurantConfig?.orderDeadline || activeSchedule.orderDeadline} 前
-                        </span>
-                      </div>
+                    <div className="grid w-full grid-cols-1 gap-4 text-left">
                       <div className="min-w-0 text-left">
-                        <span className="relative inline-flex items-center gap-1 text-xs font-bold text-[#888888]" data-cumulative-tip>
+                        <span
+                          className="relative inline-flex items-center gap-1 text-xs font-bold text-[#888888]"
+                          data-cumulative-tip
+                          onMouseEnter={() => {
+                            if (window.matchMedia('(hover: hover)').matches) setIsCumulativeTipOpen(true);
+                          }}
+                          onMouseLeave={() => {
+                            if (window.matchMedia('(hover: hover)').matches) setIsCumulativeTipOpen(false);
+                          }}
+                        >
                           目前累計金額
                           <button
                             type="button"
                             onClick={() => setIsCumulativeTipOpen(prev => !prev)}
-                            onMouseEnter={() => setIsCumulativeTipOpen(true)}
                             onFocus={() => setIsCumulativeTipOpen(true)}
                             className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-[#D6D1CA] bg-white text-[10px] font-bold text-[#888888] transition-all hover:border-[#EA5B3C] hover:text-[#EA5B3C]"
                             aria-label="目前累計金額說明"
@@ -1104,7 +1114,7 @@ export default function PortalPage() {
                             i
                           </button>
                           {isCumulativeTipOpen && (
-                            <span className="absolute right-0 top-full z-20 mt-2 w-[min(18rem,calc(100vw-3rem))] rounded-lg border border-[#EAE8E4] bg-white p-3 text-left text-[11px] font-bold leading-relaxed text-[#555555] shadow-lg md:w-56">
+                            <span className="absolute left-0 top-full z-20 mt-2 w-[min(18rem,calc(100vw-6rem))] rounded-lg border border-[#EAE8E4] bg-white p-3 text-left text-[11px] font-bold leading-relaxed text-[#555555] shadow-lg">
                               這是大家目前已送出的訂單總額，可用來一起確認是否接近餐廳免運門檻。
                             </span>
                           )}
@@ -1112,14 +1122,22 @@ export default function PortalPage() {
                         <div className="mt-1 space-y-1.5">
                           <div className="flex items-center justify-between gap-2 text-xs font-bold">
                             <span className="text-[#EA5B3C]">NT$ {currentCumulativeAmount}</span>
-                            <span className="relative flex min-w-0 items-center justify-end gap-1 text-[10px] text-[#888888]" data-restaurant-note-tip>
+                            <span
+                              className="relative flex min-w-0 items-center justify-end gap-1 text-[10px] text-[#888888]"
+                              data-restaurant-note-tip
+                              onMouseEnter={() => {
+                                if (window.matchMedia('(hover: hover)').matches) setIsRestaurantNoteTipOpen(true);
+                              }}
+                              onMouseLeave={() => {
+                                if (window.matchMedia('(hover: hover)').matches) setIsRestaurantNoteTipOpen(false);
+                              }}
+                            >
                               {freeShippingThreshold > 0 && <span className="shrink-0">目標 NT$ {freeShippingThreshold}</span>}
                               {activeRestaurant.note && (
                                 <>
                                   <button
                                     type="button"
                                     onClick={() => setIsRestaurantNoteTipOpen(open => !open)}
-                                    onMouseEnter={() => setIsRestaurantNoteTipOpen(true)}
                                     onFocus={() => setIsRestaurantNoteTipOpen(true)}
                                     className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-[#D6D1CA] bg-white text-[10px] font-bold text-[#888888] transition-all hover:border-[#EA5B3C] hover:text-[#EA5B3C]"
                                     aria-label="查看餐廳備註"
@@ -1127,7 +1145,7 @@ export default function PortalPage() {
                                     i
                                   </button>
                                   {isRestaurantNoteTipOpen && (
-                                    <span className="absolute right-0 top-full z-20 mt-2 w-[min(16rem,calc(100vw-3rem))] rounded-lg border border-[#EAE8E4] bg-white p-3 text-left text-[11px] font-bold leading-relaxed text-[#555555] shadow-lg">
+                                    <span className="absolute right-0 top-full z-20 mt-2 w-[min(16rem,calc(100vw-6rem))] rounded-lg border border-[#EAE8E4] bg-white p-3 text-left text-[11px] font-bold leading-relaxed text-[#555555] shadow-lg">
                                       {activeRestaurant.note}
                                     </span>
                                   )}

@@ -173,34 +173,6 @@ function isWeekendDate(dateStr) {
   return day === 0 || day === 6;
 }
 
-function normalizeQueryDate(value) {
-  const trimmed = value.trim();
-  const currentYear = new Date().getFullYear();
-
-  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed;
-
-  const slashMatch = trimmed.match(/^(\d{1,4})\/(\d{1,2})(?:\/(\d{1,4}))?$/);
-  if (!slashMatch) return null;
-
-  let year = currentYear;
-  let month;
-  let day;
-
-  if (slashMatch[3]) {
-    year = slashMatch[1].length === 4 ? Number(slashMatch[1]) : Number(slashMatch[3]);
-    month = slashMatch[1].length === 4 ? Number(slashMatch[2]) : Number(slashMatch[1]);
-    day = slashMatch[1].length === 4 ? Number(slashMatch[3]) : Number(slashMatch[2]);
-  } else {
-    month = Number(slashMatch[1]);
-    day = Number(slashMatch[2]);
-  }
-
-  if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) return null;
-  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
-
-  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-}
-
 export default function AdminDashboard() {
   const router = useRouter();
   const [user, setUser] = useState(null);
@@ -241,10 +213,6 @@ export default function AdminDashboard() {
   const [announcementMessage, setAnnouncementMessage] = useState('');
   const [manualNotification, setManualNotification] = useState('\u8acb\u8a18\u5f97\u5b8c\u6210\u5348\u9910\u8a02\u8cfc\u3002');
   const [isSendingNotification, setIsSendingNotification] = useState(false);
-  const [historyDate, setHistoryDate] = useState('');
-  const [historySchedule, setHistorySchedule] = useState(null);
-  const [historyMessage, setHistoryMessage] = useState('');
-  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [activeInfoTooltip, setActiveInfoTooltip] = useState('');
   const [isSchedulePanelExpanded, setIsSchedulePanelExpanded] = useState(true);
   const [isStatisticsPanelExpanded, setIsStatisticsPanelExpanded] = useState(true);
@@ -280,7 +248,6 @@ export default function AdminDashboard() {
     // Default select today
     const today = new Date();
     setSelectedDate(formatDate(today));
-    setHistoryDate(formatDate(today));
   }, []);
 
   useEffect(() => {
@@ -963,46 +930,6 @@ export default function AdminDashboard() {
     }
   };
 
-  const handleFetchHistory = async () => {
-    const normalizedDate = normalizeQueryDate(historyDate);
-
-    if (!normalizedDate) {
-      setHistoryMessage('請輸入有效日期，例如 2026-06-08 或 6/8。');
-      setHistorySchedule(null);
-      return;
-    }
-
-    setIsLoadingHistory(true);
-    setHistoryMessage('');
-    setHistorySchedule(null);
-
-    try {
-      setHistoryDate(normalizedDate);
-      const params = new URLSearchParams({
-        startDate: normalizedDate,
-        endDate: normalizedDate
-      });
-      const res = await fetch(`/api/schedule?${params.toString()}`);
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.error || '歷史訂餐紀錄查詢失敗。');
-      }
-
-      const target = Array.isArray(data) ? data.find(item => item.date === normalizedDate) : null;
-      if (!target) {
-        setHistoryMessage('此日期沒有排程或訂餐紀錄。');
-        return;
-      }
-
-      setHistorySchedule(target);
-    } catch (err) {
-      setHistoryMessage(err.message === 'Failed to fetch' ? '查詢失敗，請確認本機服務或網路連線後再試。' : err.message);
-    } finally {
-      setIsLoadingHistory(false);
-    }
-  };
-
   const getOrderSummaryFromOrders = (orders = [], options = {}) => {
     const summary = {};
 
@@ -1073,11 +1000,6 @@ export default function AdminDashboard() {
       amount: unassignedSummaryItems.reduce((sum, item) => sum + item.price * item.qty, 0)
     });
   }
-  const historyOrders = historySchedule?.orders?.filter(order => order.status !== 'cancelled') || [];
-  const historyItemSummaries = getOrderSummaryFromOrders(historyOrders);
-  const historyTotalQuantity = historyItemSummaries.reduce((sum, item) => sum + item.qty, 0);
-  const historyTotalAmount = historyOrders.reduce((sum, order) => sum + order.totalAmount, 0);
-
   const todayOrders = todaySchedule?.orders?.filter(order => order.status !== 'cancelled') || [];
   const todayTotalAmount = todayOrders.reduce((sum, order) => sum + order.totalAmount, 0);
   const todayItemSummary = todayOrders.reduce((summary, order) => {
@@ -1345,115 +1267,6 @@ export default function AdminDashboard() {
                 );
               })}
           </div>
-        </section>
-
-        <section className="bg-white border border-[#EAE8E4] rounded-xl shadow-sm p-6 space-y-5">
-          <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4">
-            <div className="space-y-1">
-              <p className="text-xs font-bold text-[#888888] tracking-widest uppercase">歷史訂餐紀錄</p>
-              <h3 className="font-bold text-base text-[#333333] flex items-center gap-2">
-                <i className="ti ti-history text-lg text-[#EA5B3C]"></i>
-                依日期回查訂餐明細
-              </h3>
-            </div>
-            <div className="flex flex-col sm:flex-row gap-2 w-full lg:w-auto">
-              <input
-                type="date"
-                value={historyDate}
-                onChange={(e) => setHistoryDate(e.target.value)}
-                className="text-xs px-3 py-2 border border-[#EAE8E4] rounded-lg focus:outline-none focus:border-[#EA5B3C] bg-white font-medium"
-              />
-              <button
-                type="button"
-                onClick={handleFetchHistory}
-                disabled={isLoadingHistory || !historyDate}
-                className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg bg-[#333333] text-white text-xs font-bold hover:bg-[#EA5B3C] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <i className={isLoadingHistory ? 'ti ti-loader animate-spin' : 'ti ti-search'}></i>
-                {isLoadingHistory ? '\u67e5\u8a62\u4e2d...' : '\u67e5\u8a62\u7d00\u9304'}
-              </button>
-            </div>
-          </div>
-
-          {historyMessage && (
-            <div className="p-3 text-xs rounded-lg bg-[#F9F8F5] border border-[#EAE8E4] text-[#888888]">
-              {historyMessage}
-            </div>
-          )}
-
-          {historySchedule && (
-            <div className="space-y-5">
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                <div className="p-4 rounded-xl bg-[#F9F8F5] border border-[#EAE8E4]">
-                  <div className="text-[11px] text-[#888888] font-bold mb-1">日期</div>
-                  <div className="text-sm font-bold text-[#333333]">{historySchedule.date}</div>
-                </div>
-                <div className="p-4 rounded-xl bg-[#F9F8F5] border border-[#EAE8E4]">
-                  <div className="text-[11px] text-[#888888] font-bold mb-1">餐廳</div>
-                  <div className="text-sm font-bold text-[#333333]">
-                    {historySchedule.isOpen || historySchedule.deliveredAt ? historySchedule.restaurant?.name || '未排定' : '假期'}
-                  </div>
-                </div>
-                <div className="p-4 rounded-xl bg-[#F9F8F5] border border-[#EAE8E4]">
-                  <div className="text-[11px] text-[#888888] font-bold mb-1">總份數</div>
-                  <div className="text-sm font-bold text-[#EA5B3C]">{historyTotalQuantity} 份</div>
-                </div>
-                <div className="p-4 rounded-xl bg-[#F9F8F5] border border-[#EAE8E4]">
-                  <div className="text-[11px] text-[#888888] font-bold mb-1">總金額</div>
-                  <div className="text-sm font-bold text-[#EA5B3C]">NT$ {historyTotalAmount}</div>
-                </div>
-              </div>
-
-              <div>
-                <div className="space-y-3">
-                  <h4 className="text-sm font-bold text-[#333333] border-l-4 border-l-[#EA5B3C] pl-2.5">
-                    成員訂單明細
-                  </h4>
-                  {historyOrders.length === 0 ? (
-                    <div className="text-center py-8 text-xs text-[#888888] border border-[#EAE8E4] rounded-xl bg-[#F9F8F5]">
-                      此日期沒有成員訂單。
-                    </div>
-                  ) : (
-                    <div className="overflow-x-auto border border-[#EAE8E4] rounded-xl bg-white max-h-72 overflow-y-auto custom-scrollbar">
-                      <table className="min-w-[760px] w-full table-fixed text-left border-collapse text-xs">
-                        <thead className="sticky top-0 bg-[#F9F8F5] text-[#888888] font-bold border-b border-[#EAE8E4]">
-                          <tr>
-                            <th className="w-[18%] px-4 py-3">姓名</th>
-                            <th className="w-[30%] px-4 py-3">餐點</th>
-                            <th className="w-[14%] px-4 py-3 text-center">金額</th>
-                            <th className="w-[38%] px-4 py-3">備註</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-[#EAE8E4] text-[#333333]">
-                          {historyOrders.map(order => (
-                            <tr key={order.id}>
-                              <td className="px-4 py-3 align-top font-bold leading-5">{order.user.name}</td>
-                              <td className="px-4 py-3 align-top leading-5">
-                                {order.orderItems.map(oi => (
-                                  <div key={oi.id} className="font-medium">
-                                    {oi.menuItem.name} <span className="text-[#888888]">x {oi.quantity}</span>
-                                    {oi.note && (
-                                      <div className="mt-0.5 text-[11px] font-bold leading-5 text-[#EA5B3C]">
-                                        {oi.note}
-                                      </div>
-                                    )}
-                                  </div>
-                                ))}
-                              </td>
-                              <td className="px-4 py-3 align-top text-center font-bold text-[#EA5B3C] whitespace-nowrap">NT$ {order.totalAmount}</td>
-                              <td className="px-4 py-3 align-top leading-5">
-                                {order.note || <span className="text-[#888888]">-</span>}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
         </section>
 
         {/* Schedule settings & Stats columns */}
@@ -1799,121 +1612,10 @@ export default function AdminDashboard() {
           <div className="lg:col-span-2 space-y-6">
             <div className="c-box space-y-8">
               
-              {/* Restaurant Headline */}
-              <div className="flex justify-between items-center border-b border-[#EAE8E4] pb-5">
-                <div>
-                  <span className="text-xs font-bold text-[#888888] tracking-widest uppercase block mb-1">當日統計資訊 ({selectedDate})</span>
-                  <h3 className="text-xl font-bold text-[#333333]">
-                    {activeSchedule
-                      ? selectedDateIsHoliday
-                        ? '\u5047\u671f\u4e0d\u958b\u653e\u8a02\u9910'
-                        : '\u9910\u5ef3\u8a02\u9910\u7d50\u679c'
-                      : '\u5c1a\u672a\u5efa\u7acb\u6392\u7a0b'}
-                  </h3>
-                </div>
-
-              </div>
-
               {isStatisticsPanelExpanded && (
                 <>
               {activeSchedule ? (
                 <>
-                  {/* Aggregated Menu Item Quantities - FOR RESTAURANT CALLS */}
-                  <div className="space-y-4">
-                    <div className="space-y-2 border-l-4 border-l-[#EA5B3C] pl-2.5">
-                      <h4 className="text-sm font-bold text-[#333333]">當日餐廳公告</h4>
-                      {activeSchedule.dailyAnnouncement?.trim()
-                        ? <MarkdownPreview content={activeSchedule.dailyAnnouncement} />
-                        : <p className="text-xs text-[#888888]">今日尚未設定餐廳公告。</p>}
-                    </div>
-                    {copyOrderMessage && (
-                      <p className="text-[11px] font-bold text-[#888888]">{copyOrderMessage}</p>
-                    )}
-
-                    {itemSummaries.length === 0 ? (
-                      <div className="text-center py-8 text-xs text-[#888888]">
-                        今天尚未有任何成員訂餐。
-                      </div>
-                    ) : (
-                      <div className="space-y-5">
-                        {restaurantSummaryGroups.map(group => (
-                          <section key={group.restaurantId} className="space-y-3 rounded-md border border-[#EAE8E4] bg-white p-3 sm:p-4">
-                            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#EAE8E4] pb-3">
-                              <div className="min-w-0">
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <span className="text-base font-bold text-[#333333]">{group.name}訂餐統計</span>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleCopyRestaurantOrderSummary(group)}
-                                    disabled={group.items.length === 0}
-                                    className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[#EA5B3C] bg-[#FFF3EF] text-[#EA5B3C] transition-all hover:bg-[#FFE7DE] disabled:cursor-not-allowed disabled:opacity-50"
-                                    aria-label={`複製${group.name}訂單`}
-                                    title="複製訂單"
-                                  >
-                                    <i className="ti ti-copy text-sm"></i>
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleCopyRestaurantNumberedSummary(group)}
-                                    disabled={!orderCopyItems.some(item => item.restaurantName === group.name)}
-                                    className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[#EA5B3C] bg-white text-[#EA5B3C] transition-all hover:bg-[#FFF3EF] disabled:cursor-not-allowed disabled:opacity-50"
-                                    aria-label={`複製${group.name}編號統整`}
-                                    title="複製編號統整"
-                                  >
-                                    <i className="ti ti-list-numbers text-sm"></i>
-                                  </button>
-                                </div>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <div className="text-right font-bold">
-                                  <span className="block text-[10px] text-[#888888]">今日總份數</span>
-                                  <span className="block text-xl text-[#EA5B3C]">{group.quantity} 份</span>
-                                  <span className="text-[11px] text-[#888888]">NT$ {group.amount}</span>
-                                </div>
-                                <button
-                                  type="button"
-                                  onClick={() => setCollapsedRestaurantStatistics(current => ({
-                                    ...current,
-                                    [group.restaurantId]: !current[group.restaurantId]
-                                  }))}
-                                  aria-expanded={!collapsedRestaurantStatistics[group.restaurantId]}
-                                  aria-label={collapsedRestaurantStatistics[group.restaurantId] ? `展開${group.name}訂餐統計` : `收合${group.name}訂餐統計`}
-                                  title={collapsedRestaurantStatistics[group.restaurantId] ? '展開' : '收合'}
-                                  className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[#EAE8E4] bg-white text-[#888888] transition-all hover:border-[#EA5B3C] hover:text-[#EA5B3C]"
-                                >
-                                  <i className={`ti ${collapsedRestaurantStatistics[group.restaurantId] ? 'ti-chevron-down' : 'ti-chevron-up'} text-sm`}></i>
-                                </button>
-                              </div>
-                            </div>
-                            {!collapsedRestaurantStatistics[group.restaurantId] && (group.items.length === 0 ? (
-                              <p className="py-4 text-center text-xs text-[#888888]">此餐廳目前沒有訂餐品項。</p>
-                            ) : (
-                              <div className={`grid grid-cols-1 gap-3 md:grid-cols-2 ${group.items.length > 3 ? 'max-h-[465px] overflow-y-auto pr-1 kaizen-scrollbar md:max-h-none md:overflow-visible md:pr-0' : ''}`}>
-                                {group.items.map(item => (
-                                  <div key={`${item.name}-${item.note || 'default'}`} className="flex items-center justify-between rounded-lg border border-[#EAE8E4] bg-[#F9F8F5] p-4">
-                                    <div className="min-w-0">
-                                      <span className="font-bold text-sm text-[#333333]">{item.name}</span>
-                                      <span className="text-xs text-[#888888] block mt-1">單價: NT$ {item.price}</span>
-                                      {item.note && (
-                                        <span className="mt-1 block text-xs font-bold text-[#EA5B3C]">
-                                          備註: {formatItemNoteDisplay(item.note, item.menuItem)}
-                                        </span>
-                                      )}
-                                    </div>
-                                    <div className="shrink-0 text-right">
-                                      <span className="text-lg font-bold text-[#EA5B3C]">{item.qty}</span>
-                                      <span className="text-xs font-bold text-[#333333] ml-1">份</span>
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            ))}
-                          </section>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
                   {/* Individual User Orders Spreadsheet */}
                   <div className="space-y-4 pt-4 border-t border-[#EAE8E4]">
                     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">

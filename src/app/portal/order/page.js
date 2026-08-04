@@ -3,7 +3,6 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Navbar from '@/components/Navbar';
-import LinkifiedText from '@/components/LinkifiedText';
 
 const DEFAULT_CUSTOMIZATION_OPTIONS = ['\u98ef\u5c11', '\u63db\u83dc', '\u63db\u83dc+$20'];
 const MIN_AVAILABLE_BALANCE = -200;
@@ -142,6 +141,28 @@ function formatItemNoteDisplay(note) {
   return String(note || '').replace(/\s*;\s*/g, ' ').trim();
 }
 
+function getFreeShippingThreshold(note) {
+  const match = String(note || '').match(/([\d,]+)\s*(?:元)?\s*(?:免運|免外送費)/);
+  return match ? Number(match[1].replace(/,/g, '')) || 0 : 0;
+}
+
+function MarkdownPreview({ content }) {
+  const renderInline = text => String(text || '').split(/(\*\*.*?\*\*)/g).filter(Boolean).map((part, index) => (
+    part.startsWith('**') && part.endsWith('**')
+      ? <strong key={index}>{part.slice(2, -2)}</strong>
+      : <span key={index}>{part}</span>
+  ));
+
+  return String(content || '').split(/\r?\n/).map((line, index) => {
+    if (!line.trim()) return <div key={index} className="h-2" />;
+    if (line.startsWith('### ')) return <h5 key={index} className="text-sm font-bold text-[#333333]">{renderInline(line.slice(4))}</h5>;
+    if (line.startsWith('## ')) return <h4 key={index} className="text-base font-bold text-[#333333]">{renderInline(line.slice(3))}</h4>;
+    if (line.startsWith('# ')) return <h3 key={index} className="text-lg font-bold text-[#333333]">{renderInline(line.slice(2))}</h3>;
+    if (/^[-*]\s+/.test(line)) return <div key={index} className="flex gap-2"><span>•</span><span>{renderInline(line.replace(/^[-*]\s+/, ''))}</span></div>;
+    return <p key={index}>{renderInline(line)}</p>;
+  });
+}
+
 export default function PortalPage() {
   const router = useRouter();
   const [user, setUser] = useState(null);
@@ -165,6 +186,7 @@ export default function PortalPage() {
   const [submittedOrder, setSubmittedOrder] = useState(null);
   const [isCumulativeTipOpen, setIsCumulativeTipOpen] = useState(false);
   const [isOrderNoteTipOpen, setIsOrderNoteTipOpen] = useState(false);
+  const [isRestaurantNoteTipOpen, setIsRestaurantNoteTipOpen] = useState(false);
   const [isOrderSummaryVisible, setIsOrderSummaryVisible] = useState(false);
   const [activeMenuCategory, setActiveMenuCategory] = useState('');
   const [isMenuImageOpen, setIsMenuImageOpen] = useState(false);
@@ -214,18 +236,21 @@ export default function PortalPage() {
   }, []);
 
   useEffect(() => {
-    if (!isCumulativeTipOpen && !isOrderNoteTipOpen) return;
+    if (!isCumulativeTipOpen && !isOrderNoteTipOpen && !isRestaurantNoteTipOpen) return;
 
     const handlePointerDown = (event) => {
       if (event.target.closest('[data-cumulative-tip]')) return;
       if (event.target.closest('[data-order-note-tip]')) return;
+      if (event.target.closest('[data-restaurant-note-tip]')) return;
       setIsCumulativeTipOpen(false);
       setIsOrderNoteTipOpen(false);
+      setIsRestaurantNoteTipOpen(false);
     };
 
     const handleScroll = () => {
       setIsCumulativeTipOpen(false);
       setIsOrderNoteTipOpen(false);
+      setIsRestaurantNoteTipOpen(false);
     };
 
     document.addEventListener('pointerdown', handlePointerDown);
@@ -234,7 +259,7 @@ export default function PortalPage() {
       document.removeEventListener('pointerdown', handlePointerDown);
       window.removeEventListener('scroll', handleScroll, true);
     };
-  }, [isCumulativeTipOpen, isOrderNoteTipOpen]);
+  }, [isCumulativeTipOpen, isOrderNoteTipOpen, isRestaurantNoteTipOpen]);
 
   const updateTime = () => {
     const now = new Date();
@@ -776,6 +801,11 @@ export default function PortalPage() {
   const editingMenuItem = getMenuItemById(editingMenuItemId);
   const editingMenuItemQty = editingMenuItem ? editingMenuItemDraft.quantity || 0 : 0;
   const editingMenuItemOptions = editingMenuItem ? parseCustomizationOptions(editingMenuItem.customizationOptions) : [];
+  const currentCumulativeAmount = activeSchedule?.stats?.totalAmount || 0;
+  const freeShippingThreshold = getFreeShippingThreshold(activeRestaurant?.note);
+  const cumulativeProgress = freeShippingThreshold
+    ? Math.min(100, Math.round((currentCumulativeAmount / freeShippingThreshold) * 100))
+    : 0;
 
   return (
     <>
@@ -1019,6 +1049,13 @@ export default function PortalPage() {
               )}
               {activeRestaurant ? (
                 <div className="space-y-8">
+                  <div className="border-b border-[#EAE8E4] pb-5">
+                    <div className="text-xs font-bold tracking-widest text-[#888888]">餐廳公告</div>
+                    <div className="mt-2 min-h-5 space-y-1.5 text-xs leading-6 text-[#555555]">
+                      <MarkdownPreview content={activeSchedule.dailyAnnouncement} />
+                    </div>
+                  </div>
+
                   {/* Restaurant Details */}
                   <div className="border-b border-[#EAE8E4] pb-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                     <div className="flex w-full items-start justify-between gap-4 md:w-auto">
@@ -1043,10 +1080,10 @@ export default function PortalPage() {
                       )}
                     </div>
 
-                    <div className="grid w-full grid-cols-2 gap-4 text-left md:w-auto md:flex md:items-center md:justify-end md:gap-8 md:text-right">
+                    <div className="grid w-full grid-cols-1 gap-4 text-left md:w-[20rem]">
                       <div className="min-w-0">
                         <span className="text-xs font-bold text-[#888888] block">截止訂購時間</span>
-                        <span className="text-sm font-bold text-[#EA5B3C] flex items-center gap-1 mt-1 md:justify-end">
+                        <span className="mt-1 flex items-center gap-1 text-sm font-bold text-[#EA5B3C]">
                           <i className="ti ti-alarm"></i>
                           {activeRestaurantConfig?.orderDeadlineDate && activeRestaurantConfig.orderDeadlineDate !== activeSchedule.date
                             ? `${activeRestaurantConfig.orderDeadlineDate} ${activeRestaurantConfig.orderDeadline}`
@@ -1072,27 +1109,51 @@ export default function PortalPage() {
                             </span>
                           )}
                         </span>
-                        <span className="text-sm font-bold text-[#EA5B3C] block mt-1">
-                          NT$ {activeSchedule.stats?.totalAmount || 0}
-                        </span>
+                        <div className="mt-1 space-y-1.5">
+                          <div className="flex items-center justify-between gap-2 text-xs font-bold">
+                            <span className="text-[#EA5B3C]">NT$ {currentCumulativeAmount}</span>
+                            <span className="relative flex min-w-0 items-center justify-end gap-1 text-[10px] text-[#888888]" data-restaurant-note-tip>
+                              {freeShippingThreshold > 0 && <span className="shrink-0">目標 NT$ {freeShippingThreshold}</span>}
+                              {activeRestaurant.note && (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => setIsRestaurantNoteTipOpen(open => !open)}
+                                    onMouseEnter={() => setIsRestaurantNoteTipOpen(true)}
+                                    onFocus={() => setIsRestaurantNoteTipOpen(true)}
+                                    className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-[#D6D1CA] bg-white text-[10px] font-bold text-[#888888] transition-all hover:border-[#EA5B3C] hover:text-[#EA5B3C]"
+                                    aria-label="查看餐廳備註"
+                                  >
+                                    i
+                                  </button>
+                                  {isRestaurantNoteTipOpen && (
+                                    <span className="absolute right-0 top-full z-20 mt-2 w-[min(16rem,calc(100vw-3rem))] rounded-lg border border-[#EAE8E4] bg-white p-3 text-left text-[11px] font-bold leading-relaxed text-[#555555] shadow-lg">
+                                      {activeRestaurant.note}
+                                    </span>
+                                  )}
+                                </>
+                              )}
+                            </span>
+                          </div>
+                          <div className="relative h-2 w-full rounded-full bg-[#EAE8E4]" role="progressbar" aria-label="目前累計金額進度" aria-valuemin="0" aria-valuemax={freeShippingThreshold || 100} aria-valuenow={currentCumulativeAmount}>
+                            <div
+                              className={`h-full rounded-full transition-all duration-500 ${cumulativeProgress >= 100 ? 'bg-green-500' : 'bg-[#EA5B3C]'}`}
+                              style={{ width: `${cumulativeProgress}%` }}
+                            />
+                            {cumulativeProgress > 0 && (
+                              <span
+                                className={`absolute top-1/2 inline-flex h-5 w-5 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-white text-xs shadow-sm transition-all duration-500 ${cumulativeProgress >= 100 ? 'text-green-600' : 'text-[#EA5B3C]'}`}
+                                style={{ left: `${cumulativeProgress}%` }}
+                                aria-hidden="true"
+                              >
+                                <i className="ti ti-paw"></i>
+                              </span>
+                            )}
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>
-
-                  {activeRestaurant.note && (
-                    <div className="flex items-start gap-3 rounded-xl border border-[#EA5B3C]/25 bg-[#FFF3EF] p-4 text-sm leading-normal shadow-sm">
-                      <span className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white text-[#EA5B3C] shadow-sm">
-                        <i className="ti ti-info-circle text-lg"></i>
-                      </span>
-                      <div className="space-y-1">
-                        <div className="text-xs font-bold tracking-widest text-[#EA5B3C]">餐廳備註</div>
-                        <LinkifiedText
-                          value={activeRestaurant.note}
-                          className="font-bold text-[#333333]"
-                        />
-                      </div>
-                    </div>
-                  )}
 
                   {/* Warning Banner if Closed */}
                   {isClosed() && (
@@ -1156,10 +1217,7 @@ export default function PortalPage() {
                               </div>
                             </div>
 
-                            <div className="flex shrink-0 items-center gap-2">
-                              <span className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#EAE8E4] bg-white text-[#888888]">
-                                <i className="ti ti-plus text-sm"></i>
-                              </span>
+                            <div className="flex shrink-0 items-center">
                               <i className="ti ti-chevron-right text-lg text-[#C9C3BB]"></i>
                             </div>
                           </button>

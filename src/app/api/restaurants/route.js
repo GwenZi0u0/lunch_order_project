@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/db';
 import { getCurrentUser } from '@/lib/auth';
+import { canReadAdminData } from '@/lib/adminPermissions';
 
 const DEFAULT_CUSTOMIZATION_OPTIONS = ['\u98ef\u5c11', '\u63db\u83dc', '\u63db\u83dc+$20'];
 const CLOSED_MENU_ITEMS_KEY = 'closedMenuItemIds';
@@ -87,7 +88,7 @@ export async function GET(request) {
 
     const { searchParams } = new URL(request.url);
     const onlyActive = searchParams.get('active') !== 'false';
-    const includeUnavailable = user.role === 'admin' && searchParams.get('includeUnavailable') === 'true';
+    const includeUnavailable = canReadAdminData(user, ['overview', 'schedule', 'restaurants']) && searchParams.get('includeUnavailable') === 'true';
     const closedSetting = includeUnavailable
       ? await prisma.siteSetting.findUnique({ where: { key: CLOSED_MENU_ITEMS_KEY } })
       : null;

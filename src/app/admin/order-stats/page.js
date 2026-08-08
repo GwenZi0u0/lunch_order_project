@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Navbar from '@/components/Navbar';
+import { canAccessAdminPage } from '@/lib/adminPermissions';
 
 const formatDate = date => {
   const year = date.getFullYear();
@@ -64,7 +65,7 @@ export default function AdminOrderStatsPage() {
       .then(data => {
         if (!data?.user) {
           router.push('/login');
-        } else if (data.user.role !== 'admin') {
+        } else if (!canAccessAdminPage(data.user, 'order-stats')) {
           router.push('/portal');
         } else {
           setUser(data.user);

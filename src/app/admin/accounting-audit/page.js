@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Navbar from '@/components/Navbar';
+import { canAccessAdminPage } from '@/lib/adminPermissions';
 
 const WEEKDAY_LABELS = ['日', '一', '二', '三', '四', '五', '六'];
 
@@ -85,7 +86,7 @@ export default function AccountingAuditPage() {
       .then(response => response.ok ? response.json() : null)
       .then(data => {
         if (!data?.user) return router.push('/login');
-        if (data.user.role !== 'admin') return router.push('/portal');
+        if (!canAccessAdminPage(data.user, 'accounting-audit')) return router.push('/portal');
         setUser(data.user);
         return fetch('/api/wallets?action=list_users');
       })

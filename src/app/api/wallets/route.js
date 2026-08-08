@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import prisma from '@/lib/db';
 import { getCurrentUser } from '@/lib/auth';
 import { ACTIVE_HOLD_STATUSES, withWalletHold } from '@/lib/wallet';
+import { canReadAdminData } from '@/lib/adminPermissions';
 
 const WALLET_TRANSACTION_SOURCES = ['-', '現金', '線上支付平台', '銀行轉帳'];
 const PRODUCTION_TEST_ACCOUNT_NAMES = ['王大同', '管理員 Admin'];
@@ -47,7 +48,7 @@ export async function GET(request) {
     const action = searchParams.get('action') || 'history';
 
     if (action === 'list_members') {
-      if (user.role !== 'admin') {
+      if (!canReadAdminData(user, ['schedule'])) {
         return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
       }
 
@@ -59,7 +60,8 @@ export async function GET(request) {
           id: true,
           name: true,
           email: true,
-          role: true
+          role: true,
+          viewerPage: true
         },
         orderBy: { name: 'asc' }
       });
@@ -67,7 +69,7 @@ export async function GET(request) {
     }
 
     if (action === 'list_users') {
-      if (user.role !== 'admin') {
+      if (!canReadAdminData(user, ['wallets', 'accounting-audit'])) {
         return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
       }
 
@@ -102,13 +104,14 @@ export async function GET(request) {
       
       // Admins can see all history by default, or filter by a specific user.
       // Normal users can only see their own history.
+      const canReadAllHistory = canReadAdminData(user, ['wallets', 'accounting-audit']);
       const queryUserId = scope === 'mine'
         ? user.userId
-        : user.role === 'admin'
+        : canReadAllHistory
         ? targetUserId || null
         : user.userId;
       
-      if (user.role !== 'admin' && targetUserId && targetUserId !== user.userId) {
+      if (!canReadAllHistory && targetUserId && targetUserId !== user.userId) {
         return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
       }
 
@@ -243,10 +246,15 @@ export async function PATCH(request) {
     }
 
     const body = await request.json();
-    const { targetUserId, role } = body;
+    const { targetUserId, role, viewerPage } = body;
 
-    if (!targetUserId || !['admin', 'user'].includes(role)) {
+    const validViewerPages = ['overview', 'schedule', 'order-stats', 'restaurants', 'wallets', 'accounting-audit'];
+    if (!targetUserId || !['admin', 'viewer', 'user'].includes(role)) {
       return NextResponse.json({ error: 'Invalid role update data' }, { status: 400 });
+    }
+
+    if (role === 'viewer' && !validViewerPages.includes(viewerPage)) {
+      return NextResponse.json({ error: 'Please select a page for the viewer' }, { status: 400 });
     }
 
     if (targetUserId === user.userId && role !== 'admin') {
@@ -255,7 +263,7 @@ export async function PATCH(request) {
 
     const updatedUser = await prisma.user.update({
       where: { id: targetUserId },
-      data: { role }
+      data: { role, viewerPage: role === 'viewer' ? viewerPage : null }
     });
 
     return NextResponse.json({ success: true, user: updatedUser });

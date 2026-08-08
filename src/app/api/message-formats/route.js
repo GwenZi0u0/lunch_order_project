@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/db';
 import { getCurrentUser } from '@/lib/auth';
+import { canReadAdminData } from '@/lib/adminPermissions';
 
 const MESSAGE_FORMATS_KEY = 'admin_message_formats';
 
@@ -34,7 +35,7 @@ function parseMessageFormats(value) {
 export async function GET(request) {
   try {
     const user = await getCurrentUser(request);
-    if (!user || user.role !== 'admin') {
+    if (!canReadAdminData(user, ['overview'])) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 

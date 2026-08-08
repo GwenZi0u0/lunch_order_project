@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Navbar from '@/components/Navbar';
+import { canAccessAdminPage } from '@/lib/adminPermissions';
 import LinkifiedText from '@/components/LinkifiedText';
 
 const DEFAULT_CUSTOMIZATION_OPTIONS = ['\u98ef\u5c11', '\u63db\u83dc', '\u63db\u83dc+$20'];
@@ -169,7 +170,7 @@ export default function RestaurantsPage() {
       .then(data => {
         if (data) {
           setUser(data.user);
-          if (data.user.role !== 'admin') {
+          if (!canAccessAdminPage(data.user, 'restaurants')) {
             router.push('/portal');
           } else {
             fetchRestaurants();

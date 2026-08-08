@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Navbar from '@/components/Navbar';
+import { canAccessAdminPage } from '@/lib/adminPermissions';
 
 function formatDate(date) {
   const d = new Date(date);
@@ -153,7 +154,7 @@ export default function AdminDashboard() {
       .then(data => {
         if (data) {
           setUser(data.user);
-          if (data.user.role !== 'admin') {
+          if (!canAccessAdminPage(data.user, 'overview')) {
             router.push('/portal');
           } else {
             fetchRestaurants();

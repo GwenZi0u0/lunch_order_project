@@ -2,15 +2,18 @@
 
 import { useEffect, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
+import { getViewerPage } from '@/lib/adminPermissions';
 
 export default function Navbar({ user, interactionDisabled = false }) {
   const router = useRouter();
   const pathname = usePathname();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const isAdmin = user?.role === 'admin';
+  const isViewer = user?.role === 'viewer';
+  const viewerPage = getViewerPage(user?.viewerPage);
   const isOrderingView = pathname?.startsWith('/portal');
   const logoHref = user
-    ? isAdmin && !isOrderingView ? '/admin' : '/portal'
+    ? isViewer ? (viewerPage?.href || '/portal') : isAdmin && !isOrderingView ? '/admin' : '/portal'
     : '/';
   const displayName = user?.name?.replace(/\s*\((餘額充足|餘額歸零|帳戶欠款)\)\s*$/, '') || '';
 
@@ -42,7 +45,19 @@ export default function Navbar({ user, interactionDisabled = false }) {
     }
   };
 
-  const navItems = isAdmin && !isOrderingView
+  const adminNavItems = [
+        { label: '訂單公告', href: '/admin#order-stats-announcement', page: 'overview', icon: 'ti ti-clipboard-list' },
+        { label: '供餐排程', href: '/admin/schedule', page: 'schedule', icon: 'ti ti-calendar-event' },
+        { label: '訂餐統計', href: '/admin/order-stats', page: 'order-stats', icon: 'ti ti-chart-bar' },
+        { label: '餐廳管理', href: '/admin/restaurants', page: 'restaurants', icon: 'ti ti-tools-kitchen-2' },
+        { label: '儲值管理', href: '/admin/wallets', page: 'wallets', icon: 'ti ti-wallet' },
+        { label: '帳務軌跡', href: '/admin/accounting-audit', page: 'accounting-audit', icon: 'ti ti-file-invoice' },
+        { label: '人員管理', href: '/admin/users', page: 'users', icon: 'ti ti-users' },
+      ];
+
+  const navItems = isViewer
+    ? adminNavItems.filter(item => item.page === user?.viewerPage)
+    : isAdmin && !isOrderingView
     ? [
         { label: '訂單公告', href: '/admin#order-stats-announcement', icon: 'ti ti-clipboard-list' },
         { label: '供餐排程', href: '/admin/schedule', icon: 'ti ti-calendar-event' },
@@ -66,7 +81,7 @@ export default function Navbar({ user, interactionDisabled = false }) {
       }
     : null;
 
-  const roleLabel = isAdmin
+  const roleLabel = isViewer ? '檢視者' : isAdmin
     ? isOrderingView ? '管理者 / 訂購者檢視' : '管理者'
     : '訂購者';
 

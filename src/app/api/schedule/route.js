@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/db';
 import { getCurrentUser } from '@/lib/auth';
+import { canReadAdminData } from '@/lib/adminPermissions';
 
 const CATEGORY_ORDER_KEY_PREFIX = 'restaurantCategoryOrder:';
 const MENU_IMAGE_KEY_PREFIX = 'restaurantMenuImage:';
@@ -246,7 +247,7 @@ export async function GET(request) {
           totalAmount: activeOrders.reduce((sum, order) => sum + order.totalAmount, 0),
           restaurants: restaurantStats
         },
-        orders: user.role === 'admin'
+        orders: canReadAdminData(user, ['overview', 'schedule', 'order-stats'])
           ? sched.orders.map(order => ({
             id: order.id,
             orderNumber: order.orderNumber,

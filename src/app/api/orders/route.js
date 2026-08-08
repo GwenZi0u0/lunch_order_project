@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/db';
 import { getCurrentUser } from '@/lib/auth';
+import { canReadAdminData } from '@/lib/adminPermissions';
 import { getPendingHoldAmount, MIN_AVAILABLE_BALANCE } from '@/lib/wallet';
 
 const DEADLINE_DATE_KEY_PREFIX = 'scheduleOrderDeadlineDate:';
@@ -162,7 +163,7 @@ export async function GET(request) {
       })));
     }
 
-    if (user.role === 'admin') {
+    if (canReadAdminData(user, ['schedule'])) {
       // Admins can fetch all orders for a schedule
       const query = {
         where: { status: { not: 'cancelled' } },
@@ -233,6 +234,9 @@ export async function POST(request) {
     const user = await getCurrentUser(request);
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    if (user.role === 'viewer') {
+      return NextResponse.json({ error: 'Viewer access is read-only' }, { status: 403 });
     }
 
     const body = await request.json();
@@ -452,6 +456,9 @@ export async function DELETE(request) {
     const user = await getCurrentUser(request);
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    if (user.role === 'viewer') {
+      return NextResponse.json({ error: 'Viewer access is read-only' }, { status: 403 });
     }
 
     const { searchParams } = new URL(request.url);

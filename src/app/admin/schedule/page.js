@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Navbar from '@/components/Navbar';
+import { canAccessAdminPage } from '@/lib/adminPermissions';
 
 const DEFAULT_CUSTOMIZATION_OPTIONS = ['飯少', '換菜', '換菜+$20'];
 
@@ -232,7 +233,7 @@ export default function AdminDashboard() {
       .then(data => {
         if (data) {
           setUser(data.user);
-          if (data.user.role !== 'admin') {
+          if (!canAccessAdminPage(data.user, 'schedule')) {
             router.push('/portal');
           } else {
             fetchRestaurants();

@@ -12,7 +12,8 @@ model User {
   email                String               @unique
   name                 String
   avatarUrl            String?
-  role                 String               @default("user") // admin, user
+  role                 String               @default("user") // admin, viewer, user
+  viewerPage           String?
   balance              Int                  @default(0)
   defaultSeatArea      String?
   defaultOrderNote     String?

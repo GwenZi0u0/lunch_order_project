@@ -1,4 +1,5 @@
 import { SignJWT, jwtVerify } from 'jose';
+import prisma from '@/lib/db';
 
 const SECRET_KEY = new TextEncoder().encode(
   process.env.JWT_SECRET || 'lunch-kaizen-secret-key-default-12345678-xyz'
@@ -39,5 +40,21 @@ export async function getCurrentUser(request) {
   }
 
   if (!token) return null;
-  return await verifyJWT(token);
+  const payload = await verifyJWT(token);
+  if (!payload?.userId) return null;
+
+  const currentUser = await prisma.user.findUnique({
+    where: { id: payload.userId },
+    select: { id: true, email: true, name: true, role: true, viewerPage: true }
+  });
+  if (!currentUser) return null;
+
+  return {
+    ...payload,
+    userId: currentUser.id,
+    email: currentUser.email,
+    name: currentUser.name,
+    role: currentUser.role,
+    viewerPage: currentUser.viewerPage,
+  };
 }

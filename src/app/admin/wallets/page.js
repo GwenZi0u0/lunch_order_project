@@ -204,31 +204,6 @@ export default function WalletsManagementPage() {
     });
   };
 
-  const handleRoleChange = async (targetUser, role) => {
-    setStatusMsg({ text: '', type: '' });
-
-    try {
-      const res = await fetch('/api/wallets', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          targetUserId: targetUser.id,
-          role
-        })
-      });
-
-      const result = await res.json();
-      if (!res.ok) {
-        throw new Error(result.error || '角色更新失敗');
-      }
-
-      setUsers(prev => prev.map(u => u.id === targetUser.id ? result.user : u));
-      setStatusMsg({ text: `已將「${targetUser.name}」角色更新為${role === 'admin' ? '管理者' : '訂購者'}。`, type: 'success' });
-    } catch (err) {
-      alert(err.message);
-    }
-  };
-
   const closeWalletAction = () => {
     setSelectedUser(null);
     setWalletMode('topup');
@@ -638,23 +613,6 @@ export default function WalletsManagementPage() {
                               </div>
                             )}
                           </div>
-                          <select
-                            value={u.role}
-                            disabled={u.id === user.id}
-                            onClick={(e) => e.stopPropagation()}
-                            onChange={(e) => {
-                              e.stopPropagation();
-                              handleRoleChange(u, e.target.value);
-                            }}
-                            className={`shrink-0 text-[11px] font-bold pl-2.5 pr-7 py-1 rounded-lg border bg-white focus:outline-none focus:border-[#EA5B3C] ${
-                              u.role === 'admin'
-                                ? 'text-orange-700 border-orange-200'
-                                : 'text-gray-700 border-[#EAE8E4]'
-                            } disabled:opacity-60 disabled:cursor-not-allowed`}
-                          >
-                            <option value="admin">管理者</option>
-                            <option value="user">訂購者</option>
-                          </select>
                         </div>
 
                         <div className="mt-3 flex items-end justify-between gap-3 border-t border-[#EAE8E4] pt-2.5">
@@ -706,7 +664,6 @@ export default function WalletsManagementPage() {
                   <thead className="sticky top-0 z-10">
                     <tr className="bg-[#F9F8F5] text-[#888888] font-bold border-b border-[#EAE8E4]">
                       <th className="py-3 pl-6 pr-3">姓名</th>
-                      <th className="p-3">角色</th>
                       <th className="p-3 text-right">當前餘額</th>
                       <th className="py-3 pl-3 pr-5 text-center">帳務操作</th>
                     </tr>
@@ -714,7 +671,7 @@ export default function WalletsManagementPage() {
                   <tbody className="divide-y divide-[#EAE8E4] text-[#333333]">
                     {filteredUsers.length === 0 ? (
                       <tr>
-                        <td colSpan="4" className="text-center py-8 text-[#888888]">
+                        <td colSpan="3" className="text-center py-8 text-[#888888]">
                           找不到相符的成員。
                         </td>
                       </tr>
@@ -765,25 +722,6 @@ export default function WalletsManagementPage() {
                                   {u.email}
                                 </span>
                               </span>
-                            </td>
-                            <td className="p-3">
-                              <select
-                                value={u.role}
-                                disabled={u.id === user.id}
-                                onClick={(e) => e.stopPropagation()}
-                                onChange={(e) => {
-                                  e.stopPropagation();
-                                  handleRoleChange(u, e.target.value);
-                                }}
-                                className={`text-[10px] font-bold px-2 py-1 rounded border bg-white focus:outline-none focus:border-[#EA5B3C] ${
-                                  u.role === 'admin'
-                                    ? 'text-orange-700 border-orange-200'
-                                    : 'text-gray-700 border-[#EAE8E4]'
-                                } disabled:opacity-60 disabled:cursor-not-allowed`}
-                              >
-                                <option value="admin">管理者</option>
-                                <option value="user">訂購者</option>
-                              </select>
                             </td>
                             <td className="p-3 text-right font-bold text-sm">
                               <div className="flex flex-col items-end gap-0.5">

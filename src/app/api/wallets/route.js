@@ -4,6 +4,7 @@ import { getCurrentUser } from '@/lib/auth';
 import { ACTIVE_HOLD_STATUSES, withWalletHold } from '@/lib/wallet';
 
 const WALLET_TRANSACTION_SOURCES = ['-', '現金', '線上支付平台', '銀行轉帳'];
+const PRODUCTION_TEST_ACCOUNT_NAMES = ['王大同', '管理員 Admin'];
 
 function getTaipeiDateRange(startDate, endDate) {
   const datePattern = /^\d{4}-\d{2}-\d{2}$/;
@@ -51,10 +52,14 @@ export async function GET(request) {
       }
 
       const members = await prisma.user.findMany({
+        where: process.env.NODE_ENV === 'production'
+          ? { name: { notIn: PRODUCTION_TEST_ACCOUNT_NAMES } }
+          : undefined,
         select: {
           id: true,
           name: true,
-          email: true
+          email: true,
+          role: true
         },
         orderBy: { name: 'asc' }
       });

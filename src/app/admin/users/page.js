@@ -17,6 +17,7 @@ export default function UsersManagementPage() {
   const [updatingUserId, setUpdatingUserId] = useState('');
   const [selectedMember, setSelectedMember] = useState(null);
   const [draftRole, setDraftRole] = useState('user');
+  const [activeRoleInfo, setActiveRoleInfo] = useState('');
   const [statusMsg, setStatusMsg] = useState({ text: '', type: '' });
 
   useEffect(() => {
@@ -85,6 +86,7 @@ export default function UsersManagementPage() {
   const openMemberSettings = member => {
     setSelectedMember(member);
     setDraftRole(member.role);
+    setActiveRoleInfo('');
   };
 
   const handleRoleChange = async () => {
@@ -220,7 +222,7 @@ export default function UsersManagementPage() {
             role="dialog"
             aria-modal="true"
             aria-labelledby="member-settings-title"
-            className="flex max-h-[88vh] w-full max-w-lg flex-col overflow-hidden rounded-t-2xl bg-white shadow-2xl sm:rounded-2xl"
+            className="flex h-[380px] max-h-[calc(100vh-2rem)] w-full max-w-lg flex-col overflow-hidden rounded-t-2xl bg-white shadow-2xl sm:rounded-2xl"
           >
             <div className="flex items-start justify-between gap-4 border-b border-[#EAE8E4] px-5 py-4">
               <div>
@@ -239,36 +241,57 @@ export default function UsersManagementPage() {
               </button>
             </div>
 
-            <div className="min-h-0 flex-1 overflow-y-auto p-5 kaizen-scrollbar">
-              <fieldset disabled={selectedMember.id === user?.id || selectedMember.id === user?.userId || Boolean(updatingUserId)}>
-                <legend className="mb-3 text-sm font-bold text-[#333333]">角色設定</legend>
-                <div className="space-y-3">
+            <div className="relative min-h-0 flex-1 overflow-x-hidden overflow-y-auto p-5 kaizen-scrollbar">
+              <div className="flex flex-wrap items-center gap-x-5 gap-y-3" role="radiogroup" aria-labelledby="member-role-label">
+                <span id="member-role-label" className="shrink-0 text-sm font-bold text-[#333333]">角色設定</span>
+                <div className="flex items-center gap-5">
                   {[
-                    { value: 'user', label: '訂購者', description: '可使用訂購者頁面進行點餐與查詢個人紀錄。' },
-                    { value: 'admin', label: '管理者', description: '可進入管理後台並管理系統內容。' }
+                    { value: 'user', label: '訂購者', description: '可點餐及查看個人紀錄。' },
+                    { value: 'admin', label: '管理者', description: '可進入後台管理系統。' }
                   ].map(option => (
                     <label
                       key={option.value}
-                      className={`flex cursor-pointer items-start gap-3 rounded-xl border p-4 transition-colors ${
-                        draftRole === option.value ? 'border-[#EA5B3C] bg-[#FFF8F5]' : 'border-[#EAE8E4] bg-white'
-                      }`}
+                      className="flex cursor-pointer items-center gap-2"
                     >
                       <input
                         type="radio"
                         name="member-role"
                         value={option.value}
                         checked={draftRole === option.value}
+                        disabled={selectedMember.id === user?.id || selectedMember.id === user?.userId || Boolean(updatingUserId)}
                         onChange={event => setDraftRole(event.target.value)}
-                        className="mt-0.5 accent-[#EA5B3C]"
+                        className="h-4 w-4 shrink-0 accent-[#EA5B3C]"
                       />
-                      <span>
-                        <span className="block text-sm font-bold text-[#333333]">{option.label}</span>
-                        <span className="mt-1 block text-xs leading-5 text-[#888888]">{option.description}</span>
+                      <span className="flex min-w-0 items-center gap-2">
+                        <span className="text-sm font-bold text-[#333333]">{option.label}</span>
+                        <span className="group relative inline-flex shrink-0">
+                          <button
+                            type="button"
+                            onClick={event => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              setActiveRoleInfo(current => current === option.value ? '' : option.value);
+                            }}
+                            className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-[#D8D5CF] bg-white text-[10px] font-bold text-[#888888] hover:border-[#EA5B3C] hover:text-[#EA5B3C]"
+                            aria-label={`查看${option.label}角色說明`}
+                            aria-expanded={activeRoleInfo === option.value}
+                          >
+                            i
+                          </button>
+                          <span
+                            className={`pointer-events-none absolute left-full top-1/2 z-20 ml-2 w-max max-w-none -translate-y-1/2 whitespace-nowrap rounded-lg border border-[#EAE8E4] bg-white px-3 py-2 text-xs font-normal leading-5 text-[#555555] shadow-[0_10px_24px_rgba(0,0,0,0.12)] transition-opacity ${
+                              activeRoleInfo === option.value ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                            }`}
+                            role="tooltip"
+                          >
+                            {option.description}
+                          </span>
+                        </span>
                       </span>
                     </label>
                   ))}
                 </div>
-              </fieldset>
+              </div>
 
               {(selectedMember.id === user?.id || selectedMember.id === user?.userId) && (
                 <p className="mt-4 rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-xs font-bold text-orange-700">

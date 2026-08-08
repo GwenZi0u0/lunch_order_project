@@ -603,7 +603,7 @@ export default function PortalPage() {
                           </span>
                         )}
                       </div>
-                      <div className="text-sm text-[#555555] leading-7 whitespace-pre-wrap break-words">
+                      <div className="text-[13px] text-[#555555] leading-7 whitespace-pre-wrap break-words">
                         {item.content || '此公告尚無內容。'}
                       </div>
                     </article>

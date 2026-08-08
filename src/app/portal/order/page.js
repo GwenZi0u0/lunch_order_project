@@ -357,9 +357,6 @@ export default function PortalPage() {
       if (mainDishDifference) return mainDishDifference;
       return (a.name || '').localeCompare(b.name || '', 'zh-Hant');
     });
-  const todayDate = currentDateTime.dateStr || formatDate(new Date());
-  const todaySchedule = schedules.find(s => s.date === todayDate);
-  const todayOrder = todaySchedule?.userOrder || null;
   const weeklyDates = getWeeklyDates();
   const selectedOrderDateLabel = weeklyDates.find(d => d.dateStr === selectedDate)?.label || selectedDate;
 
@@ -777,31 +774,6 @@ export default function PortalPage() {
     );
   }
 
-  // Wallet styling based on balance logic
-  const getWalletStyles = () => {
-    if (user.balance > 0) {
-      return {
-        cardBorder: 'border-l-4 border-l-green-600 border-[#EAE8E4]',
-        valueColor: 'text-green-600',
-        label: '餘額充足'
-      };
-    } else if (user.balance === 0) {
-      return {
-        cardBorder: 'border-l-4 border-l-[#333333] border-[#EAE8E4]',
-        valueColor: 'text-[#333333]',
-        label: '餘額歸零'
-      };
-    } else {
-      return {
-        cardBorder: 'border-l-4 border-l-red-600 border-[#EAE8E4] bg-red-[0.005]',
-        valueColor: 'text-red-600',
-        label: '帳戶欠款'
-      };
-    }
-  };
-
-  const wallet = getWalletStyles();
-  const walletAmount = `${user.balance < 0 ? '－' : ''}NT$ ${Math.abs(user.balance)}`;
   const pendingHoldAmount = user.pendingHoldAmount || 0;
   const availableBalance = user.availableBalance ?? (user.balance - pendingHoldAmount);
   const currentOrderHoldAmount = activeSchedule?.userOrder?.totalAmount || 0;
@@ -832,83 +804,6 @@ export default function PortalPage() {
           </div>
         )}
         
-        {/* Wallet Banner */}
-        <section className="bg-white rounded-xl border border-[#EAE8E4] p-6 shadow-sm">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-center">
-            {/* Wallet Info */}
-            <div className={`self-start p-5 bg-[#F9F8F5] rounded-xl border ${wallet.cardBorder} flex flex-col justify-start`}>
-              <span className="text-xs font-bold text-[#888888] tracking-widest uppercase mb-2">{wallet.label}</span>
-              <div className="mb-2 space-y-1">
-                <span className={`text-3xl font-bold ${wallet.valueColor}`}>
-                  {walletAmount}
-                </span>
-                {pendingHoldAmount > 0 && (
-                  <span className="block text-xs font-bold text-[#888888]">
-                    可用金額 {availableBalance < 0 ? '－' : ''}NT$ {Math.abs(availableBalance)}
-                  </span>
-                )}
-              </div>
-            </div>
-
-            {/* Today Order */}
-            <div className="md:col-span-2 space-y-4 md:pl-6 border-t md:border-t-0 md:border-l border-[#EAE8E4] pt-6 md:pt-0">
-              <div className="flex items-center justify-between gap-3">
-                <h3 className="font-bold text-base text-[#333333] flex items-center gap-2">
-                  <i className="ti ti-shopping-bag text-lg text-[#EA5B3C]"></i> 今日訂購餐點
-                </h3>
-                <span className="text-xs font-bold text-[#888888]">{todayDate}</span>
-              </div>
-
-              {todayOrder ? (
-                <div className="rounded-lg border border-[#EAE8E4] bg-[#F9F8F5] overflow-hidden">
-                  <div className="bg-white px-4 py-3">
-                    <div className="space-y-1">
-                      <span className="block text-[11px] font-bold tracking-widest text-[#888888]">
-                        {'\u4eca\u65e5\u8a02\u55ae\u7de8\u865f'}
-                      </span>
-                      <span className="inline-flex min-w-12 items-center justify-center rounded-full border border-[#EA5B3C]/20 bg-[#FFF3EF] px-3 py-1.5 text-sm font-bold text-[#EA5B3C]">
-                        {getOrderDisplayNumber(todayOrder)}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="max-h-[180px] overflow-y-auto bg-white px-4 py-3 kaizen-scrollbar">
-                    {todayOrder.items.map(item => (
-                      <div key={item.id} className="grid grid-cols-[1fr_auto_auto] items-center gap-3 border-b border-[#EAE8E4] py-2 text-xs last:border-b-0">
-                        <span className="font-bold text-[#333333] truncate">
-                          {item.name}
-                          {item.note && (
-                            <span className="block truncate text-[11px] font-bold text-[#EA5B3C]">
-                              備註: {formatItemNoteDisplay(item.note)}
-                            </span>
-                          )}
-                        </span>
-                        <span className="rounded-full bg-[#F9F8F5] px-2 py-0.5 font-bold text-[#888888] shrink-0">x {item.quantity}</span>
-                        <span className="font-bold text-[#EA5B3C] shrink-0">NT$ {item.unitPrice * item.quantity}</span>
-                      </div>
-                    ))}
-                  </div>
-
-                  <div className="flex items-center justify-between border-t border-[#EAE8E4] bg-[#F9F8F5] px-4 py-3">
-                    <span className="text-[11px] font-bold tracking-widest text-[#888888]">今日訂單金額</span>
-                    <span className="text-xl font-bold text-[#EA5B3C]">NT$ {todayOrder.totalAmount}</span>
-                  </div>
-
-                  {getDisplayOrderNote(todayOrder) && (
-                    <p className="border-t border-[#EAE8E4] bg-white px-4 py-3 text-xs leading-5 text-[#888888]">
-                      備註：{getDisplayOrderNote(todayOrder)}
-                    </p>
-                  )}
-                </div>
-              ) : (
-                <div className="rounded-lg border border-[#EAE8E4] bg-[#F9F8F5] px-4 py-8 text-center text-xs text-[#888888]">
-                  今日尚未訂購餐點。
-                </div>
-              )}
-            </div>
-          </div>
-        </section>
-
         {/* Announcement Board moved to /portal/announcements.
         <section className="bg-white rounded-xl border border-[#EAE8E4] p-6 shadow-sm">
           <div className="flex items-start gap-4">

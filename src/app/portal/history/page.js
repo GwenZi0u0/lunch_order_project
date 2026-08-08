@@ -86,6 +86,7 @@ export default function HistoryPage() {
   const [ledgerStartDate, setLedgerStartDate] = useState('');
   const [ledgerEndDate, setLedgerEndDate] = useState('');
   const [isLedgerCalendarOpen, setIsLedgerCalendarOpen] = useState(false);
+  const [isLedgerActionsOpen, setIsLedgerActionsOpen] = useState(false);
   const [ledgerCalendarMonth, setLedgerCalendarMonth] = useState(() => new Date());
   const [selectedTransaction, setSelectedTransaction] = useState(null);
   const [visibleTransactionCount, setVisibleTransactionCount] = useState(6);
@@ -121,17 +122,18 @@ export default function HistoryPage() {
   }, [selectedTransaction]);
 
   useEffect(() => {
-    if (!isLedgerCalendarOpen) return;
+    if (!isLedgerCalendarOpen && !isLedgerActionsOpen) return;
 
     const handlePointerDown = (event) => {
       if (ledgerCalendarRef.current && !ledgerCalendarRef.current.contains(event.target)) {
         setIsLedgerCalendarOpen(false);
+        setIsLedgerActionsOpen(false);
       }
     };
 
     document.addEventListener('pointerdown', handlePointerDown);
     return () => document.removeEventListener('pointerdown', handlePointerDown);
-  }, [isLedgerCalendarOpen]);
+  }, [isLedgerCalendarOpen, isLedgerActionsOpen]);
 
   const fetchTransactions = ({
     startDate = ledgerStartDate,
@@ -539,27 +541,9 @@ export default function HistoryPage() {
               <h3 className="font-bold text-[#333333] text-base border-l-4 border-l-[#EA5B3C] pl-2.5">
                 個人歷史訂單與扣款紀錄
               </h3>
-              <button
-                type="button"
-                onClick={exportHistoryToExcel}
-                disabled={transactions.length === 0}
-                className="inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-[#EAE8E4] bg-white px-3 text-xs font-bold text-[#555555] transition-all hover:border-green-600 hover:text-green-600 disabled:cursor-not-allowed disabled:opacity-40 md:hidden"
-              >
-                <i className="ti ti-file-spreadsheet text-base"></i>
-                匯出 Excel
-              </button>
             </div>
 
-            <div ref={ledgerCalendarRef} className="space-y-1.5 relative w-full md:w-[240px] md:pt-11">
-              <button
-                type="button"
-                onClick={exportHistoryToExcel}
-                disabled={transactions.length === 0}
-                className="absolute right-0 top-0 hidden h-9 items-center justify-center gap-2 rounded-lg border border-[#EAE8E4] bg-white px-3 text-xs font-bold text-[#555555] transition-all hover:border-green-600 hover:text-green-600 disabled:cursor-not-allowed disabled:opacity-40 md:inline-flex"
-              >
-                <i className="ti ti-file-spreadsheet text-base"></i>
-                匯出 Excel
-              </button>
+            <div ref={ledgerCalendarRef} className="space-y-1.5 relative w-full md:w-[320px]">
               {(ledgerStartDate || ledgerEndDate) && (
                 <div className="flex h-4 items-center justify-end">
                   <button
@@ -571,14 +555,49 @@ export default function HistoryPage() {
                   </button>
                 </div>
               )}
-              <button
-                type="button"
-                onClick={() => setIsLedgerCalendarOpen(prev => !prev)}
-                className="w-full h-9 text-xs px-3 border border-[#EAE8E4] rounded-lg focus:outline-none focus:border-[#EA5B3C] bg-white font-medium text-left flex items-center justify-between gap-2 hover:border-[#D6D1CA] transition-all"
-              >
-                <span>{getDateLabel(ledgerStartDate, ledgerEndDate)}</span>
-                <i className="ti ti-calendar text-[#888888]"></i>
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsLedgerCalendarOpen(prev => !prev);
+                    setIsLedgerActionsOpen(false);
+                  }}
+                  className="h-9 min-w-0 flex-1 px-3 text-left text-xs font-medium border border-[#EAE8E4] rounded-lg focus:outline-none focus:border-[#EA5B3C] bg-white flex items-center justify-between gap-2 hover:border-[#D6D1CA] transition-all"
+                >
+                  <span>{getDateLabel(ledgerStartDate, ledgerEndDate)}</span>
+                  <i className="ti ti-calendar text-[#888888]"></i>
+                </button>
+                <div className="relative hidden shrink-0 md:block">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsLedgerActionsOpen(prev => !prev);
+                      setIsLedgerCalendarOpen(false);
+                    }}
+                    aria-label="開啟更多功能"
+                    aria-expanded={isLedgerActionsOpen}
+                    className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-[#EAE8E4] bg-white text-[#555555] transition-all hover:border-[#EA5B3C] hover:text-[#EA5B3C]"
+                  >
+                    <i className="ti ti-dots-vertical text-lg"></i>
+                  </button>
+                  {isLedgerActionsOpen && (
+                    <div className="absolute right-0 top-full z-40 mt-2 w-36 overflow-hidden rounded-lg border border-[#EAE8E4] bg-white p-1.5 shadow-[0_12px_30px_rgba(0,0,0,0.10)]">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsLedgerActionsOpen(false);
+                          exportHistoryToExcel();
+                        }}
+                        disabled={transactions.length === 0}
+                        className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-xs font-bold text-[#555555] transition-colors hover:bg-[#F9F8F5] hover:text-green-600 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        <i className="ti ti-file-spreadsheet text-base"></i>
+                        匯出 Excel
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
 
               {isLedgerCalendarOpen && (
                 <div className="absolute right-0 top-full mt-2 z-30 w-[280px] rounded-xl border border-[#EAE8E4] bg-white shadow-[0_12px_30px_rgba(0,0,0,0.08)] p-3">
@@ -750,7 +769,7 @@ export default function HistoryPage() {
                     </div>
                     {item.note && (
                       <div className="mt-2 text-xs font-bold text-[#EA5B3C]">
-                        備註: {item.note}
+                        {item.note}
                       </div>
                     )}
                   </div>

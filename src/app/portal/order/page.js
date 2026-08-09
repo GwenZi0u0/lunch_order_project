@@ -3,7 +3,6 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Navbar from '@/components/Navbar';
-import LinkifiedText from '@/components/LinkifiedText';
 
 const DEFAULT_CUSTOMIZATION_OPTIONS = ['\u98ef\u5c11', '\u63db\u83dc', '\u63db\u83dc+$20'];
 const MIN_AVAILABLE_BALANCE = -200;
@@ -142,6 +141,38 @@ function formatItemNoteDisplay(note) {
   return String(note || '').replace(/\s*;\s*/g, ' ').trim();
 }
 
+function getFreeShippingThreshold(note) {
+  const rule = String(note || '');
+  const patterns = [
+    /([\d,]+)\s*(?:元)?\s*(?:免運|免外送費)/,
+    /(?:滿|低消|最低消費|外送門檻)[^\d]{0,8}(?:NT\$|\$)?\s*([\d,]+)/i,
+    /(?:NT\$|\$)\s*([\d,]+)/i,
+    /([\d,]+)\s*元/
+  ];
+  const match = patterns.map(pattern => rule.match(pattern)).find(Boolean);
+  if (match) return Number(match[1].replace(/,/g, '')) || 0;
+  const amounts = Array.from(rule.matchAll(/[\d,]+/g))
+    .map(result => Number(result[0].replace(/,/g, '')) || 0);
+  return amounts.length > 0 ? Math.max(...amounts) : 0;
+}
+
+function MarkdownPreview({ content }) {
+  const renderInline = text => String(text || '').split(/(\*\*.*?\*\*)/g).filter(Boolean).map((part, index) => (
+    part.startsWith('**') && part.endsWith('**')
+      ? <strong key={index}>{part.slice(2, -2)}</strong>
+      : <span key={index}>{part}</span>
+  ));
+
+  return String(content || '').split(/\r?\n/).map((line, index) => {
+    if (!line.trim()) return <div key={index} className="h-2" />;
+    if (line.startsWith('### ')) return <h5 key={index} className="text-sm font-bold text-[#333333]">{renderInline(line.slice(4))}</h5>;
+    if (line.startsWith('## ')) return <h4 key={index} className="text-base font-bold text-[#333333]">{renderInline(line.slice(3))}</h4>;
+    if (line.startsWith('# ')) return <h3 key={index} className="text-lg font-bold text-[#333333]">{renderInline(line.slice(2))}</h3>;
+    if (/^[-*]\s+/.test(line)) return <div key={index} className="flex gap-2"><span>•</span><span>{renderInline(line.replace(/^[-*]\s+/, ''))}</span></div>;
+    return <p key={index}>{renderInline(line)}</p>;
+  });
+}
+
 export default function PortalPage() {
   const router = useRouter();
   const [user, setUser] = useState(null);
@@ -149,11 +180,10 @@ export default function PortalPage() {
   const [selectedDate, setSelectedDate] = useState('');
   const [activeWeekTab, setActiveWeekTab] = useState('current'); // 'current' or 'next'
   const [allowNextWeekMenu, setAllowNextWeekMenu] = useState(true);
+  const [isPreviewMode, setIsPreviewMode] = useState(false);
   
   // Order state
-  const [orderQuantities, setOrderQuantities] = useState({}); // { menuItemId: quantity }
-  const [itemNotes, setItemNotes] = useState({}); // { menuItemId: note }
-  const [itemCustomOptions, setItemCustomOptions] = useState({}); // { menuItemId: string[] }
+  const [cartItems, setCartItems] = useState([]);
   const [editingMenuItemId, setEditingMenuItemId] = useState('');
   const [editingMenuItemDraft, setEditingMenuItemDraft] = useState({ quantity: 0, note: '', options: [] });
   const [orderNote, setOrderNote] = useState('');
@@ -166,9 +196,11 @@ export default function PortalPage() {
   const [submittedOrder, setSubmittedOrder] = useState(null);
   const [isCumulativeTipOpen, setIsCumulativeTipOpen] = useState(false);
   const [isOrderNoteTipOpen, setIsOrderNoteTipOpen] = useState(false);
+  const [isRestaurantNoteTipOpen, setIsRestaurantNoteTipOpen] = useState(false);
   const [isOrderSummaryVisible, setIsOrderSummaryVisible] = useState(false);
   const [activeMenuCategory, setActiveMenuCategory] = useState('');
   const [isMenuImageOpen, setIsMenuImageOpen] = useState(false);
+  const [activeRestaurantId, setActiveRestaurantId] = useState('');
   
   // Current system date/time check
   const [currentDateTime, setCurrentDateTime] = useState({ dateStr: '', timeStr: '' });
@@ -195,12 +227,15 @@ export default function PortalPage() {
     updateTime();
     
     // Default selection
-    const weekTarget = new URLSearchParams(window.location.search).get('week');
+    const searchParams = new URLSearchParams(window.location.search);
+    const weekTarget = searchParams.get('week');
+    const dateTarget = searchParams.get('date');
+    setIsPreviewMode(searchParams.get('preview') === '1');
     if (weekTarget === 'next') {
-      setSelectedDate(getDefaultDateForWeek('next'));
+      setSelectedDate(/^\d{4}-\d{2}-\d{2}$/.test(dateTarget || '') ? dateTarget : getDefaultDateForWeek('next'));
       setActiveWeekTab('next');
     } else {
-      setSelectedDate(getDefaultDateForWeek('current'));
+      setSelectedDate(/^\d{4}-\d{2}-\d{2}$/.test(dateTarget || '') ? dateTarget : getDefaultDateForWeek('current'));
       setActiveWeekTab('current');
     }
 
@@ -211,18 +246,21 @@ export default function PortalPage() {
   }, []);
 
   useEffect(() => {
-    if (!isCumulativeTipOpen && !isOrderNoteTipOpen) return;
+    if (!isCumulativeTipOpen && !isOrderNoteTipOpen && !isRestaurantNoteTipOpen) return;
 
     const handlePointerDown = (event) => {
       if (event.target.closest('[data-cumulative-tip]')) return;
       if (event.target.closest('[data-order-note-tip]')) return;
+      if (event.target.closest('[data-restaurant-note-tip]')) return;
       setIsCumulativeTipOpen(false);
       setIsOrderNoteTipOpen(false);
+      setIsRestaurantNoteTipOpen(false);
     };
 
     const handleScroll = () => {
       setIsCumulativeTipOpen(false);
       setIsOrderNoteTipOpen(false);
+      setIsRestaurantNoteTipOpen(false);
     };
 
     document.addEventListener('pointerdown', handlePointerDown);
@@ -231,7 +269,7 @@ export default function PortalPage() {
       document.removeEventListener('pointerdown', handlePointerDown);
       window.removeEventListener('scroll', handleScroll, true);
     };
-  }, [isCumulativeTipOpen, isOrderNoteTipOpen]);
+  }, [isCumulativeTipOpen, isOrderNoteTipOpen, isRestaurantNoteTipOpen]);
 
   const updateTime = () => {
     const now = new Date();
@@ -280,7 +318,20 @@ export default function PortalPage() {
 
   // Find schedule details for selected date
   const activeSchedule = schedules.find(s => s.date === selectedDate);
-  const activeRestaurant = activeSchedule?.restaurant || null;
+  const restaurantConfigs = activeSchedule?.restaurantConfigs?.length
+    ? activeSchedule.restaurantConfigs
+    : activeSchedule?.restaurant
+      ? [{
+          restaurantId: activeSchedule.restaurant.id,
+          orderDeadlineDate: activeSchedule.orderDeadlineDate || activeSchedule.date,
+          orderDeadline: activeSchedule.orderDeadline || '09:40',
+          restaurant: activeSchedule.restaurant
+        }]
+      : [];
+  const activeRestaurantConfig = restaurantConfigs.find(config => config.restaurantId === activeRestaurantId)
+    || restaurantConfigs[0]
+    || null;
+  const activeRestaurant = activeRestaurantConfig?.restaurant || null;
   const availableMenuCategories = Array.from(new Set(
     (activeRestaurant?.menuItems || []).map(getMenuCategory)
   ));
@@ -306,9 +357,6 @@ export default function PortalPage() {
       if (mainDishDifference) return mainDishDifference;
       return (a.name || '').localeCompare(b.name || '', 'zh-Hant');
     });
-  const todayDate = currentDateTime.dateStr || formatDate(new Date());
-  const todaySchedule = schedules.find(s => s.date === todayDate);
-  const todayOrder = todaySchedule?.userOrder || null;
   const weeklyDates = getWeeklyDates();
   const selectedOrderDateLabel = weeklyDates.find(d => d.dateStr === selectedDate)?.label || selectedDate;
 
@@ -326,6 +374,10 @@ export default function PortalPage() {
   }, [allowNextWeekMenu, activeWeekTab]);
 
   useEffect(() => {
+    setActiveRestaurantId(restaurantConfigs[0]?.restaurantId || '');
+  }, [selectedDate, activeSchedule?.id]);
+
+  useEffect(() => {
     setActiveMenuCategory('');
     setIsMenuImageOpen(false);
   }, [activeRestaurant?.id]);
@@ -339,9 +391,7 @@ export default function PortalPage() {
 
   const resetOrderDraft = (schedule = activeSchedule) => {
     if (!schedule) {
-      setOrderQuantities({});
-      setItemNotes({});
-      setItemCustomOptions({});
+      setCartItems([]);
       setEditingMenuItemId('');
       setEditingMenuItemDraft({ quantity: 0, note: '', options: [] });
       setOrderNote('');
@@ -352,17 +402,28 @@ export default function PortalPage() {
     }
 
     const userOrderSeatArea = schedule.userOrder?.seatArea || 'A';
-    const quantities = {};
-    const notes = {};
-    const customOptions = {};
+    const restoredCartItems = [];
 
     if (schedule.userOrder) {
       schedule.userOrder.items.forEach(item => {
-        const menuItem = schedule.restaurant?.menuItems?.find(mi => mi.id === item.menuItemId);
+        const menuItem = (schedule.restaurantConfigs?.length
+          ? schedule.restaurantConfigs.flatMap(config => config.restaurant?.menuItems || [])
+          : schedule.restaurant?.menuItems || []).find(mi => mi.id === item.menuItemId);
         const parsedNote = splitExistingItemNote(menuItem, item.note || '');
-        quantities[item.menuItemId] = item.quantity;
-        notes[item.menuItemId] = parsedNote.note;
-        customOptions[item.menuItemId] = parsedNote.selectedOptions;
+        const normalizedNote = normalizeOrderText(item.note);
+        const key = `${item.menuItemId}::${normalizedNote}`;
+        const matchingItem = restoredCartItems.find(cartItem => cartItem.key === key);
+        if (matchingItem) {
+          matchingItem.quantity += item.quantity;
+        } else {
+          restoredCartItems.push({
+            key,
+            menuItemId: item.menuItemId,
+            quantity: item.quantity,
+            note: parsedNote.note,
+            options: parsedNote.selectedOptions
+          });
+        }
       });
     }
 
@@ -370,9 +431,7 @@ export default function PortalPage() {
     setSeatArea(userOrderSeatArea);
     setUseSavedOrderNote(false);
     setSaveOrderPreference(false);
-    setOrderQuantities(quantities);
-    setItemNotes(notes);
-    setItemCustomOptions(customOptions);
+    setCartItems(restoredCartItems);
     setEditingMenuItemId('');
     setEditingMenuItemDraft({ quantity: 0, note: '', options: [] });
   };
@@ -390,7 +449,11 @@ export default function PortalPage() {
     setOrderSuccess('');
   }, [selectedDate, activeSchedule]);
 
-  const getMenuItemById = (menuItemId) => activeRestaurant?.menuItems.find(item => item.id === menuItemId);
+  const getMenuItemById = (menuItemId) => restaurantConfigs
+    .flatMap(config => config.restaurant?.menuItems || [])
+    .find(item => item.id === menuItemId);
+  const getRestaurantForMenuItem = (menuItemId) => restaurantConfigs
+    .find(config => config.restaurant?.menuItems?.some(item => item.id === menuItemId))?.restaurant || null;
 
   const sortSelectedOptions = (menuItemId, selectedOptions = []) => {
     const menuItem = getMenuItemById(menuItemId);
@@ -399,29 +462,30 @@ export default function PortalPage() {
     return configuredOptions.filter(option => selectedSet.has(option));
   };
 
-  const composeItemNote = (menuItemId) => {
-    const selectedOptions = sortSelectedOptions(menuItemId, itemCustomOptions[menuItemId]);
-    const freeNote = normalizeOrderText(itemNotes[menuItemId]);
+  const composeCartItemNote = (cartItem) => {
+    const selectedOptions = sortSelectedOptions(cartItem.menuItemId, cartItem.options);
+    const freeNote = normalizeOrderText(cartItem.note);
     return [...selectedOptions, freeNote].filter(Boolean).join('; ');
   };
 
-  const getItemExtraAmount = (menuItemId) => {
-    return (itemCustomOptions[menuItemId] || []).reduce((sum, option) => {
+  const getCartItemExtraAmount = (cartItem) => {
+    return (cartItem.options || []).reduce((sum, option) => {
       return sum + getCustomizationExtraAmount(option);
     }, 0);
   };
 
-  const getItemUnitPrice = (item) => {
-    return item.price + getItemExtraAmount(item.id);
+  const getCartItemUnitPrice = (cartItem) => {
+    const menuItem = getMenuItemById(cartItem.menuItemId);
+    return (menuItem?.price || 0) + getCartItemExtraAmount(cartItem);
   };
 
   const openMenuItemDialog = (item) => {
     if (isClosed()) return;
     setEditingMenuItemId(item.id);
     setEditingMenuItemDraft({
-      quantity: orderQuantities[item.id] || 1,
+      quantity: 1,
       note: '',
-      options: itemCustomOptions[item.id] || []
+      options: []
     });
   };
 
@@ -451,30 +515,42 @@ export default function PortalPage() {
   const applyMenuItemDialog = () => {
     if (!editingMenuItem) return;
 
-    setOrderQuantities(prev => ({ ...prev, [editingMenuItem.id]: editingMenuItemDraft.quantity || 0 }));
-    setItemNotes(prev => ({ ...prev, [editingMenuItem.id]: editingMenuItemDraft.note || '' }));
-    setItemCustomOptions(prev => ({
-      ...prev,
-      [editingMenuItem.id]: sortSelectedOptions(editingMenuItem.id, editingMenuItemDraft.options)
-    }));
+    const options = sortSelectedOptions(editingMenuItem.id, editingMenuItemDraft.options);
+    const note = normalizeOrderText(editingMenuItemDraft.note);
+    const composedNote = [...options, note].filter(Boolean).join('; ');
+    const key = `${editingMenuItem.id}::${composedNote}`;
+
+    setCartItems(prev => {
+      const matchingItem = prev.find(item => item.key === key);
+      if (matchingItem) {
+        return prev.map(item => item.key === key
+          ? { ...item, quantity: item.quantity + editingMenuItemDraft.quantity }
+          : item);
+      }
+
+      return [...prev, {
+        key,
+        menuItemId: editingMenuItem.id,
+        quantity: editingMenuItemDraft.quantity,
+        note,
+        options
+      }];
+    });
     closeMenuItemDialog();
   };
 
-  const removeOrderItem = (menuItemId) => {
+  const removeOrderItem = (cartItemKey) => {
     if (isClosed() || isSubmitting) return;
-    setOrderQuantities(prev => ({ ...prev, [menuItemId]: 0 }));
-    setItemNotes(prev => ({ ...prev, [menuItemId]: '' }));
-    setItemCustomOptions(prev => ({ ...prev, [menuItemId]: [] }));
+    setCartItems(prev => prev.filter(item => item.key !== cartItemKey));
   };
 
-  const updateOrderItemQuantity = (menuItemId, delta) => {
+  const updateOrderItemQuantity = (cartItemKey, delta) => {
     if (isClosed() || isSubmitting) return;
-    const next = Math.max(0, (orderQuantities[menuItemId] || 0) + delta);
-    setOrderQuantities(prev => ({ ...prev, [menuItemId]: next }));
-    if (next === 0) {
-      setItemNotes(prev => ({ ...prev, [menuItemId]: '' }));
-      setItemCustomOptions(prev => ({ ...prev, [menuItemId]: [] }));
-    }
+    setCartItems(prev => prev
+      .map(item => item.key === cartItemKey
+        ? { ...item, quantity: Math.max(0, item.quantity + delta) }
+        : item)
+      .filter(item => item.quantity > 0));
   };
 
   const handleSeatAreaToggle = (area) => {
@@ -489,39 +565,42 @@ export default function PortalPage() {
     });
   };
 
-  // Calculate order closed status
-  const isClosed = () => {
+  // Calculate order closed status for each restaurant.
+  const isRestaurantConfigClosed = (config = activeRestaurantConfig) => {
     if (!activeSchedule) return true;
+    if (isPreviewMode) return false;
     if (!activeSchedule.isOpen) return true;
     
     const { dateStr: currentDate, timeStr: currentTime } = currentDateTime;
-    const deadlineDate = activeSchedule.orderDeadlineDate || activeSchedule.date;
+    const deadlineDate = config?.orderDeadlineDate || activeSchedule.orderDeadlineDate || activeSchedule.date;
     if (currentDate > deadlineDate) return true;
     if (currentDate === deadlineDate) {
-      const deadline = activeSchedule.orderDeadline || '09:40';
+      const deadline = config?.orderDeadline || activeSchedule.orderDeadline || '09:40';
       return currentTime >= deadline;
     }
     return false;
   };
+  const isClosed = () => isRestaurantConfigClosed(activeRestaurantConfig);
+  const cartHasClosedRestaurant = cartItems.some(cartItem => {
+    const config = restaurantConfigs.find(item => item.restaurant?.menuItems?.some(menuItem => menuItem.id === cartItem.menuItemId));
+    return isRestaurantConfigClosed(config);
+  });
 
   const calculateTotal = () => {
-    if (!activeRestaurant) return 0;
-    return activeRestaurant.menuItems.reduce((sum, item) => {
-      const qty = orderQuantities[item.id] || 0;
-      return sum + getItemUnitPrice(item) * qty;
-    }, 0);
+    if (!activeSchedule) return 0;
+    return cartItems.reduce((sum, item) => sum + getCartItemUnitPrice(item) * item.quantity, 0);
   };
 
   const normalizeOrderText = (value) => (value || '').trim();
 
-  const getCurrentOrderItems = () => Object.entries(orderQuantities)
-    .filter(([_, qty]) => qty > 0)
-    .map(([menuItemId, qty]) => ({
-      menuItemId,
-      quantity: qty,
-      note: composeItemNote(menuItemId)
+  const getCurrentOrderItems = () => cartItems
+    .filter(item => item.quantity > 0)
+    .map(item => ({
+      menuItemId: item.menuItemId,
+      quantity: item.quantity,
+      note: composeCartItemNote(item)
     }))
-    .sort((a, b) => a.menuItemId.localeCompare(b.menuItemId));
+    .sort((a, b) => a.menuItemId.localeCompare(b.menuItemId) || a.note.localeCompare(b.note));
 
   const hasOrderChanges = () => {
     if (!activeSchedule?.userOrder) return true;
@@ -536,7 +615,7 @@ export default function PortalPage() {
         quantity: item.quantity,
         note: normalizeOrderText(item.note)
       }))
-      .sort((a, b) => a.menuItemId.localeCompare(b.menuItemId));
+      .sort((a, b) => a.menuItemId.localeCompare(b.menuItemId) || a.note.localeCompare(b.note));
 
     return JSON.stringify(currentItems) !== JSON.stringify(originalItems);
   };
@@ -578,7 +657,11 @@ export default function PortalPage() {
   }, [shouldShowModifyShortcut, shouldShowConfirmOrderShortcut]);
 
   const handlePlaceOrder = async () => {
-    if (isClosed()) return;
+    if (isPreviewMode) return;
+    if (cartHasClosedRestaurant) {
+      setOrderError('訂購清單中包含已截止訂購的餐廳，請先移除該餐廳餐點。');
+      return;
+    }
     
     if (activeSchedule.userOrder && !hasOrderChanges()) return;
 
@@ -589,11 +672,13 @@ export default function PortalPage() {
 
     const items = getCurrentOrderItems();
     const submittedItems = items.map(item => {
-      const menuItem = activeRestaurant.menuItems.find(menuItem => menuItem.id === item.menuItemId);
+      const menuItem = getMenuItemById(item.menuItemId);
       return {
         ...item,
         name: menuItem?.name || '餐點',
-        unitPrice: menuItem ? getItemUnitPrice(menuItem) : 0
+        unitPrice: menuItem
+          ? menuItem.price + getCustomizationExtraAmount(item.note)
+          : 0
       };
     });
 
@@ -645,7 +730,7 @@ export default function PortalPage() {
   };
 
   const handleCancelOrder = async () => {
-    if (isClosed() || !activeSchedule.userOrder) return;
+    if (isPreviewMode || isClosed() || !activeSchedule.userOrder) return;
 
     if (!confirm('您確定要取消此筆午餐訂單嗎？')) return;
 
@@ -664,8 +749,7 @@ export default function PortalPage() {
       }
 
       setOrderSuccess('訂單已取消！');
-      setOrderQuantities({});
-      setItemNotes({});
+      setCartItems([]);
       setOrderNote('');
       setSeatArea('A');
       setUseSavedOrderNote(false);
@@ -690,31 +774,6 @@ export default function PortalPage() {
     );
   }
 
-  // Wallet styling based on balance logic
-  const getWalletStyles = () => {
-    if (user.balance > 0) {
-      return {
-        cardBorder: 'border-l-4 border-l-green-600 border-[#EAE8E4]',
-        valueColor: 'text-green-600',
-        label: '餘額充足'
-      };
-    } else if (user.balance === 0) {
-      return {
-        cardBorder: 'border-l-4 border-l-[#333333] border-[#EAE8E4]',
-        valueColor: 'text-[#333333]',
-        label: '餘額歸零'
-      };
-    } else {
-      return {
-        cardBorder: 'border-l-4 border-l-red-600 border-[#EAE8E4] bg-red-[0.005]',
-        valueColor: 'text-red-600',
-        label: '帳戶欠款'
-      };
-    }
-  };
-
-  const wallet = getWalletStyles();
-  const walletAmount = `${user.balance < 0 ? '－' : ''}NT$ ${Math.abs(user.balance)}`;
   const pendingHoldAmount = user.pendingHoldAmount || 0;
   const availableBalance = user.availableBalance ?? (user.balance - pendingHoldAmount);
   const currentOrderHoldAmount = activeSchedule?.userOrder?.totalAmount || 0;
@@ -724,90 +783,27 @@ export default function PortalPage() {
   const editingMenuItem = getMenuItemById(editingMenuItemId);
   const editingMenuItemQty = editingMenuItem ? editingMenuItemDraft.quantity || 0 : 0;
   const editingMenuItemOptions = editingMenuItem ? parseCustomizationOptions(editingMenuItem.customizationOptions) : [];
+  const activeRestaurantStats = activeSchedule?.stats?.restaurants?.find(
+    stats => stats.restaurantId === activeRestaurant?.id
+  );
+  const currentCumulativeAmount = activeRestaurantStats?.totalAmount ?? activeSchedule?.stats?.totalAmount ?? 0;
+  const freeShippingThreshold = getFreeShippingThreshold(activeRestaurant?.note);
+  const cumulativeProgress = freeShippingThreshold
+    ? Math.min(100, Math.round((currentCumulativeAmount / freeShippingThreshold) * 100))
+    : 0;
 
   return (
     <>
-      <Navbar user={user} />
+      <Navbar user={user} interactionDisabled={isPreviewMode} />
 
       <main className="flex-1 max-w-[1200px] w-full mx-auto px-6 py-10 space-y-10">
-        
-        {/* Wallet Banner */}
-        <section className="bg-white rounded-xl border border-[#EAE8E4] p-6 shadow-sm">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-center">
-            {/* Wallet Info */}
-            <div className={`self-start p-5 bg-[#F9F8F5] rounded-xl border ${wallet.cardBorder} flex flex-col justify-start`}>
-              <span className="text-xs font-bold text-[#888888] tracking-widest uppercase mb-2">{wallet.label}</span>
-              <div className="mb-2 space-y-1">
-                <span className={`text-3xl font-bold ${wallet.valueColor}`}>
-                  {walletAmount}
-                </span>
-                {pendingHoldAmount > 0 && (
-                  <span className="block text-xs font-bold text-[#888888]">
-                    可用金額 {availableBalance < 0 ? '－' : ''}NT$ {Math.abs(availableBalance)}
-                  </span>
-                )}
-              </div>
-            </div>
-
-            {/* Today Order */}
-            <div className="md:col-span-2 space-y-4 md:pl-6 border-t md:border-t-0 md:border-l border-[#EAE8E4] pt-6 md:pt-0">
-              <div className="flex items-center justify-between gap-3">
-                <h3 className="font-bold text-base text-[#333333] flex items-center gap-2">
-                  <i className="ti ti-shopping-bag text-lg text-[#EA5B3C]"></i> 今日訂購餐點
-                </h3>
-                <span className="text-xs font-bold text-[#888888]">{todayDate}</span>
-              </div>
-
-              {todayOrder ? (
-                <div className="rounded-lg border border-[#EAE8E4] bg-[#F9F8F5] overflow-hidden">
-                  <div className="bg-white px-4 py-3">
-                    <div className="space-y-1">
-                      <span className="block text-[11px] font-bold tracking-widest text-[#888888]">
-                        {'\u4eca\u65e5\u8a02\u55ae\u7de8\u865f'}
-                      </span>
-                      <span className="inline-flex min-w-12 items-center justify-center rounded-full border border-[#EA5B3C]/20 bg-[#FFF3EF] px-3 py-1.5 text-sm font-bold text-[#EA5B3C]">
-                        {getOrderDisplayNumber(todayOrder)}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="max-h-[180px] overflow-y-auto bg-white px-4 py-3 kaizen-scrollbar">
-                    {todayOrder.items.map(item => (
-                      <div key={item.id} className="grid grid-cols-[1fr_auto_auto] items-center gap-3 border-b border-[#EAE8E4] py-2 text-xs last:border-b-0">
-                        <span className="font-bold text-[#333333] truncate">
-                          {item.name}
-                          {item.note && (
-                            <span className="block truncate text-[11px] font-bold text-[#EA5B3C]">
-                              備註: {formatItemNoteDisplay(item.note)}
-                            </span>
-                          )}
-                        </span>
-                        <span className="rounded-full bg-[#F9F8F5] px-2 py-0.5 font-bold text-[#888888] shrink-0">x {item.quantity}</span>
-                        <span className="font-bold text-[#EA5B3C] shrink-0">NT$ {item.unitPrice * item.quantity}</span>
-                      </div>
-                    ))}
-                  </div>
-
-                  <div className="flex items-center justify-between border-t border-[#EAE8E4] bg-[#F9F8F5] px-4 py-3">
-                    <span className="text-[11px] font-bold tracking-widest text-[#888888]">今日訂單金額</span>
-                    <span className="text-xl font-bold text-[#EA5B3C]">NT$ {todayOrder.totalAmount}</span>
-                  </div>
-
-                  {getDisplayOrderNote(todayOrder) && (
-                    <p className="border-t border-[#EAE8E4] bg-white px-4 py-3 text-xs leading-5 text-[#888888]">
-                      備註：{getDisplayOrderNote(todayOrder)}
-                    </p>
-                  )}
-                </div>
-              ) : (
-                <div className="rounded-lg border border-[#EAE8E4] bg-[#F9F8F5] px-4 py-8 text-center text-xs text-[#888888]">
-                  今日尚未訂購餐點。
-                </div>
-              )}
-            </div>
+        {isPreviewMode && (
+          <div className="flex items-center justify-center gap-2 rounded-xl border border-[#EA5B3C]/30 bg-[#FFF3EF] px-4 py-3 text-xs font-bold text-[#EA5B3C]">
+            <i className="ti ti-eye text-lg"></i>
+            預覽模式｜可操作畫面，無法送出訂單
           </div>
-        </section>
-
+        )}
+        
         {/* Announcement Board moved to /portal/announcements.
         <section className="bg-white rounded-xl border border-[#EAE8E4] p-6 shadow-sm">
           <div className="flex items-start gap-4">
@@ -908,7 +904,9 @@ export default function PortalPage() {
                   >
                     <div className="text-[11px] md:text-xs text-[#888888] md:mb-1 font-bold leading-tight">{d.label}</div>
                     <div className="hidden md:block text-sm font-bold text-[#333333] truncate">
-                      {isHolidayCard ? '\u4f11\u5047' : (sched?.restaurant ? sched.restaurant.name : '（未排定）')}
+                      {isHolidayCard ? '\u4f11\u5047' : (sched?.restaurantConfigs?.length
+                        ? sched.restaurantConfigs.map(config => config.restaurant?.name).filter(Boolean).join('、')
+                        : sched?.restaurant ? sched.restaurant.name : '（未排定）')}
                     </div>
                     {/* Status Badge */}
                     {isHolidayCard && (
@@ -935,11 +933,40 @@ export default function PortalPage() {
           {/* Menu Selection (Col-span 2) */}
           <div className="order-2 lg:order-1 lg:col-span-2 space-y-6">
             <div className="c-box">
+              {restaurantConfigs.length > 1 && (
+                <div className="mb-6 space-y-3 border-b border-[#EAE8E4] pb-5">
+                  <div className="text-xs font-bold text-[#888888]">選擇餐廳</div>
+                  <div className="flex flex-wrap gap-2">
+                    {restaurantConfigs.map(config => (
+                      <button
+                        key={config.restaurantId}
+                        type="button"
+                        onClick={() => setActiveRestaurantId(config.restaurantId)}
+                        aria-expanded={config.restaurantId === activeRestaurantConfig?.restaurantId}
+                        className={`rounded-full border px-4 py-2 text-xs font-bold transition-all ${
+                          config.restaurantId === activeRestaurantConfig?.restaurantId
+                            ? 'border-[#EA5B3C] bg-[#EA5B3C] text-white'
+                            : 'border-[#EAE8E4] bg-white text-[#555555] hover:border-[#EA5B3C]'
+                        }`}
+                      >
+                        {config.restaurant?.name || '餐廳'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
               {activeRestaurant ? (
                 <div className="space-y-8">
+                  <div className="border-b border-[#EAE8E4] pb-5">
+                    <div className="text-xs font-bold tracking-widest text-[#888888]">餐廳公告</div>
+                    <div className="mt-2 min-h-5 space-y-1.5 text-xs leading-6 text-[#555555]">
+                      <MarkdownPreview content={activeSchedule.dailyAnnouncement} />
+                    </div>
+                  </div>
+
                   {/* Restaurant Details */}
-                  <div className="border-b border-[#EAE8E4] pb-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                    <div className="flex w-full items-start justify-between gap-4 md:w-auto">
+                  <div className="flex flex-col items-start gap-4 border-b border-[#EAE8E4] pb-6">
+                    <div className="flex w-full items-start justify-between gap-4">
                       <div>
                         <h3 className="text-2xl font-bold text-[#333333]">{activeRestaurant.name}</h3>
                         {activeRestaurant.phone && (
@@ -948,36 +975,46 @@ export default function PortalPage() {
                           </p>
                         )}
                       </div>
-                      {activeRestaurant.menuImageUrl && (
-                        <button
-                          type="button"
-                          onClick={() => setIsMenuImageOpen(true)}
-                          className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[#EAE8E4] bg-white text-lg text-[#888888] transition-all hover:border-[#EA5B3C] hover:text-[#EA5B3C]"
-                          aria-label="查看菜單圖片"
-                          title="查看菜單圖片"
-                        >
-                          <i className="ti ti-photo"></i>
-                        </button>
-                      )}
+                      <div className="flex shrink-0 items-center gap-3">
+                        {activeRestaurant.menuImageUrl && (
+                          <button
+                            type="button"
+                            onClick={() => setIsMenuImageOpen(true)}
+                            className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[#EAE8E4] bg-white text-lg text-[#888888] transition-all hover:border-[#EA5B3C] hover:text-[#EA5B3C]"
+                            aria-label="查看菜單圖片"
+                            title="查看菜單圖片"
+                          >
+                            <i className="ti ti-photo"></i>
+                          </button>
+                        )}
+                        <div className="min-w-0">
+                          <span className="block text-xs font-bold text-[#888888]">截止訂購時間</span>
+                          <span className="mt-1 flex items-center gap-1 whitespace-nowrap text-sm font-bold text-[#EA5B3C]">
+                            <i className="ti ti-alarm text-base"></i>
+                            {activeRestaurantConfig?.orderDeadlineDate && activeRestaurantConfig.orderDeadlineDate !== activeSchedule.date
+                              ? `${activeRestaurantConfig.orderDeadlineDate} ${activeRestaurantConfig.orderDeadline}`
+                              : activeRestaurantConfig?.orderDeadline || activeSchedule.orderDeadline} 前
+                          </span>
+                        </div>
+                      </div>
                     </div>
 
-                    <div className="grid w-full grid-cols-2 gap-4 text-left md:w-auto md:flex md:items-center md:justify-end md:gap-8 md:text-right">
-                      <div className="min-w-0">
-                        <span className="text-xs font-bold text-[#888888] block">截止訂購時間</span>
-                        <span className="text-sm font-bold text-[#EA5B3C] flex items-center gap-1 mt-1 md:justify-end">
-                          <i className="ti ti-alarm"></i>
-                          {activeSchedule.orderDeadlineDate && activeSchedule.orderDeadlineDate !== activeSchedule.date
-                            ? `${activeSchedule.orderDeadlineDate} ${activeSchedule.orderDeadline}`
-                            : activeSchedule.orderDeadline} 前
-                        </span>
-                      </div>
+                    <div className="grid w-full grid-cols-1 gap-4 text-left">
                       <div className="min-w-0 text-left">
-                        <span className="relative inline-flex items-center gap-1 text-xs font-bold text-[#888888]" data-cumulative-tip>
+                        <span
+                          className="relative inline-flex items-center gap-1 text-xs font-bold text-[#888888]"
+                          data-cumulative-tip
+                          onMouseEnter={() => {
+                            if (window.matchMedia('(hover: hover)').matches) setIsCumulativeTipOpen(true);
+                          }}
+                          onMouseLeave={() => {
+                            if (window.matchMedia('(hover: hover)').matches) setIsCumulativeTipOpen(false);
+                          }}
+                        >
                           目前累計金額
                           <button
                             type="button"
                             onClick={() => setIsCumulativeTipOpen(prev => !prev)}
-                            onMouseEnter={() => setIsCumulativeTipOpen(true)}
                             onFocus={() => setIsCumulativeTipOpen(true)}
                             className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-[#D6D1CA] bg-white text-[10px] font-bold text-[#888888] transition-all hover:border-[#EA5B3C] hover:text-[#EA5B3C]"
                             aria-label="目前累計金額說明"
@@ -985,32 +1022,62 @@ export default function PortalPage() {
                             i
                           </button>
                           {isCumulativeTipOpen && (
-                            <span className="absolute right-0 top-full z-20 mt-2 w-[min(18rem,calc(100vw-3rem))] rounded-lg border border-[#EAE8E4] bg-white p-3 text-left text-[11px] font-bold leading-relaxed text-[#555555] shadow-lg md:w-56">
+                            <span className="absolute left-0 top-full z-20 mt-2 w-[min(18rem,calc(100vw-6rem))] rounded-lg border border-[#EAE8E4] bg-white p-3 text-left text-[11px] font-bold leading-relaxed text-[#555555] shadow-lg">
                               這是大家目前已送出的訂單總額，可用來一起確認是否接近餐廳免運門檻。
                             </span>
                           )}
                         </span>
-                        <span className="text-sm font-bold text-[#EA5B3C] block mt-1">
-                          NT$ {activeSchedule.stats?.totalAmount || 0}
-                        </span>
+                        <div className="mt-1 space-y-1.5">
+                          <div className="flex items-center justify-between gap-2 text-xs font-bold">
+                            <span className="text-[#EA5B3C]">NT$ {currentCumulativeAmount}</span>
+                            <span
+                              className="relative flex min-w-0 items-center justify-end gap-1 text-[10px] text-[#888888]"
+                              data-restaurant-note-tip
+                              onMouseEnter={() => {
+                                if (window.matchMedia('(hover: hover)').matches) setIsRestaurantNoteTipOpen(true);
+                              }}
+                              onMouseLeave={() => {
+                                if (window.matchMedia('(hover: hover)').matches) setIsRestaurantNoteTipOpen(false);
+                              }}
+                            >
+                              {freeShippingThreshold > 0 && <span className="shrink-0">目標 NT$ {freeShippingThreshold}</span>}
+                              {activeRestaurant.note && (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => setIsRestaurantNoteTipOpen(open => !open)}
+                                    onFocus={() => setIsRestaurantNoteTipOpen(true)}
+                                    className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-[#D6D1CA] bg-white text-[10px] font-bold text-[#888888] transition-all hover:border-[#EA5B3C] hover:text-[#EA5B3C]"
+                                    aria-label="查看餐廳備註"
+                                  >
+                                    i
+                                  </button>
+                                  {isRestaurantNoteTipOpen && (
+                                    <span className="absolute right-0 top-full z-20 mt-2 w-[min(16rem,calc(100vw-6rem))] rounded-lg border border-[#EAE8E4] bg-white p-3 text-left text-[11px] font-bold leading-relaxed text-[#555555] shadow-lg">
+                                      {activeRestaurant.note}
+                                    </span>
+                                  )}
+                                </>
+                              )}
+                            </span>
+                          </div>
+                          <div className="relative h-2 w-full rounded-full bg-[#EAE8E4]" role="progressbar" aria-label="目前累計金額進度" aria-valuemin="0" aria-valuemax={freeShippingThreshold || 100} aria-valuenow={currentCumulativeAmount}>
+                            <div
+                              className={`h-full rounded-full transition-all duration-500 ${cumulativeProgress >= 100 ? 'bg-green-500' : 'bg-[#EA5B3C]'}`}
+                              style={{ width: `${cumulativeProgress}%` }}
+                            />
+                            <span
+                              className={`absolute top-1/2 inline-flex h-5 w-5 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-white text-xs shadow-sm transition-all duration-500 ${cumulativeProgress >= 100 ? 'text-green-600' : 'text-[#EA5B3C]'}`}
+                              style={{ left: `clamp(0.625rem, ${cumulativeProgress}%, calc(100% - 0.625rem))` }}
+                              aria-hidden="true"
+                            >
+                              <i className="ti ti-paw"></i>
+                            </span>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>
-
-                  {activeRestaurant.note && (
-                    <div className="flex items-start gap-3 rounded-xl border border-[#EA5B3C]/25 bg-[#FFF3EF] p-4 text-sm leading-normal shadow-sm">
-                      <span className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white text-[#EA5B3C] shadow-sm">
-                        <i className="ti ti-info-circle text-lg"></i>
-                      </span>
-                      <div className="space-y-1">
-                        <div className="text-xs font-bold tracking-widest text-[#EA5B3C]">餐廳備註</div>
-                        <LinkifiedText
-                          value={activeRestaurant.note}
-                          className="font-bold text-[#333333]"
-                        />
-                      </div>
-                    </div>
-                  )}
 
                   {/* Warning Banner if Closed */}
                   {isClosed() && (
@@ -1051,38 +1118,30 @@ export default function PortalPage() {
 
                     <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                       {visibleMenuItems.map(item => {
-                        const qty = orderQuantities[item.id] || 0;
+                        const cartQuantity = cartItems
+                          .filter(cartItem => cartItem.menuItemId === item.id)
+                          .reduce((total, cartItem) => total + cartItem.quantity, 0);
                         return (
                           <button
                             type="button"
                             key={item.id}
                             disabled={isClosed()}
                             onClick={() => openMenuItemDialog(item)}
-                            className={`flex w-full items-center justify-between rounded-xl border p-4 text-left transition-all disabled:cursor-not-allowed disabled:opacity-60 ${
-                              qty > 0 ? 'border-[#EA5B3C] bg-[#FFF9F6]' : 'border-[#EAE8E4]'
-                            }`}
+                            className="relative flex w-full items-center justify-between rounded-xl border border-[#EAE8E4] p-4 text-left transition-all hover:border-[#EA5B3C] disabled:cursor-not-allowed disabled:opacity-60"
                           >
+                            {cartQuantity > 0 && (
+                              <span className="absolute left-0 top-0 ml-[2px] mt-[2px] inline-flex h-7 min-w-7 -translate-x-1/3 -translate-y-1/2 items-center justify-center rounded-full border-2 border-white bg-[#EA5B3C] px-1.5 text-xs font-bold text-white shadow-sm">
+                                {cartQuantity}
+                              </span>
+                            )}
                             <div className="min-w-0">
                               <div className="text-sm font-bold text-[#333333]">{item.name}</div>
                               <div className="mt-1 text-xs font-bold text-[#EA5B3C]">
-                                NT$ {getItemUnitPrice(item)}
-                                {getItemExtraAmount(item.id) > 0 && (
-                                  <span className="ml-1 text-[11px] text-[#888888]">
-                                    (含加價 +{getItemExtraAmount(item.id)})
-                                  </span>
-                                )}
+                                NT$ {item.price}
                               </div>
-                              {composeItemNote(item.id) && (
-                                <div className="mt-1 truncate text-[11px] font-bold text-[#888888]">
-                                  備註：{formatItemNoteDisplay(composeItemNote(item.id))}
-                                </div>
-                              )}
                             </div>
 
-                            <div className="flex shrink-0 items-center gap-2">
-                              <span className="inline-flex h-9 min-w-9 items-center justify-center rounded-full border border-[#EAE8E4] bg-white px-3 text-sm font-bold text-[#333333]">
-                                {qty}
-                              </span>
+                            <div className="flex shrink-0 items-center">
                               <i className="ti ti-chevron-right text-lg text-[#C9C3BB]"></i>
                             </div>
                           </button>
@@ -1131,45 +1190,49 @@ export default function PortalPage() {
                   )}
 
                   <div className="space-y-4">
-                    {activeRestaurant.menuItems.map(item => {
-                      const qty = orderQuantities[item.id] || 0;
-                      if (qty === 0) return null;
-                      const itemNoteParts = composeItemNote(item.id)
+                    {cartItems.map(cartItem => {
+                      const item = getMenuItemById(cartItem.menuItemId);
+                      if (!item || cartItem.quantity === 0) return null;
+                      const composedNote = composeCartItemNote(cartItem);
+                      const itemNoteParts = composedNote
                         .split(';')
                         .map(note => note.trim())
                         .filter(Boolean);
+                      const itemActionLabel = composedNote ? `${item.name}（${formatItemNoteDisplay(composedNote)}）` : item.name;
+                      const itemRestaurant = getRestaurantForMenuItem(cartItem.menuItemId);
                       return (
-                        <div key={item.id} className="space-y-2 rounded-lg border border-[#EAE8E4] bg-[#F9F8F5] p-3 text-xs">
+                        <div key={cartItem.key} className="space-y-2 rounded-lg border border-[#EAE8E4] bg-[#F9F8F5] p-3 text-xs">
+                          <div className="text-[10px] font-bold text-[#EA5B3C]">{itemRestaurant?.name || '餐廳'}</div>
                           <div className="flex items-center justify-between gap-2">
                             <span className="text-[#333333] font-bold truncate">{item.name}</span>
                             <div className="flex shrink-0 items-center gap-1 rounded-full border border-[#EAE8E4] bg-white px-1 py-0.5">
                               <button
                                 type="button"
                                 disabled={isClosed() || isSubmitting}
-                                onClick={() => updateOrderItemQuantity(item.id, -1)}
+                                onClick={() => updateOrderItemQuantity(cartItem.key, -1)}
                                 className="flex h-6 w-6 items-center justify-center rounded-full text-[#888888] transition-all hover:bg-[#F9F8F5] hover:text-[#EA5B3C] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-[#888888]"
-                                aria-label={`減少 ${item.name} 數量`}
+                                aria-label={`減少 ${itemActionLabel} 數量`}
                               >
                                 <i className="ti ti-minus text-xs"></i>
                               </button>
-                              <span className="min-w-4 text-center text-xs font-bold text-[#333333]">{qty}</span>
+                              <span className="min-w-4 text-center text-xs font-bold text-[#333333]">{cartItem.quantity}</span>
                               <button
                                 type="button"
                                 disabled={isClosed() || isSubmitting}
-                                onClick={() => updateOrderItemQuantity(item.id, 1)}
+                                onClick={() => updateOrderItemQuantity(cartItem.key, 1)}
                                 className="flex h-6 w-6 items-center justify-center rounded-full text-[#888888] transition-all hover:bg-[#F9F8F5] hover:text-[#EA5B3C] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-[#888888]"
-                                aria-label={`增加 ${item.name} 數量`}
+                                aria-label={`增加 ${itemActionLabel} 數量`}
                               >
                                 <i className="ti ti-plus text-xs"></i>
                               </button>
                             </div>
-                            <span className="text-[#333333] font-bold shrink-0">NT$ {getItemUnitPrice(item) * qty}</span>
+                            <span className="text-[#333333] font-bold shrink-0">NT$ {getCartItemUnitPrice(cartItem) * cartItem.quantity}</span>
                             <button
                               type="button"
                               disabled={isClosed() || isSubmitting}
-                              onClick={() => removeOrderItem(item.id)}
+                              onClick={() => removeOrderItem(cartItem.key)}
                               className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-[#EAE8E4] bg-white text-[#888888] transition-all hover:border-red-200 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-[#EAE8E4] disabled:hover:text-[#888888]"
-                              aria-label={`刪除 ${item.name}`}
+                              aria-label={`刪除 ${itemActionLabel}`}
                               title="刪除餐點"
                             >
                               <i className="ti ti-trash text-sm"></i>
@@ -1359,7 +1422,7 @@ export default function PortalPage() {
                           )}
                           
                           <button
-                            disabled={isClosed() || isSubmitting || calculateTotal() === 0 || !seatArea || isBelowAvailableLimit || (activeSchedule.userOrder && !hasOrderChanges())}
+                            disabled={isPreviewMode || cartHasClosedRestaurant || isSubmitting || calculateTotal() === 0 || !seatArea || isBelowAvailableLimit || (activeSchedule.userOrder && !hasOrderChanges())}
                             onClick={handlePlaceOrder}
                             className="flex-[2] py-3 text-xs font-bold bg-[#EA5B3C] text-white rounded-xl shadow-sm hover:bg-[#333333] hover:shadow-md transition-all disabled:opacity-50 disabled:cursor-not-allowed text-center"
                           >
@@ -1368,7 +1431,7 @@ export default function PortalPage() {
                         </div>
                         {activeSchedule.userOrder && !isClosed() && (
                           <button
-                            disabled={isSubmitting}
+                            disabled={isPreviewMode || isSubmitting}
                             onClick={handleCancelOrder}
                             className="w-full py-3 text-xs font-bold border border-[#EAE8E4] text-[#888888] hover:text-red-600 hover:border-red-200 rounded-xl transition-all bg-white"
                           >
@@ -1584,7 +1647,8 @@ export default function PortalPage() {
                 <button
                   type="button"
                   onClick={applyMenuItemDialog}
-                  className="flex-[1.5] rounded-xl bg-[#EA5B3C] py-3 text-xs font-bold text-white shadow-sm transition-all hover:bg-[#333333]"
+                  disabled={editingMenuItemQty === 0}
+                  className="flex-[1.5] rounded-xl bg-[#EA5B3C] py-3 text-xs font-bold text-white shadow-sm transition-all hover:bg-[#333333] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-[#EA5B3C]"
                 >
                   加入訂購清單
                 </button>

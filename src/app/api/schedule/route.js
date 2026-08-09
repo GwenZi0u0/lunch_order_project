@@ -1,10 +1,13 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/db';
 import { getCurrentUser } from '@/lib/auth';
+import { canReadAdminData } from '@/lib/adminPermissions';
 
 const CATEGORY_ORDER_KEY_PREFIX = 'restaurantCategoryOrder:';
 const MENU_IMAGE_KEY_PREFIX = 'restaurantMenuImage:';
 const DEADLINE_DATE_KEY_PREFIX = 'scheduleOrderDeadlineDate:';
+const SCHEDULE_RESTAURANTS_KEY_PREFIX = 'scheduleRestaurants:';
+const SCHEDULE_ANNOUNCEMENT_KEY_PREFIX = 'scheduleAnnouncement:';
 
 // Helper to get date string YYYY-MM-DD
 function formatDate(date) {
@@ -105,6 +108,42 @@ export async function GET(request) {
         setting.value
       ])
     );
+    const scheduleRestaurantSettings = await prisma.siteSetting.findMany({
+      where: {
+        key: {
+          in: schedules.map(schedule => `${SCHEDULE_RESTAURANTS_KEY_PREFIX}${schedule.date}`)
+        }
+      }
+    });
+    const scheduleAnnouncementSettings = await prisma.siteSetting.findMany({
+      where: {
+        key: {
+          in: schedules.map(schedule => `${SCHEDULE_ANNOUNCEMENT_KEY_PREFIX}${schedule.date}`)
+        }
+      }
+    });
+    const announcementByScheduleDate = new Map(scheduleAnnouncementSettings.map(setting => [
+      setting.key.slice(SCHEDULE_ANNOUNCEMENT_KEY_PREFIX.length),
+      setting.value || ''
+    ]));
+    const restaurantConfigsByDate = new Map(scheduleRestaurantSettings.map(setting => {
+      try {
+        const parsed = JSON.parse(setting.value || '[]');
+        return [setting.key.slice(SCHEDULE_RESTAURANTS_KEY_PREFIX.length), Array.isArray(parsed) ? parsed : []];
+      } catch {
+        return [setting.key.slice(SCHEDULE_RESTAURANTS_KEY_PREFIX.length), []];
+      }
+    }));
+    const configuredRestaurantIds = Array.from(new Set(
+      Array.from(restaurantConfigsByDate.values()).flatMap(configs => configs.map(config => config.restaurantId)).filter(Boolean)
+    ));
+    const configuredRestaurants = configuredRestaurantIds.length > 0
+      ? await prisma.restaurant.findMany({
+          where: { id: { in: configuredRestaurantIds } },
+          include: { menuItems: { where: { isAvailable: true } } }
+        })
+      : [];
+    const configuredRestaurantById = new Map(configuredRestaurants.map(restaurant => [restaurant.id, restaurant]));
     const categoryOrderByRestaurantId = new Map(categoryOrderSettings.map(setting => {
       let order = [];
       try {
@@ -123,6 +162,51 @@ export async function GET(request) {
       // Calculate order statistics for administrators
       const orderCount = sched.orders.filter(o => o.status !== 'cancelled').length;
       
+      const savedRestaurantConfigs = restaurantConfigsByDate.get(sched.date) || [];
+      const fallbackRestaurantConfigs = sched.restaurantId ? [{
+        restaurantId: sched.restaurantId,
+        orderDeadlineDate: deadlineDateByScheduleDate.get(sched.date) || sched.date,
+        orderDeadline: sched.orderDeadline || '09:40'
+      }] : [];
+      const restaurantConfigs = (savedRestaurantConfigs.length > 0 ? savedRestaurantConfigs : fallbackRestaurantConfigs)
+        .map(config => {
+          const restaurant = configuredRestaurantById.get(config.restaurantId)
+            || (sched.restaurantId === config.restaurantId ? sched.restaurant : null);
+          if (!restaurant) return null;
+          return {
+            restaurantId: config.restaurantId,
+            orderDeadlineDate: config.orderDeadlineDate || sched.date,
+            orderDeadline: config.orderDeadline || '09:40',
+            restaurant: {
+              ...restaurant,
+              menuImageUrl: menuImageByRestaurantId.has(restaurant.id)
+                ? `/api/restaurant-menu-image?restaurantId=${restaurant.id}`
+                : '',
+              categoryOrder: categoryOrderByRestaurantId.get(restaurant.id) || []
+            }
+          };
+        })
+        .filter(Boolean);
+      const activeOrders = sched.orders.filter(order => order.status !== 'cancelled');
+      const restaurantStats = restaurantConfigs.map(config => {
+        const matchingOrderIds = new Set();
+        let totalAmount = 0;
+
+        activeOrders.forEach(order => {
+          order.orderItems.forEach(item => {
+            if (item.menuItem?.restaurantId !== config.restaurantId) return;
+            matchingOrderIds.add(order.id);
+            totalAmount += item.unitPrice * item.quantity;
+          });
+        });
+
+        return {
+          restaurantId: config.restaurantId,
+          totalOrders: matchingOrderIds.size,
+          totalAmount
+        };
+      });
+
       return {
         id: sched.id,
         date: sched.date,
@@ -138,6 +222,8 @@ export async function GET(request) {
             : '',
           categoryOrder: categoryOrderByRestaurantId.get(sched.restaurant.id) || []
         } : null,
+        restaurantConfigs,
+        dailyAnnouncement: announcementByScheduleDate.get(sched.date) || '',
         userOrder: userOrder ? {
           id: userOrder.id,
           orderNumber: userOrder.orderNumber,
@@ -158,9 +244,10 @@ export async function GET(request) {
         } : null,
         stats: {
           totalOrders: orderCount,
-          totalAmount: sched.orders.filter(o => o.status !== 'cancelled').reduce((sum, o) => sum + o.totalAmount, 0)
+          totalAmount: activeOrders.reduce((sum, order) => sum + order.totalAmount, 0),
+          restaurants: restaurantStats
         },
-        orders: user.role === 'admin'
+        orders: canReadAdminData(user, ['overview', 'schedule', 'order-stats'])
           ? sched.orders.map(order => ({
             id: order.id,
             orderNumber: order.orderNumber,
@@ -192,22 +279,43 @@ export async function POST(request) {
     }
 
     const body = await request.json();
+    const shouldUpdateDailyAnnouncement = Object.prototype.hasOwnProperty.call(body, 'dailyAnnouncement');
     const {
       date,
       restaurantId,
       orderDeadline,
       orderDeadlineDate,
       isOpen = true,
-      clearOrdersOnRestaurantChange = false
+      clearOrdersOnRestaurantChange = false,
+      clearRestaurantIds = [],
+      restaurantConfigs,
+      dailyAnnouncement = ''
     } = body;
     const scheduleIsOpen = Boolean(isOpen);
-    const normalizedRestaurantId = scheduleIsOpen ? restaurantId : null;
+    const normalizedRestaurantConfigs = scheduleIsOpen
+      ? (Array.isArray(restaurantConfigs) && restaurantConfigs.length > 0
+          ? restaurantConfigs
+          : [{ restaurantId, orderDeadlineDate: orderDeadlineDate || date, orderDeadline: orderDeadline || '09:40' }])
+        .filter(config => config?.restaurantId)
+        .map(config => ({
+          restaurantId: config.restaurantId,
+          orderDeadlineDate: config.orderDeadlineDate || date,
+          orderDeadline: config.orderDeadline || '09:40'
+        }))
+      : [];
+    const normalizedRestaurantId = normalizedRestaurantConfigs[0]?.restaurantId || null;
 
     if (!date || (scheduleIsOpen && !normalizedRestaurantId)) {
       return NextResponse.json({ error: 'Date and Restaurant ID are required' }, { status: 400 });
     }
     if (orderDeadlineDate && orderDeadlineDate > date) {
       return NextResponse.json({ error: '訂單截止日期不可晚於供餐日期。' }, { status: 400 });
+    }
+    if (normalizedRestaurantConfigs.some(config => config.orderDeadlineDate > date)) {
+      return NextResponse.json({ error: '訂單截止日期不可晚於供餐日期。' }, { status: 400 });
+    }
+    if (new Set(normalizedRestaurantConfigs.map(config => config.restaurantId)).size !== normalizedRestaurantConfigs.length) {
+      return NextResponse.json({ error: '同一間餐廳不可重複加入。' }, { status: 400 });
     }
 
     const today = formatDate(new Date());
@@ -228,10 +336,25 @@ export async function POST(request) {
         }
       });
 
-      const restaurantChanged = existingSchedule
-        && existingSchedule.restaurantId
-        && normalizedRestaurantId
-        && existingSchedule.restaurantId !== normalizedRestaurantId;
+      const existingRestaurantSetting = await tx.siteSetting.findUnique({
+        where: { key: `${SCHEDULE_RESTAURANTS_KEY_PREFIX}${date}` }
+      });
+      let previousRestaurantConfigs = [];
+      try {
+        previousRestaurantConfigs = existingRestaurantSetting?.value
+          ? JSON.parse(existingRestaurantSetting.value)
+          : [];
+      } catch {
+        previousRestaurantConfigs = [];
+      }
+      if (previousRestaurantConfigs.length === 0 && existingSchedule?.restaurantId) {
+        previousRestaurantConfigs = [{ restaurantId: existingSchedule.restaurantId }];
+      }
+      const changedRestaurantIds = previousRestaurantConfigs
+        .filter((config, index) => config?.restaurantId && normalizedRestaurantConfigs[index]?.restaurantId !== config.restaurantId)
+        .map(config => config.restaurantId);
+      const requestedClearIds = new Set(Array.isArray(clearRestaurantIds) ? clearRestaurantIds : []);
+      const restaurantChanged = changedRestaurantIds.length > 0;
       const hasActiveOrders = (existingSchedule?.orders?.length || 0) > 0;
 
       if (restaurantChanged && hasActiveOrders && !clearOrdersOnRestaurantChange) {
@@ -239,15 +362,29 @@ export async function POST(request) {
       }
 
       if (restaurantChanged && hasActiveOrders && clearOrdersOnRestaurantChange) {
-        await tx.order.updateMany({
-          where: {
-            scheduleId: existingSchedule.id,
-            status: { not: 'cancelled' }
-          },
-          data: {
-            status: 'cancelled'
-          }
+        const restaurantIdsToClear = changedRestaurantIds.filter(id => requestedClearIds.has(id));
+        if (restaurantIdsToClear.length !== changedRestaurantIds.length) {
+          throw new Error('Restaurant change requires clearing existing orders');
+        }
+
+        const affectedOrders = await tx.order.findMany({
+          where: { scheduleId: existingSchedule.id, status: { not: 'cancelled' } },
+          include: { orderItems: { include: { menuItem: { select: { restaurantId: true } } } } }
         });
+
+        for (const order of affectedOrders) {
+          const itemsToRemove = order.orderItems.filter(item => restaurantIdsToClear.includes(item.menuItem.restaurantId));
+          if (itemsToRemove.length === 0) continue;
+
+          await tx.orderItem.deleteMany({ where: { id: { in: itemsToRemove.map(item => item.id) } } });
+          const remainingItems = order.orderItems.filter(item => !restaurantIdsToClear.includes(item.menuItem.restaurantId));
+          if (remainingItems.length === 0) {
+            await tx.order.update({ where: { id: order.id }, data: { status: 'cancelled', totalAmount: 0 } });
+          } else {
+            const totalAmount = remainingItems.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0);
+            await tx.order.update({ where: { id: order.id }, data: { totalAmount } });
+          }
+        }
       }
 
       const savedSchedule = await tx.weeklySchedule.upsert({
@@ -277,6 +414,24 @@ export async function POST(request) {
           value: orderDeadlineDate || date
         }
       });
+      await tx.siteSetting.upsert({
+        where: { key: `${SCHEDULE_RESTAURANTS_KEY_PREFIX}${date}` },
+        update: { value: JSON.stringify(normalizedRestaurantConfigs) },
+        create: {
+          key: `${SCHEDULE_RESTAURANTS_KEY_PREFIX}${date}`,
+          value: JSON.stringify(normalizedRestaurantConfigs)
+        }
+      });
+      if (shouldUpdateDailyAnnouncement) {
+        await tx.siteSetting.upsert({
+          where: { key: `${SCHEDULE_ANNOUNCEMENT_KEY_PREFIX}${date}` },
+          update: { value: String(dailyAnnouncement || '') },
+          create: {
+            key: `${SCHEDULE_ANNOUNCEMENT_KEY_PREFIX}${date}`,
+            value: String(dailyAnnouncement || '')
+          }
+        });
+      }
 
       return savedSchedule;
     });

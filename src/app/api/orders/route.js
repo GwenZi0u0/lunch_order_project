@@ -1,9 +1,11 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/db';
 import { getCurrentUser } from '@/lib/auth';
+import { canReadAdminData } from '@/lib/adminPermissions';
 import { getPendingHoldAmount, MIN_AVAILABLE_BALANCE } from '@/lib/wallet';
 
 const DEADLINE_DATE_KEY_PREFIX = 'scheduleOrderDeadlineDate:';
+const SCHEDULE_RESTAURANTS_KEY_PREFIX = 'scheduleRestaurants:';
 
 // Helper to get current Taipei/system date and time info
 function getCurrentDateTime() {
@@ -161,7 +163,7 @@ export async function GET(request) {
       })));
     }
 
-    if (user.role === 'admin') {
+    if (canReadAdminData(user, ['schedule'])) {
       // Admins can fetch all orders for a schedule
       const query = {
         where: { status: { not: 'cancelled' } },
@@ -233,7 +235,6 @@ export async function POST(request) {
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
-
     const body = await request.json();
     const { scheduleId, items, note, seatArea, saveOrderPreference, targetUserId } = body; // items: [{ menuItemId, quantity, note }]
     const isAdminOverride = user.role === 'admin' && targetUserId;
@@ -267,6 +268,23 @@ export async function POST(request) {
       where: { key: `${DEADLINE_DATE_KEY_PREFIX}${schedule.date}` }
     });
     schedule.orderDeadlineDate = deadlineDateSetting?.value || schedule.date;
+    const restaurantConfigSetting = await prisma.siteSetting.findUnique({
+      where: { key: `${SCHEDULE_RESTAURANTS_KEY_PREFIX}${schedule.date}` }
+    });
+    let restaurantConfigs = [];
+    try {
+      const parsed = JSON.parse(restaurantConfigSetting?.value || '[]');
+      if (Array.isArray(parsed)) restaurantConfigs = parsed;
+    } catch {
+      restaurantConfigs = [];
+    }
+    if (restaurantConfigs.length === 0 && schedule.restaurantId) {
+      restaurantConfigs = [{
+        restaurantId: schedule.restaurantId,
+        orderDeadlineDate: schedule.orderDeadlineDate,
+        orderDeadline: schedule.orderDeadline
+      }];
+    }
 
     if (!schedule.isOpen || !schedule.restaurantId) {
       return NextResponse.json({ error: 'This date is marked as a holiday or has no restaurant scheduled' }, { status: 400 });
@@ -276,22 +294,42 @@ export async function POST(request) {
       return NextResponse.json({ error: 'This schedule has already been delivered and billed' }, { status: 400 });
     }
 
-    // Enforcement of deadline (09:40)
+    // Enforcement of deadline (09:40). Multi-restaurant deadlines are checked after resolving items.
     const currentDT = getCurrentDateTime();
-    if (!isAdminOverride && isScheduleClosed(schedule, currentDT)) {
+    if (!isAdminOverride && restaurantConfigs.length <= 1 && isScheduleClosed(schedule, currentDT)) {
       return NextResponse.json({
         error: `Ordering is closed. Deadline is ${schedule.orderDeadline}.`
       }, { status: 400 });
     }
 
     // Resolve menu items prices
-    const menuItemIds = items.map(i => i.menuItemId);
+    const menuItemIds = [...new Set(items.map(i => i.menuItemId))];
     const menuItems = await prisma.menuItem.findMany({
       where: { id: { in: menuItemIds } }
     });
 
-    if (menuItems.length !== items.length) {
+    if (menuItems.length !== menuItemIds.length) {
       return NextResponse.json({ error: 'Some menu items were not found' }, { status: 400 });
+    }
+    if (!isAdminOverride) {
+      const configuredRestaurantIds = new Set(restaurantConfigs.map(config => config.restaurantId));
+      const invalidMenuItem = menuItems.find(menuItem => !configuredRestaurantIds.has(menuItem.restaurantId));
+      if (invalidMenuItem) {
+        return NextResponse.json({ error: '餐點不屬於本日開放的餐廳。' }, { status: 400 });
+      }
+      const closedRestaurantConfig = restaurantConfigs.find(config => {
+        const hasItems = menuItems.some(menuItem => menuItem.restaurantId === config.restaurantId);
+        return hasItems && isScheduleClosed({
+          date: schedule.date,
+          orderDeadlineDate: config.orderDeadlineDate || schedule.date,
+          orderDeadline: config.orderDeadline || '09:40'
+        }, currentDT);
+      });
+      if (closedRestaurantConfig) {
+        return NextResponse.json({
+          error: `其中一間餐廳已截止訂購（${closedRestaurantConfig.orderDeadline || '09:40'}）。`
+        }, { status: 400 });
+      }
     }
 
     // Calculate total amount
@@ -415,7 +453,6 @@ export async function DELETE(request) {
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
-
     const { searchParams } = new URL(request.url);
     const orderId = searchParams.get('orderId');
 

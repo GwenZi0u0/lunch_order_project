@@ -1,13 +1,17 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 
-export default function Navbar({ user }) {
+export default function Navbar({ user, interactionDisabled = false }) {
   const router = useRouter();
   const pathname = usePathname();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const profileMenuRef = useRef(null);
+  const mobileMenuRef = useRef(null);
   const isAdmin = user?.role === 'admin';
+  const isViewer = user?.role === 'viewer';
   const isOrderingView = pathname?.startsWith('/portal');
   const logoHref = user
     ? isAdmin && !isOrderingView ? '/admin' : '/portal'
@@ -16,14 +20,57 @@ export default function Navbar({ user }) {
 
   useEffect(() => {
     setIsMenuOpen(false);
+    setIsProfileOpen(false);
   }, [pathname]);
 
+  useEffect(() => {
+    const handlePointerDown = event => {
+      if (profileMenuRef.current && !profileMenuRef.current.contains(event.target)) {
+        setIsProfileOpen(false);
+      }
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown);
+    return () => document.removeEventListener('pointerdown', handlePointerDown);
+  }, []);
+
+  useEffect(() => {
+    if (!isMenuOpen) return undefined;
+
+    document.body.classList.add('mobile-menu-open');
+
+    const preventBackgroundScroll = event => {
+      if (mobileMenuRef.current?.contains(event.target)) return;
+      event.preventDefault();
+    };
+    const preventBackgroundKeys = event => {
+      if (mobileMenuRef.current?.contains(event.target)) return;
+      if (['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' '].includes(event.key)) {
+        event.preventDefault();
+      }
+    };
+
+    document.addEventListener('wheel', preventBackgroundScroll, { passive: false });
+    document.addEventListener('touchmove', preventBackgroundScroll, { passive: false });
+    document.addEventListener('keydown', preventBackgroundKeys);
+
+    return () => {
+      document.body.classList.remove('mobile-menu-open');
+      document.removeEventListener('wheel', preventBackgroundScroll);
+      document.removeEventListener('touchmove', preventBackgroundScroll);
+      document.removeEventListener('keydown', preventBackgroundKeys);
+    };
+  }, [isMenuOpen]);
+
   const navigateTo = (href) => {
+    if (interactionDisabled) return;
     setIsMenuOpen(false);
+    setIsProfileOpen(false);
     router.push(href);
   };
 
   const handleLogout = async () => {
+    if (interactionDisabled) return;
     try {
       const res = await fetch('/api/auth', {
         method: 'POST',
@@ -32,6 +79,7 @@ export default function Navbar({ user }) {
       });
       if (res.ok) {
         setIsMenuOpen(false);
+        setIsProfileOpen(false);
         router.push('/login');
         router.refresh();
       }
@@ -40,18 +88,35 @@ export default function Navbar({ user }) {
     }
   };
 
-  const navItems = isAdmin && !isOrderingView
+  const adminNavItems = [
+        { label: '訂單公告', href: '/admin#order-stats-announcement', page: 'overview', icon: 'ti ti-clipboard-list' },
+        { label: '供餐排程', href: '/admin/schedule', page: 'schedule', icon: 'ti ti-calendar-event' },
+        { label: '訂餐統計', href: '/admin/order-stats', page: 'order-stats', icon: 'ti ti-chart-bar' },
+        { label: '餐廳管理', href: '/admin/restaurants', page: 'restaurants', icon: 'ti ti-tools-kitchen-2' },
+        { label: '儲值管理', href: '/admin/wallets', page: 'wallets', icon: 'ti ti-wallet' },
+        { label: '帳務軌跡', href: '/admin/accounting-audit', page: 'accounting-audit', icon: 'ti ti-file-invoice' },
+        { label: '人員管理', href: '/admin/users', page: 'users', icon: 'ti ti-users' },
+      ];
+
+  const orderingNavItems = [
+    { label: '訂購者首頁', href: '/portal', icon: 'ti ti-home' },
+    { label: '午餐訂購', href: '/portal/order', icon: 'ti ti-tools-kitchen-2' },
+    { label: '消費日誌', href: '/portal/history', icon: 'ti ti-history' },
+  ];
+
+  const navItems = isViewer
+    ? [...orderingNavItems, ...adminNavItems.filter(item => item.page === user?.viewerPage)]
+    : isAdmin && !isOrderingView
     ? [
         { label: '訂單公告', href: '/admin#order-stats-announcement', icon: 'ti ti-clipboard-list' },
         { label: '供餐排程', href: '/admin/schedule', icon: 'ti ti-calendar-event' },
+        { label: '訂餐統計', href: '/admin/order-stats', icon: 'ti ti-chart-bar' },
         { label: '餐廳管理', href: '/admin/restaurants', icon: 'ti ti-tools-kitchen-2' },
         { label: '儲值管理', href: '/admin/wallets', icon: 'ti ti-wallet' },
+        { label: '帳務軌跡', href: '/admin/accounting-audit', icon: 'ti ti-file-invoice' },
+        { label: '人員管理', href: '/admin/users', icon: 'ti ti-users' },
       ]
-    : [
-        { label: '訂購者首頁', href: '/portal', icon: 'ti ti-home' },
-        { label: '午餐訂購', href: '/portal/order', icon: 'ti ti-tools-kitchen-2' },
-        { label: '消費日誌', href: '/portal/history', icon: 'ti ti-history' },
-      ];
+    : orderingNavItems;
 
   const modeSwitch = isAdmin
     ? {
@@ -61,12 +126,16 @@ export default function Navbar({ user }) {
       }
     : null;
 
-  const roleLabel = isAdmin
+  const roleLabel = isViewer ? '訂購者 / 檢視者' : isAdmin
     ? isOrderingView ? '管理者 / 訂購者檢視' : '管理者'
     : '訂購者';
 
   return (
-    <header className="sticky top-0 z-50 bg-[#F9F8F5]/90 backdrop-blur-md border-b border-[#EAE8E4] px-4 sm:px-6 py-4 transition-all duration-300">
+    <header
+      inert={interactionDisabled ? '' : undefined}
+      aria-disabled={interactionDisabled || undefined}
+      className={`sticky top-0 z-50 bg-[#F9F8F5]/90 backdrop-blur-md border-b border-[#EAE8E4] px-4 sm:px-6 py-4 transition-all duration-300 ${interactionDisabled ? 'pointer-events-none select-none' : ''}`}
+    >
       <div className="flex justify-between items-center gap-3">
         <div className="flex items-center gap-6 min-w-0">
           <div
@@ -103,43 +172,57 @@ export default function Navbar({ user }) {
 
         {user ? (
           <div className="flex items-center gap-2 sm:gap-4">
-            {modeSwitch && (
+            <div ref={profileMenuRef} className="relative hidden md:block">
               <button
-                onClick={() => navigateTo(modeSwitch.href)}
-                className="hidden sm:flex items-center gap-1.5 text-xs font-bold border border-[#EAE8E4] px-3 py-2 bg-white rounded-full hover:border-[#EA5B3C] hover:text-[#EA5B3C] transition-all"
+                type="button"
+                onClick={() => setIsProfileOpen(current => !current)}
+                aria-label="開啟帳號選單"
+                aria-expanded={isProfileOpen}
+                className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full border border-[#EAE8E4] bg-white shadow-sm transition-all hover:border-[#EA5B3C] focus:outline-none focus:ring-2 focus:ring-[#EA5B3C]/25"
               >
-                <i className={modeSwitch.icon}></i>
-                {isOrderingView ? '管理者後台' : '訂購者介面'}
+                {user.avatarUrl ? (
+                  <img
+                    src={user.avatarUrl}
+                    alt={displayName}
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <span className="flex h-full w-full items-center justify-center bg-[#EA5B3C] text-sm font-bold text-white">
+                    {displayName.charAt(0)}
+                  </span>
+                )}
               </button>
-            )}
 
-            <div className="hidden sm:flex items-center gap-3 bg-white border border-[#EAE8E4] px-3 sm:px-4 py-1.5 rounded-full shadow-sm min-w-0">
-              {user.avatarUrl ? (
-                <img
-                  src={user.avatarUrl}
-                  alt={displayName}
-                  className="w-6 h-6 rounded-full object-cover border border-[#D6D1CA] shrink-0"
-                />
-              ) : (
-                <div className="w-6 h-6 rounded-full bg-[#EA5B3C] text-white flex items-center justify-center text-xs font-bold shrink-0">
-                  {displayName.charAt(0)}
+              {isProfileOpen && (
+                <div className="absolute right-0 top-full z-[70] mt-2 w-64 overflow-hidden rounded-xl border border-[#EAE8E4] bg-white shadow-[0_14px_36px_rgba(0,0,0,0.14)]">
+                  <div className="border-b border-[#EAE8E4] px-4 py-3">
+                    <div className="truncate text-sm font-bold text-[#333333]">{displayName}</div>
+                    <div className="mt-1 truncate text-xs text-[#888888]">{user.email}</div>
+                    <div className="mt-1 text-[10px] font-bold text-[#EA5B3C]">{roleLabel}</div>
+                  </div>
+                  <div className="p-2">
+                    {modeSwitch && (
+                      <button
+                        type="button"
+                        onClick={() => navigateTo(modeSwitch.href)}
+                        className="flex h-11 w-full items-center gap-3 rounded-lg px-3 text-sm font-bold text-[#555555] transition-all hover:bg-[#F9F8F5] hover:text-[#EA5B3C]"
+                      >
+                        <i className={`${modeSwitch.icon} text-lg`}></i>
+                        <span>{modeSwitch.label}</span>
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={handleLogout}
+                      className="flex h-11 w-full items-center gap-3 rounded-lg px-3 text-sm font-bold text-[#555555] transition-all hover:bg-red-50 hover:text-red-600"
+                    >
+                      <i className="ti ti-logout text-lg"></i>
+                      <span>登出</span>
+                    </button>
+                  </div>
                 </div>
               )}
-              <div className="flex flex-col text-left min-w-0">
-                <span className="text-xs font-bold text-[#333333] line-clamp-1 max-w-[120px]">{displayName}</span>
-                <span className="text-[10px] text-[#888888] font-bold uppercase tracking-wider">
-                  {roleLabel}
-                </span>
-              </div>
             </div>
-
-            <button
-              onClick={handleLogout}
-              title="登出"
-              className="hidden sm:flex w-9 h-9 items-center justify-center rounded-full border border-[#EAE8E4] text-[#888888] hover:text-[#EA5B3C] hover:border-[#EA5B3C] bg-white transition-all duration-200"
-            >
-              <i className="ti ti-logout text-lg"></i>
-            </button>
 
             <button
               type="button"
@@ -162,37 +245,40 @@ export default function Navbar({ user }) {
       </div>
 
       {user && isMenuOpen && (
-        <div className="md:hidden mt-4 rounded-xl border border-[#EAE8E4] bg-white shadow-[0_12px_30px_rgba(0,0,0,0.08)] overflow-hidden">
-          <div className="flex items-center gap-3 px-4 py-4 bg-[#F9F8F5] border-b border-[#EAE8E4]">
-            {user.avatarUrl ? (
-              <img
-                src={user.avatarUrl}
-                alt={displayName}
-                className="w-9 h-9 rounded-full object-cover border border-[#D6D1CA] shrink-0"
-              />
-            ) : (
-              <div className="w-9 h-9 rounded-full bg-[#EA5B3C] text-white flex items-center justify-center text-sm font-bold shrink-0">
-                {displayName.charAt(0)}
-              </div>
-            )}
-            <div className="min-w-0 flex-1">
-              <div className="text-sm font-bold text-[#333333] truncate">{displayName}</div>
-              <div className="text-[11px] text-[#888888] font-bold">{roleLabel}</div>
-            </div>
-            {modeSwitch && (
-              <button
-                type="button"
-                onClick={() => navigateTo(modeSwitch.href)}
-                title={modeSwitch.label}
-                aria-label={modeSwitch.label}
-                className="ml-auto w-10 h-10 rounded-full border border-[#EAE8E4] bg-white text-[#333333] hover:border-[#EA5B3C] hover:text-[#EA5B3C] transition-all flex items-center justify-center shrink-0"
-              >
-                <i className={`${modeSwitch.icon} text-xl`}></i>
-              </button>
-            )}
-          </div>
-
+        <div ref={mobileMenuRef} className="absolute left-4 right-4 top-full z-[60] mt-2 max-h-[calc(100vh-6rem)] overflow-y-auto overscroll-contain rounded-xl border border-[#EAE8E4] bg-white shadow-[0_18px_44px_rgba(0,0,0,0.16)] md:hidden">
           <nav className="p-2">
+            <div className="mb-2 border-b border-[#EAE8E4] px-3 py-3">
+              <div className="flex items-center gap-3">
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-sm font-bold text-[#333333]">{displayName}</div>
+                  <div className="mt-1 truncate text-xs text-[#888888]">{user.email}</div>
+                  <div className="mt-1 text-[10px] font-bold text-[#EA5B3C]">{roleLabel}</div>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  {modeSwitch && (
+                    <button
+                      type="button"
+                      onClick={() => navigateTo(modeSwitch.href)}
+                      title={modeSwitch.label}
+                      aria-label={modeSwitch.label}
+                      className="flex h-9 w-9 items-center justify-center rounded-full border border-[#EAE8E4] bg-white text-[#555555] transition-all hover:border-[#EA5B3C] hover:text-[#EA5B3C]"
+                    >
+                      <i className={`${modeSwitch.icon} text-lg`}></i>
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={handleLogout}
+                    title="登出"
+                    aria-label="登出"
+                    className="flex h-9 w-9 items-center justify-center rounded-full border border-[#EAE8E4] bg-white text-[#555555] transition-all hover:border-red-300 hover:bg-red-50 hover:text-red-600"
+                  >
+                    <i className="ti ti-logout text-lg"></i>
+                  </button>
+                </div>
+              </div>
+            </div>
+
             {navItems.map(item => (
               <button
                 key={item.href}
@@ -207,14 +293,6 @@ export default function Navbar({ user }) {
                 <span>{item.label}</span>
               </button>
             ))}
-
-            <button
-              onClick={handleLogout}
-              className="w-full h-11 px-3 rounded-lg flex items-center gap-3 text-sm font-bold text-[#888888] hover:bg-red-50 hover:text-red-600 transition-all"
-            >
-              <i className="ti ti-logout text-lg"></i>
-              <span>登出</span>
-            </button>
           </nav>
         </div>
       )}

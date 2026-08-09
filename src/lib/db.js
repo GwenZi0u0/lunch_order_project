@@ -1,23 +1,26 @@
 import { PrismaClient } from '@prisma/client';
 
 const getDatabaseUrl = () => {
-  const databaseUrl = process.env.POSTGRES_PRISMA_URL || process.env.DATABASE_URL;
-  if (!databaseUrl || !process.env.POSTGRES_PRISMA_URL) return databaseUrl;
+  const rawUrl = process.env.POSTGRES_PRISMA_URL || process.env.DATABASE_URL;
+  if (!rawUrl) return rawUrl;
 
-  const url = new URL(databaseUrl);
-  url.searchParams.set('pgbouncer', 'true');
-  url.searchParams.set('connection_limit', '1');
-  return url.toString();
+  try {
+    const url = new URL(rawUrl);
+    if (process.env.POSTGRES_PRISMA_URL) {
+      url.searchParams.set('pgbouncer', 'true');
+    }
+    url.searchParams.set('connection_limit', '1');
+    return url.toString();
+  } catch {
+    return rawUrl;
+  }
 };
 
 const prismaClientSingleton = () => {
-  return new PrismaClient({
-    datasources: {
-      db: {
-        url: getDatabaseUrl()
-      }
-    }
-  });
+  const databaseUrl = getDatabaseUrl();
+  return new PrismaClient(databaseUrl
+    ? { datasources: { db: { url: databaseUrl } } }
+    : undefined);
 };
 
 const globalForPrisma = global;

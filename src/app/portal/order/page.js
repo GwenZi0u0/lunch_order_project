@@ -3,7 +3,6 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Navbar from '@/components/Navbar';
-import { getViewerPage } from '@/lib/adminPermissions';
 
 const DEFAULT_CUSTOMIZATION_OPTIONS = ['\u98ef\u5c11', '\u63db\u83dc', '\u63db\u83dc+$20'];
 const MIN_AVAILABLE_BALANCE = -200;
@@ -218,10 +217,6 @@ export default function PortalPage() {
       })
       .then(data => {
         if (data) {
-          if (data.user?.role === 'viewer') {
-            router.replace(getViewerPage(data.user.viewerPage)?.href || '/login');
-            return;
-          }
           setUser(data.user);
         }
       })

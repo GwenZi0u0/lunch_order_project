@@ -235,10 +235,6 @@ export async function POST(request) {
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
-    if (user.role === 'viewer') {
-      return NextResponse.json({ error: 'Viewer access is read-only' }, { status: 403 });
-    }
-
     const body = await request.json();
     const { scheduleId, items, note, seatArea, saveOrderPreference, targetUserId } = body; // items: [{ menuItemId, quantity, note }]
     const isAdminOverride = user.role === 'admin' && targetUserId;
@@ -457,10 +453,6 @@ export async function DELETE(request) {
     if (!user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
-    if (user.role === 'viewer') {
-      return NextResponse.json({ error: 'Viewer access is read-only' }, { status: 403 });
-    }
-
     const { searchParams } = new URL(request.url);
     const orderId = searchParams.get('orderId');
 

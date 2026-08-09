@@ -3,7 +3,6 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Navbar from '@/components/Navbar';
-import { getViewerPage } from '@/lib/adminPermissions';
 
 function formatDate(date) {
   const d = new Date(date);
@@ -117,10 +116,6 @@ export default function PortalPage() {
       })
       .then(data => {
         if (data) {
-          if (data.user?.role === 'viewer') {
-            router.replace(getViewerPage(data.user.viewerPage)?.href || '/login');
-            return;
-          }
           setUser(data.user);
         }
       })

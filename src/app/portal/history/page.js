@@ -3,7 +3,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Navbar from '@/components/Navbar';
-import { getViewerPage } from '@/lib/adminPermissions';
 
 const WEEKDAY_LABELS = ['日', '一', '二', '三', '四', '五', '六'];
 
@@ -106,10 +105,6 @@ export default function HistoryPage() {
       })
       .then(data => {
         if (data) {
-          if (data.user?.role === 'viewer') {
-            router.replace(getViewerPage(data.user.viewerPage)?.href || '/login');
-            return;
-          }
           setUser(data.user);
           fetchTransactions();
         }

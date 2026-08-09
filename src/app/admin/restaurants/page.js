@@ -132,6 +132,7 @@ export default function RestaurantsPage() {
   const [statusMsg, setStatusMsg] = useState({ text: '', type: '' });
   const [isSaving, setIsSaving] = useState(false);
   const [jsonDialogOpen, setJsonDialogOpen] = useState(false);
+  const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [jsonInput, setJsonInput] = useState('');
   const [editingRestaurantId, setEditingRestaurantId] = useState('');
   const [viewingRestaurantId, setViewingRestaurantId] = useState('');
@@ -256,7 +257,6 @@ export default function RestaurantsPage() {
     try {
       const exampleText = JSON.stringify(MENU_JSON_EXAMPLE, null, 2);
       await navigator.clipboard.writeText(exampleText);
-      setJsonInput(exampleText);
       setStatusMsg({ text: '已複製 JSON 範例。', type: 'success' });
     } catch (err) {
       setStatusMsg({ text: '複製失敗，請確認瀏覽器剪貼簿權限。', type: 'error' });
@@ -419,6 +419,7 @@ export default function RestaurantsPage() {
     }));
 
     setEditingRestaurantId(restaurant.id);
+    setIsEditorOpen(true);
     setViewingRestaurantId('');
     setNewRestName(restaurant.name || '');
     setNewRestPhone(restaurant.phone || '');
@@ -448,6 +449,7 @@ export default function RestaurantsPage() {
     if (editingRestaurantId) return;
     if (viewingRestaurantId === restaurant.id) {
       resetRestaurantForm();
+      setIsEditorOpen(false);
       setStatusMsg({ text: '', type: '' });
       return;
     }
@@ -466,6 +468,7 @@ export default function RestaurantsPage() {
     ].filter((category, index, categories) => category && categories.indexOf(category) === index);
 
     setViewingRestaurantId(restaurant.id);
+    setIsEditorOpen(true);
     setNewRestName(restaurant.name || '');
     setNewRestPhone(restaurant.phone || '');
     setNewRestNote(restaurant.note || '');
@@ -577,7 +580,14 @@ export default function RestaurantsPage() {
   const handleCancelEdit = () => {
     if (hasEditChanges && !window.confirm('資料有變更，確認要取消嗎？')) return;
     resetRestaurantForm();
+    setIsEditorOpen(false);
     setStatusMsg({ text: '', type: '' });
+  };
+
+  const handleOpenNewRestaurant = () => {
+    resetRestaurantForm();
+    setStatusMsg({ text: '', type: '' });
+    setIsEditorOpen(true);
   };
 
   const handleDeleteRestaurant = async () => {
@@ -598,6 +608,7 @@ export default function RestaurantsPage() {
 
       if (editingRestaurantId === restaurant.id) {
         resetRestaurantForm();
+        setIsEditorOpen(false);
       }
 
       setStatusMsg({ text: '餐廳已刪除。', type: 'success' });
@@ -647,6 +658,7 @@ export default function RestaurantsPage() {
       setStatusMsg({ text: editingRestaurantId ? '餐廳與菜單已成功更新！' : '餐廳與菜單已成功儲存入庫！', type: 'success' });
       fetchRestaurants();
       resetRestaurantForm();
+      setIsEditorOpen(false);
     } catch (err) {
       setStatusMsg({ text: err.message, type: 'error' });
     } finally {
@@ -684,14 +696,25 @@ export default function RestaurantsPage() {
           </button>
         </div>
 
-        <section className="grid grid-cols-1 gap-8 lg:grid-cols-[240px_minmax(0,1fr)] lg:gap-6">
+        <section className="grid grid-cols-1 gap-8 md:grid-cols-[280px_minmax(0,1fr)] md:gap-6">
           
           {/* Active Restaurants List (Col-span 1) */}
           <div className="space-y-6">
             <div className="bg-white border border-[#EAE8E4] rounded-xl shadow-sm p-6 space-y-4 lg:p-4 lg:space-y-3">
               <h3 className="font-bold text-sm text-[#333333] border-b border-[#EAE8E4] pb-3 flex justify-between items-center">
                 <span>現有餐廳列表</span>
-                <span className="text-xs font-bold text-[#888888]">共 {restaurants.length} 家</span>
+                <span className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-[#888888]">共 {restaurants.length} 家</span>
+                  <button
+                    type="button"
+                    onClick={handleOpenNewRestaurant}
+                    aria-label="新增餐廳與菜單"
+                    title="新增餐廳與菜單"
+                    className="flex h-8 w-8 items-center justify-center rounded-full bg-[#EA5B3C] text-white shadow-sm transition-all hover:bg-[#333333]"
+                  >
+                    <i className="ti ti-plus text-lg"></i>
+                  </button>
+                </span>
               </h3>
 
               <div className="space-y-3 max-h-[550px] overflow-y-auto pr-1">
@@ -702,7 +725,7 @@ export default function RestaurantsPage() {
                     <div 
                       key={rest.id} 
                       onClick={() => handleToggleRestaurantPreview(rest)}
-                      className={`cursor-pointer space-y-2 rounded-xl border p-4 transition-all lg:p-3 ${
+                      className={`cursor-pointer space-y-2 rounded-lg border p-4 transition-all lg:p-3 ${
                         viewingRestaurantId === rest.id
                           ? 'border-[#EA5B3C] bg-[#FFF3EF] shadow-sm'
                           : 'border-[#EAE8E4] bg-[#F9F8F5] hover:border-[#EA5B3C]'
@@ -753,7 +776,8 @@ export default function RestaurantsPage() {
           </div>
 
           {/* JSON Import and Add Menu Panel (Col-span 2) */}
-          <div className="space-y-6">
+          {isEditorOpen ? (
+          <div className="fixed inset-0 z-[80] overflow-y-auto bg-black/40 p-4 md:static md:z-auto md:overflow-visible md:bg-transparent md:p-0">
             <div className="c-box space-y-6">
               <h3 className="font-bold text-base text-[#333333] border-b border-[#EAE8E4] pb-3 flex items-center justify-between">
                 <span className="flex items-center gap-2">
@@ -777,27 +801,8 @@ export default function RestaurantsPage() {
                     <i className="ti ti-file-import"></i>
                     <span className="hidden sm:inline">{ocrLoading ? '載入中...' : 'JSON 檔'}</span>
                   </button>
-                  <button
-                    type="button"
-                    onClick={handleCopyJsonExample}
-                    className="h-9 w-9 rounded-lg border border-[#EAE8E4] bg-white text-xs font-bold text-[#333333] transition-all flex items-center justify-center hover:border-[#EA5B3C] hover:text-[#EA5B3C] sm:w-auto sm:px-4 sm:py-2 sm:gap-1.5"
-                    title="複製範例"
-                    aria-label="複製範例"
-                  >
-                    <i className="ti ti-copy"></i>
-                    <span className="hidden sm:inline">複製範例</span>
-                  </button>
                   {editingRestaurantId && (
                     <>
-                      <button
-                        type="button"
-                        onClick={handleCancelEdit}
-                        title="取消編輯"
-                        aria-label="取消編輯"
-                        className="w-9 h-9 rounded-lg border border-[#EAE8E4] bg-white text-[#888888] hover:text-red-600 hover:border-red-200 hover:bg-red-50 transition-all flex items-center justify-center"
-                      >
-                        <i className="ti ti-x text-lg"></i>
-                      </button>
                       <button
                         type="button"
                         disabled={isSaving || !newRestName || menuItems.length === 0 || !hasEditChanges}
@@ -810,6 +815,15 @@ export default function RestaurantsPage() {
                       </button>
                     </>
                   )}
+                  <button
+                    type="button"
+                    onClick={handleCancelEdit}
+                    title="關閉視窗"
+                    aria-label="關閉餐廳編輯視窗"
+                    className="h-9 w-9 rounded-lg border border-[#EAE8E4] bg-white text-[#888888] transition-all flex items-center justify-center hover:border-red-200 hover:bg-red-50 hover:text-red-600"
+                  >
+                    <i className="ti ti-x text-lg"></i>
+                  </button>
                 </div>
               </h3>
 
@@ -1177,6 +1191,19 @@ export default function RestaurantsPage() {
 
             </div>
           </div>
+          ) : (
+            <div className="hidden min-h-[420px] items-center justify-center rounded-xl border border-dashed border-[#D6D1CA] bg-white/60 px-8 text-center md:flex">
+              <div className="max-w-sm space-y-3">
+                <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-[#FFF3EF] text-[#EA5B3C]">
+                  <i className="ti ti-building-store text-2xl"></i>
+                </div>
+                <h3 className="text-base font-bold text-[#333333]">餐廳與菜單編輯區</h3>
+                <p className="text-xs font-bold leading-6 text-[#888888]">
+                  請從左側選擇餐廳進行檢視或編輯，或點擊列表右上方的＋新增餐廳與菜單。
+                </p>
+              </div>
+            </div>
+          )}
 
         </section>
 
@@ -1283,10 +1310,21 @@ export default function RestaurantsPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
           <div className="w-full max-w-[680px] rounded-xl bg-white shadow-2xl border border-[#EAE8E4] overflow-hidden">
             <div className="flex items-center justify-between px-6 py-4 border-b border-[#EAE8E4]">
-              <h3 className="font-bold text-base text-[#333333] flex items-center gap-2">
-                <i className="ti ti-file-import text-[#EA5B3C]"></i>
-                編輯 JSON
-              </h3>
+              <div className="flex items-center gap-2">
+                <h3 className="font-bold text-base text-[#333333] flex items-center gap-2">
+                  <i className="ti ti-file-import text-[#EA5B3C]"></i>
+                  編輯 JSON
+                </h3>
+                <button
+                  type="button"
+                  onClick={handleCopyJsonExample}
+                  title="複製範例"
+                  aria-label="複製範例"
+                  className="flex h-6 w-6 items-center justify-center rounded-full border border-[#EAE8E4] bg-white text-[11px] text-[#333333] transition-all hover:border-[#EA5B3C] hover:text-[#EA5B3C]"
+                >
+                  <i className="ti ti-copy"></i>
+                </button>
+              </div>
               <button
                 type="button"
                 onClick={() => setJsonDialogOpen(false)}
@@ -1305,7 +1343,8 @@ export default function RestaurantsPage() {
                 spellCheck={false}
               />
 
-              <div className="flex items-center justify-end gap-2">
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <div className="flex items-center gap-2">
                   <button
                     type="button"
                     onClick={() => setJsonDialogOpen(false)}
@@ -1322,6 +1361,7 @@ export default function RestaurantsPage() {
                     <i className="ti ti-check"></i>
                     儲存並匯入
                   </button>
+                </div>
               </div>
             </div>
           </div>

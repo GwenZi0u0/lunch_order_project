@@ -48,6 +48,7 @@ function getDateLabel(startDate, endDate) {
 export default function WalletsManagementPage() {
   const router = useRouter();
   const [user, setUser] = useState(null);
+  const isReadOnly = user?.role === 'viewer';
   const [users, setUsers] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [showDebtorsOnly, setShowDebtorsOnly] = useState(false);
@@ -216,7 +217,7 @@ export default function WalletsManagementPage() {
 
   const handleDepositSubmit = async (e) => {
     e.preventDefault();
-    if (!selectedUser) return;
+    if (!selectedUser || isReadOnly) return;
 
     const finalAmount = customAmount ? parseInt(customAmount, 10) : depositAmount;
     if (!finalAmount || finalAmount <= 0) {
@@ -284,6 +285,7 @@ export default function WalletsManagementPage() {
   });
 
   const openWalletAction = (targetUser, mode) => {
+    if (isReadOnly) return;
     setSelectedUser(targetUser);
     setWalletMode(mode);
     setDepositAmount(mode === 'topup' ? 500 : 100);
@@ -479,6 +481,7 @@ export default function WalletsManagementPage() {
           </div>
         )}
 
+        {!isReadOnly && (
         <section aria-label="全站錢包餘額統計" className="grid grid-cols-2 gap-3 sm:gap-4">
           <div className="rounded-2xl border border-green-200 bg-green-50 px-4 py-5 sm:px-6">
             <div className="flex items-center gap-2 text-xs font-bold text-green-700">
@@ -506,6 +509,7 @@ export default function WalletsManagementPage() {
             </div>
           </div>
         </section>
+        )}
 
         <section className="grid grid-cols-1 lg:grid-cols-4 gap-4">
           
@@ -630,11 +634,12 @@ export default function WalletsManagementPage() {
                           <div className="flex items-center gap-2">
                             <button
                               type="button"
+                              disabled={isReadOnly}
                               onClick={(e) => {
                                 e.stopPropagation();
                                 openWalletAction(u, 'topup');
                               }}
-                              className="inline-flex h-[30px] w-[30px] items-center justify-center rounded-lg border border-[#EAE8E4] bg-white text-[#333333] transition-all hover:border-[#EA5B3C] hover:text-[#EA5B3C]"
+                              className="inline-flex h-[30px] w-[30px] items-center justify-center rounded-lg border border-[#EAE8E4] bg-white text-[#333333] transition-all hover:border-[#EA5B3C] hover:text-[#EA5B3C] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-[#EAE8E4] disabled:hover:text-[#333333]"
                               title="儲值"
                               aria-label={`為 ${displayName} 儲值`}
                             >
@@ -642,11 +647,12 @@ export default function WalletsManagementPage() {
                             </button>
                             <button
                               type="button"
+                              disabled={isReadOnly}
                               onClick={(e) => {
                                 e.stopPropagation();
                                 openWalletAction(u, 'adjustment');
                               }}
-                              className="inline-flex h-[30px] w-[30px] items-center justify-center rounded-lg border border-[#EAE8E4] bg-white text-[#333333] transition-all hover:border-[#EA5B3C] hover:text-[#EA5B3C]"
+                              className="inline-flex h-[30px] w-[30px] items-center justify-center rounded-lg border border-[#EAE8E4] bg-white text-[#333333] transition-all hover:border-[#EA5B3C] hover:text-[#EA5B3C] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-[#EAE8E4] disabled:hover:text-[#333333]"
                               title="異動"
                               aria-label={`為 ${displayName} 異動`}
                             >
@@ -740,25 +746,27 @@ export default function WalletsManagementPage() {
                               <div className="flex items-center justify-center gap-1.5">
                                 <button
                                   type="button"
+                                  disabled={isReadOnly}
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     openWalletAction(u, 'topup');
                                   }}
                                   title="儲值"
                                   aria-label={`為 ${displayName} 儲值`}
-                                  className="h-8 w-8 sm:h-auto sm:w-auto text-[10px] font-bold border border-[#EAE8E4] px-0 sm:px-2.5 py-1 rounded bg-white hover:border-[#EA5B3C] hover:text-[#EA5B3C] transition-all inline-flex items-center justify-center"
+                                  className="h-8 w-8 sm:h-auto sm:w-auto text-[10px] font-bold border border-[#EAE8E4] px-0 sm:px-2.5 py-1 rounded bg-white hover:border-[#EA5B3C] hover:text-[#EA5B3C] transition-all inline-flex items-center justify-center disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-[#EAE8E4] disabled:hover:text-inherit"
                                 >
                                   <i className="ti ti-plus sm:mr-0.5"></i><span className="hidden sm:inline">儲值</span>
                                 </button>
                                 <button
                                   type="button"
+                                  disabled={isReadOnly}
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     openWalletAction(u, 'adjustment');
                                   }}
                                   title="異動"
                                   aria-label={`為 ${displayName} 異動`}
-                                  className="h-8 w-8 sm:h-auto sm:w-auto text-[10px] font-bold border border-[#EAE8E4] px-0 sm:px-2.5 py-1 rounded bg-white hover:border-[#EA5B3C] hover:text-[#EA5B3C] transition-all inline-flex items-center justify-center"
+                                  className="h-8 w-8 sm:h-auto sm:w-auto text-[10px] font-bold border border-[#EAE8E4] px-0 sm:px-2.5 py-1 rounded bg-white hover:border-[#EA5B3C] hover:text-[#EA5B3C] transition-all inline-flex items-center justify-center disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-[#EAE8E4] disabled:hover:text-inherit"
                                 >
                                   <i className="ti ti-adjustments-dollar sm:mr-0.5"></i><span className="hidden sm:inline">異動</span>
                                 </button>

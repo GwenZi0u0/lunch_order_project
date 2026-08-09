@@ -82,8 +82,10 @@ export async function POST(request) {
         where: { email },
         update: {
           name,
-          role,
           avatarUrl,
+          // Keep roles assigned from the user-management page when a demo user
+          // signs in again. Otherwise a viewer is silently reset to `user`.
+          ...(role === 'admin' ? { role: 'admin' } : {}),
         },
         create: {
           email,

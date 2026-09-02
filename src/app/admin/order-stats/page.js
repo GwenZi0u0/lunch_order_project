@@ -245,6 +245,9 @@ export default function AdminOrderStatsPage() {
             ) : restaurantGroups.map(group => {
               const collapsed = collapsedRestaurants[group.id] !== false;
               const sortedItems = [...group.items].sort((left, right) => {
+                const leftIsAlaCarte = left.category.includes('單點') || left.category.includes('加點');
+                const rightIsAlaCarte = right.category.includes('單點') || right.category.includes('加點');
+                if (leftIsAlaCarte !== rightIsAlaCarte) return leftIsAlaCarte ? 1 : -1;
                 const nameOrder = left.name.localeCompare(right.name, 'zh-Hant', { numeric: true });
                 if (nameOrder !== 0) return nameOrder;
                 return left.note.localeCompare(right.note, 'zh-Hant', { numeric: true });
@@ -259,7 +262,10 @@ export default function AdminOrderStatsPage() {
                 `共計${mealQuantity}份餐，單點${alaCarteQuantity}份`,
                 `共計$${group.amount}`
               ].join('\n');
-              const numberedText = sortedItems.map(item => `${item.name}${item.note ? ` ${item.note}` : ''} *${item.qty} [編號:${[...item.orderNumbers].sort().join('、')}]`).join('\n');
+              const numberedItemText = sortedItems
+                .map(item => `${item.name}${item.note ? ` ${item.note}` : ''} *${item.qty} [編號:${[...item.orderNumbers].sort().join('、')}]`)
+                .join('\n');
+              const numberedText = `${numberedItemText}\n\n共計${mealQuantity}份餐，單點${alaCarteQuantity}份\n共計$${group.amount}`;
               return (
                 <section key={group.id} className="overflow-hidden rounded-md border border-[#EAE8E4] bg-white">
                   <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#EAE8E4] bg-[#F9F8F5] p-4">

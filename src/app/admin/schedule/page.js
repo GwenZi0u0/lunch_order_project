@@ -218,7 +218,10 @@ export default function AdminDashboard() {
   const [isSchedulePanelExpanded, setIsSchedulePanelExpanded] = useState(true);
   const [isStatisticsPanelExpanded, setIsStatisticsPanelExpanded] = useState(true);
   const [collapsedRestaurantStatistics, setCollapsedRestaurantStatistics] = useState({});
-  const [isNotificationPanelExpanded, setIsNotificationPanelExpanded] = useState(true);
+  const [isDailyAnnouncementExpanded, setIsDailyAnnouncementExpanded] = useState(false);
+  const [isNotificationPanelExpanded, setIsNotificationPanelExpanded] = useState(false);
+  const [isPortalPreviewOpen, setIsPortalPreviewOpen] = useState(false);
+  const [nextWeekMenuConfirmOpen, setNextWeekMenuConfirmOpen] = useState(false);
 
   useEffect(() => {
     // Check authentication and role
@@ -435,12 +438,7 @@ export default function AdminDashboard() {
 
   const handleToggleNextWeekMenu = async () => {
     const nextValue = !allowNextWeekMenu;
-    const confirmMessage = nextValue
-      ? '確認要開啟訂購者下週菜單閱覽嗎？'
-      : '確認要關閉訂購者下週菜單閱覽嗎？';
-
-    if (!window.confirm(confirmMessage)) return;
-
+    setNextWeekMenuConfirmOpen(false);
     setIsSavingOrderSettings(true);
     setOrderSettingsMessage('');
 
@@ -1183,7 +1181,6 @@ export default function AdminDashboard() {
                 <i className="ti ti-calendar-week text-2xl text-[#EA5B3C]"></i> 週菜單排程
               </h2>
             </div>
-            <p className="text-xs text-[#888888] font-bold">選擇管理日期後設定當日餐廳與訂餐截止時間。</p>
           </div>
 
           {/* Date Navigator Grid */}
@@ -1194,6 +1191,7 @@ export default function AdminDashboard() {
             </h3>
             
             {/* Week Tab Switcher */}
+            <div className="flex flex-wrap items-center gap-2">
             <div className="inline-flex bg-[#F9F8F5] border border-[#EAE8E4] p-1 rounded-xl">
               <button
                 onClick={() => handleWeekTabChange('previous')}
@@ -1218,6 +1216,21 @@ export default function AdminDashboard() {
                 }`}
               >
                 下週日程
+              </button>
+            </div>
+              <button
+                type="button"
+                onClick={() => setNextWeekMenuConfirmOpen(true)}
+                disabled={isSavingOrderSettings}
+                className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-2.5 text-xs font-bold transition-all disabled:cursor-not-allowed disabled:opacity-60 ${
+                  allowNextWeekMenu
+                    ? 'border-[#EA5B3C] bg-[#EA5B3C] text-white shadow-sm hover:bg-[#D94E31]'
+                    : 'border-[#D6D1CA] bg-[#EAE8E4] text-[#888888] hover:bg-[#DDD9D3]'
+                }`}
+                title="訂購者下週菜單查閱"
+              >
+                <i className={allowNextWeekMenu ? 'ti ti-toggle-right text-base' : 'ti ti-toggle-left text-base'}></i>
+                <span>{allowNextWeekMenu ? '下週開啟' : '下週關閉'}</span>
               </button>
             </div>
           </div>
@@ -1276,20 +1289,19 @@ export default function AdminDashboard() {
           {/* Scheduling Setup Panel (Col-span 1) */}
           <div className="space-y-6">
             <div className="bg-white border border-[#EAE8E4] rounded-xl shadow-sm p-6 space-y-6">
-              <div className="flex items-center justify-between gap-3 border-b border-[#EAE8E4] pb-3">
+              <div className="flex items-center justify-between gap-3 pb-3">
                 <h3 className="flex items-center gap-2 text-base font-bold text-[#333333]">
                   <i className="ti ti-settings text-lg text-[#EA5B3C]"></i> 供餐排程設定
                 </h3>
                 <div className="flex shrink-0 items-center gap-2">
-                  <a
-                    href={`/portal/order?week=${activeWeekTab}&date=${selectedDate}&preview=1`}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                  <button
+                    type="button"
+                    onClick={() => setIsPortalPreviewOpen(true)}
                     className="inline-flex items-center gap-1.5 rounded-lg border border-[#EAE8E4] bg-white px-3 py-2 text-xs font-bold text-[#555555] transition-all hover:border-[#EA5B3C] hover:text-[#EA5B3C]"
                   >
-                    <i className="ti ti-external-link text-base"></i>
+                    <i className="ti ti-device-desktop text-base"></i>
                     預覽前台
-                  </a>
+                  </button>
                   <button
                     type="button"
                     onClick={() => setIsSchedulePanelExpanded(expanded => !expanded)}
@@ -1313,32 +1325,6 @@ export default function AdminDashboard() {
                 }`}>
                   <i className={message.type === 'success' ? 'ti ti-discount-check' : 'ti ti-alert-circle'}></i>
                   {message.text}
-                </div>
-              )}
-
-              {activeWeekTab === 'current' && (
-                <div className="space-y-2 border-b border-[#EAE8E4] pb-4">
-                  <button
-                    type="button"
-                    onClick={handleToggleNextWeekMenu}
-                    disabled={isSavingOrderSettings}
-                    className={`w-full flex items-center justify-between px-3 py-3 rounded-lg border text-xs font-bold transition-all disabled:opacity-60 disabled:cursor-not-allowed ${
-                      allowNextWeekMenu
-                        ? 'border-[#EA5B3C] bg-[#FFF3EF] text-[#EA5B3C]'
-                        : 'border-[#EAE8E4] bg-white text-[#333333] hover:border-[#D6D1CA]'
-                    }`}
-                  >
-                    <span className="flex items-center gap-2">
-                      <i className={allowNextWeekMenu ? 'ti ti-toggle-right text-lg' : 'ti ti-toggle-left text-lg'}></i>
-                      訂購者下週菜單查閱
-                    </span>
-                    <span className="text-[10px] text-[#888888]">
-                      {allowNextWeekMenu ? '已開放' : '已關閉'}
-                    </span>
-                  </button>
-                  {orderSettingsMessage && (
-                    <p className="text-[11px] font-bold text-[#888888]">{orderSettingsMessage}</p>
-                  )}
                 </div>
               )}
 
@@ -1509,14 +1495,26 @@ export default function AdminDashboard() {
             </div>
 
             <div className="rounded-xl border border-[#EAE8E4] bg-white p-6 shadow-sm">
-              <div className="mb-5 border-b border-[#EAE8E4] pb-3">
-                <h3 className="flex items-center gap-2 text-base font-bold text-[#333333]">
-                  <i className="ti ti-speakerphone text-lg text-[#EA5B3C]"></i>
-                  當日餐廳公告
-                </h3>
-                <p className="mt-1 text-[10px] text-[#AAA39A]">供餐日期：{selectedDate}・支援 Markdown 標題、粗體、項目符號與編號清單。</p>
+              <div className={`flex items-start justify-between gap-3 ${isDailyAnnouncementExpanded ? 'mb-5 border-b border-[#EAE8E4] pb-3' : ''}`}>
+                <div>
+                  <h3 className="flex items-center gap-2 text-base font-bold text-[#333333]">
+                    <i className="ti ti-speakerphone text-lg text-[#EA5B3C]"></i>
+                    當日餐廳公告
+                  </h3>
+                  <p className="mt-1 text-[10px] text-[#AAA39A]">供餐日期：{selectedDate}・支援 Markdown 標題、粗體、項目符號與編號清單。</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsDailyAnnouncementExpanded(expanded => !expanded)}
+                  aria-expanded={isDailyAnnouncementExpanded}
+                  aria-label={isDailyAnnouncementExpanded ? '收合當日餐廳公告' : '展開當日餐廳公告'}
+                  title={isDailyAnnouncementExpanded ? '收合' : '展開'}
+                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#EAE8E4] bg-white text-[#888888] transition-all hover:border-[#EA5B3C] hover:text-[#EA5B3C]"
+                >
+                  <i className={`ti ${isDailyAnnouncementExpanded ? 'ti-chevron-up' : 'ti-chevron-down'} text-base`}></i>
+                </button>
               </div>
-              <div className="space-y-3">
+              {isDailyAnnouncementExpanded && <div className="space-y-3">
                 <textarea
                   id="daily-schedule-announcement"
                   value={dailyAnnouncement}
@@ -1541,7 +1539,7 @@ export default function AdminDashboard() {
                 >
                   {savingScheduleSection === 'announcement' ? '儲存中...' : '儲存餐廳公告'}
                 </button>
-              </div>
+              </div>}
             </div>
 
             <div className="rounded-xl border border-[#EAE8E4] bg-white p-6 shadow-sm">
@@ -1949,6 +1947,39 @@ export default function AdminDashboard() {
 
         </section>
         </section>
+
+        {nextWeekMenuConfirmOpen && (
+          <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 px-4">
+            <div role="alertdialog" aria-modal="true" aria-labelledby="next-week-menu-confirm-title" className="w-full max-w-md overflow-hidden rounded-2xl border border-[#EAE8E4] bg-white shadow-2xl">
+              <div className="border-b border-[#EAE8E4] px-6 py-4">
+                <h3 id="next-week-menu-confirm-title" className="flex items-center gap-2 text-base font-bold text-[#333333]"><i className="ti ti-alert-circle text-[#EA5B3C]"></i>{allowNextWeekMenu ? '關閉下週菜單查閱？' : '開啟下週菜單查閱？'}</h3>
+              </div>
+              <div className="space-y-5 p-6">
+                <p className="text-sm leading-7 text-[#666666]">{allowNextWeekMenu ? '關閉後，訂購者將無法查看下週菜單。' : '開啟後，訂購者即可查看下週菜單。'}</p>
+                <div className="flex justify-end gap-2">
+                  <button type="button" onClick={() => setNextWeekMenuConfirmOpen(false)} disabled={isSavingOrderSettings} className="rounded-lg border border-[#EAE8E4] bg-white px-4 py-2.5 text-xs font-bold text-[#333333] disabled:opacity-50">取消</button>
+                  <button type="button" onClick={handleToggleNextWeekMenu} disabled={isSavingOrderSettings} className="rounded-lg bg-[#EA5B3C] px-4 py-2.5 text-xs font-bold text-white hover:bg-[#333333] disabled:opacity-60">{isSavingOrderSettings ? '儲存中...' : '確認'}</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {isPortalPreviewOpen && (
+          <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-3 sm:p-6">
+            <div role="dialog" aria-modal="true" aria-labelledby="portal-preview-title" className="flex h-[90vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-[#EAE8E4] bg-white shadow-2xl">
+              <div className="flex items-center justify-between gap-3 border-b border-[#EAE8E4] px-4 py-3 sm:px-5">
+                <h3 id="portal-preview-title" className="flex items-center gap-2 text-sm font-bold text-[#333333]"><i className="ti ti-device-desktop text-[#EA5B3C]"></i>前台預覽</h3>
+                <button type="button" onClick={() => setIsPortalPreviewOpen(false)} className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#EAE8E4] bg-white text-[#888888] hover:border-[#EA5B3C] hover:text-[#EA5B3C]" aria-label="關閉前台預覽" title="關閉"><i className="ti ti-x"></i></button>
+              </div>
+              <iframe
+                src={`/portal/order?week=${activeWeekTab}&date=${selectedDate}&preview=1`}
+                title="訂購者前台預覽"
+                className="min-h-0 flex-1 bg-[#F9F8F5]"
+              />
+            </div>
+          </div>
+        )}
 
         {selectedOrderDetail && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 md:hidden">

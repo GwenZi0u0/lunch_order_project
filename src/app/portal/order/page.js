@@ -794,7 +794,7 @@ export default function PortalPage() {
 
   return (
     <>
-      <Navbar user={user} interactionDisabled={isPreviewMode} />
+      {!isPreviewMode && <Navbar user={user} />}
 
       <main className="flex-1 max-w-[1200px] w-full mx-auto px-6 py-10 space-y-10">
         {isPreviewMode && (

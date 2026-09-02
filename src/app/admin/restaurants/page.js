@@ -5,17 +5,24 @@ import { useRouter } from 'next/navigation';
 import Navbar from '@/components/Navbar';
 import { canAccessAdminPage } from '@/lib/adminPermissions';
 import LinkifiedText from '@/components/LinkifiedText';
+import JsonExamplesManager from '@/components/JsonExamplesManager';
 
 const DEFAULT_CUSTOMIZATION_OPTIONS = ['\u98ef\u5c11', '\u63db\u83dc', '\u63db\u83dc+$20'];
 
-const MENU_JSON_EXAMPLE = {
-  "餐廳": "好食肌",
-  "品項列表": [
-    { "類型": "餐盒", "品項": "香煎鮭魚餐盒", "價格": 160, "客製化選項": ["飯少", "換菜", "換菜+$20"] },
-    { "類型": "餐盒", "品項": "板腱牛排餐盒", "價格": 160, "客製化選項": ["飯少", "換菜", "換菜+$20"] },
-    { "類型": "餐盒", "品項": "低溫烹調嫩雞肉餐盒", "價格": 120, "客製化選項": ["飯少", "換菜", "換菜+$20"] }
-  ]
-};
+function fuzzyMatch(value, query) {
+  const normalize = text => String(text || '').toLowerCase().replace(/[\s\-()]/g, '');
+  const candidate = normalize(value);
+  const target = normalize(query);
+  if (!target) return true;
+  if (candidate.includes(target)) return true;
+
+  let targetIndex = 0;
+  for (const character of candidate) {
+    if (character === target[targetIndex]) targetIndex += 1;
+    if (targetIndex === target.length) return true;
+  }
+  return false;
+}
 
 function normalizeCustomizationOptions(value) {
   if (Array.isArray(value)) {
@@ -127,11 +134,17 @@ export default function RestaurantsPage() {
     scrollLeft: 0,
     pointerId: null
   });
+  const jsonDialogMessageTimerRef = useRef(null);
   
   // UI states
   const [statusMsg, setStatusMsg] = useState({ text: '', type: '' });
   const [isSaving, setIsSaving] = useState(false);
   const [jsonDialogOpen, setJsonDialogOpen] = useState(false);
+  const [jsonExamples, setJsonExamples] = useState([]);
+  const [selectedJsonExampleId, setSelectedJsonExampleId] = useState('');
+  const [jsonExampleMenuOpen, setJsonExampleMenuOpen] = useState(false);
+  const [quickPreviewExample, setQuickPreviewExample] = useState(null);
+  const [jsonDialogMessage, setJsonDialogMessage] = useState('');
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [jsonInput, setJsonInput] = useState('');
   const [editingRestaurantId, setEditingRestaurantId] = useState('');
@@ -142,6 +155,7 @@ export default function RestaurantsPage() {
   const [discardMenuItemDialogOpen, setDiscardMenuItemDialogOpen] = useState(false);
   const [restaurantToDelete, setRestaurantToDelete] = useState(null);
   const [isDeletingRestaurant, setIsDeletingRestaurant] = useState(false);
+  const [restaurantSearchTerm, setRestaurantSearchTerm] = useState('');
 
   const buildComparableRestaurant = (name, phone, note, menuImageDataUrl, items, orderedCategories = []) => ({
     name: (name || '').trim(),
@@ -179,6 +193,18 @@ export default function RestaurantsPage() {
         }
       })
       .catch(() => router.push('/login'));
+  }, []);
+
+  useEffect(() => {
+    const fetchJsonExamples = () => {
+      fetch('/api/json-examples')
+        .then(response => response.json())
+        .then(data => setJsonExamples(Array.isArray(data.examples) ? data.examples : []))
+        .catch(() => setJsonExamples([]));
+    };
+    fetchJsonExamples();
+    window.addEventListener('json-examples-updated', fetchJsonExamples);
+    return () => window.removeEventListener('json-examples-updated', fetchJsonExamples);
   }, []);
 
   const fetchRestaurants = () => {
@@ -250,16 +276,23 @@ export default function RestaurantsPage() {
     } finally {
       setOcrLoading(false);
       setJsonDialogOpen(false);
+      setJsonDialogMessage('');
+      clearTimeout(jsonDialogMessageTimerRef.current);
     }
   };
 
-  const handleCopyJsonExample = async () => {
+  const handleCopySelectedJsonExample = async () => {
+    const selectedExample = jsonExamples.find(example => example.id === selectedJsonExampleId);
+    if (!selectedExample) return;
     try {
-      const exampleText = JSON.stringify(MENU_JSON_EXAMPLE, null, 2);
-      await navigator.clipboard.writeText(exampleText);
-      setStatusMsg({ text: '已複製 JSON 範例。', type: 'success' });
+      await navigator.clipboard.writeText(selectedExample.content);
+      setJsonDialogMessage(`已複製「${selectedExample.title}」。`);
+      clearTimeout(jsonDialogMessageTimerRef.current);
+      jsonDialogMessageTimerRef.current = setTimeout(() => setJsonDialogMessage(''), 3000);
     } catch (err) {
-      setStatusMsg({ text: '複製失敗，請確認瀏覽器剪貼簿權限。', type: 'error' });
+      setJsonDialogMessage('複製失敗，請確認瀏覽器剪貼簿權限。');
+      clearTimeout(jsonDialogMessageTimerRef.current);
+      jsonDialogMessageTimerRef.current = setTimeout(() => setJsonDialogMessage(''), 3000);
     }
   };
 
@@ -280,6 +313,9 @@ export default function RestaurantsPage() {
       ? JSON.stringify(currentJson, null, 2)
       : '');
     setJsonDialogOpen(true);
+    setJsonDialogMessage('');
+    setSelectedJsonExampleId('');
+    setJsonExampleMenuOpen(false);
     setStatusMsg({ text: '', type: '' });
   };
 
@@ -507,6 +543,12 @@ export default function RestaurantsPage() {
     displayedCategoryOrder
   );
   const hasEditChanges = !!editingRestaurantId && JSON.stringify(currentEditData) !== JSON.stringify(editingOriginalData);
+  const normalizedRestaurantSearch = restaurantSearchTerm.trim().toLowerCase();
+  const filteredRestaurants = normalizedRestaurantSearch
+    ? restaurants.filter(restaurant => [restaurant.name, restaurant.phone]
+      .filter(Boolean)
+      .some(value => fuzzyMatch(value, normalizedRestaurantSearch)))
+    : restaurants;
 
   const handleMenuImageChange = async event => {
     const file = event.target.files?.[0];
@@ -700,7 +742,7 @@ export default function RestaurantsPage() {
           
           {/* Active Restaurants List (Col-span 1) */}
           <div className="space-y-6">
-            <div className="bg-white border border-[#EAE8E4] rounded-xl shadow-sm p-6 space-y-4 lg:p-4 lg:space-y-3">
+            <div className="bg-white border border-[#EAE8E4] rounded-lg shadow-sm p-6 space-y-4 lg:p-4 lg:space-y-3">
               <h3 className="font-bold text-sm text-[#333333] border-b border-[#EAE8E4] pb-3 flex justify-between items-center">
                 <span>現有餐廳列表</span>
                 <span className="flex items-center gap-2">
@@ -717,11 +759,24 @@ export default function RestaurantsPage() {
                 </span>
               </h3>
 
+              <label className="relative block">
+                <i className="ti ti-search absolute left-3 top-1/2 -translate-y-1/2 text-sm text-[#AAA39A]"></i>
+                <input
+                  type="search"
+                  value={restaurantSearchTerm}
+                  onChange={event => setRestaurantSearchTerm(event.target.value)}
+                  placeholder="搜尋餐廳或電話"
+                  className="w-full rounded-lg border border-[#EAE8E4] bg-[#F9F8F5] py-2 pl-9 pr-3 text-xs font-bold text-[#333333] focus:border-[#EA5B3C] focus:outline-none"
+                />
+              </label>
+
               <div className="space-y-3 max-h-[550px] overflow-y-auto pr-1">
                 {restaurants.length === 0 ? (
                   <p className="text-center py-8 text-xs text-[#888888]">目前尚未建立任何餐廳。</p>
+                ) : filteredRestaurants.length === 0 ? (
+                  <p className="text-center py-8 text-xs text-[#888888]">找不到符合搜尋條件的餐廳。</p>
                 ) : (
-                  restaurants.map(rest => (
+                  filteredRestaurants.map(rest => (
                     <div 
                       key={rest.id} 
                       onClick={() => handleToggleRestaurantPreview(rest)}
@@ -773,6 +828,7 @@ export default function RestaurantsPage() {
                 )}
               </div>
             </div>
+            <JsonExamplesManager />
           </div>
 
           {/* JSON Import and Add Menu Panel (Col-span 2) */}
@@ -1307,27 +1363,42 @@ export default function RestaurantsPage() {
       )}
 
       {jsonDialogOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-          <div className="w-full max-w-[680px] rounded-xl bg-white shadow-2xl border border-[#EAE8E4] overflow-hidden">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-[#EAE8E4]">
-              <div className="flex items-center gap-2">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 px-4">
+          <div className="relative w-full max-w-[680px] rounded-xl bg-white shadow-2xl border border-[#EAE8E4] overflow-hidden">
+            <div className="flex items-center justify-between gap-3 px-6 py-4 border-b border-[#EAE8E4]">
+              <div className="flex min-w-0 items-center gap-2">
                 <h3 className="font-bold text-base text-[#333333] flex items-center gap-2">
                   <i className="ti ti-file-import text-[#EA5B3C]"></i>
                   編輯 JSON
                 </h3>
-                <button
-                  type="button"
-                  onClick={handleCopyJsonExample}
-                  title="複製範例"
-                  aria-label="複製範例"
-                  className="flex h-6 w-6 items-center justify-center rounded-full border border-[#EAE8E4] bg-white text-[11px] text-[#333333] transition-all hover:border-[#EA5B3C] hover:text-[#EA5B3C]"
-                >
-                  <i className="ti ti-copy"></i>
-                </button>
+                <div className="relative">
+                  <button type="button" onClick={() => setJsonExampleMenuOpen(open => !open)} className="flex min-w-[110px] items-center justify-between gap-2 rounded-lg border border-[#EAE8E4] bg-white px-3 py-1.5 text-xs font-bold text-[#555555] hover:border-[#EA5B3C]" aria-haspopup="listbox" aria-expanded={jsonExampleMenuOpen}>
+                    <span className="max-w-[130px] truncate">{jsonExamples.find(example => example.id === selectedJsonExampleId)?.title || '--'}</span>
+                    <i className={`ti ${jsonExampleMenuOpen ? 'ti-chevron-up' : 'ti-chevron-down'}`}></i>
+                  </button>
+                  {jsonExampleMenuOpen && <div className="absolute left-0 top-full z-30 mt-2 w-[280px] overflow-hidden rounded-lg border border-[#EAE8E4] bg-white shadow-xl" role="listbox">
+                    <button type="button" onClick={() => { setSelectedJsonExampleId(''); setJsonExampleMenuOpen(false); setQuickPreviewExample(null); }} className="w-full px-3 py-2 text-left text-xs font-bold text-[#888888] hover:bg-[#F9F8F5]">--</button>
+                    <div className="max-h-44 overflow-y-auto border-t border-[#EAE8E4]">
+                      {jsonExamples.map(example => <div key={example.id} className="flex items-center border-b border-[#F0EDE8] last:border-b-0">
+                        <button type="button" onClick={() => { setSelectedJsonExampleId(example.id); setJsonExampleMenuOpen(false); setQuickPreviewExample(null); }} className="min-w-0 flex-1 truncate px-3 py-2 text-left text-xs font-bold text-[#333333] hover:bg-[#F9F8F5]" role="option" aria-selected={selectedJsonExampleId === example.id}>{example.title}</button>
+                        <button
+                          type="button"
+                          onClick={() => setQuickPreviewExample(current => current?.id === example.id ? null : example)}
+                          className="mr-2 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[#888888] hover:bg-[#FFF3EF] hover:text-[#EA5B3C]"
+                          aria-label={`預覽 ${example.title}`}
+                          aria-expanded={quickPreviewExample?.id === example.id}
+                          title={quickPreviewExample?.id === example.id ? '關閉預覽' : '預覽'}
+                        ><i className="ti ti-eye"></i></button>
+                      </div>)}
+                    </div>
+                    {quickPreviewExample && <pre className="max-h-40 overflow-auto border-t border-[#EAE8E4] bg-[#F9F8F5] p-3 font-mono text-[10px] leading-5 text-[#555555]">{quickPreviewExample.content}</pre>}
+                  </div>}
+                </div>
+                {selectedJsonExampleId && <button type="button" onClick={handleCopySelectedJsonExample} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[#EAE8E4] bg-white text-[#555555] hover:border-[#EA5B3C] hover:text-[#EA5B3C]" aria-label="複製所選 JSON 範例" title="複製所選範例"><i className="ti ti-copy"></i></button>}
               </div>
               <button
                 type="button"
-                onClick={() => setJsonDialogOpen(false)}
+                onClick={() => { setJsonDialogOpen(false); setJsonDialogMessage(''); clearTimeout(jsonDialogMessageTimerRef.current); }}
                 className="w-8 h-8 rounded-full border border-transparent hover:border-[#EAE8E4] hover:bg-[#F9F8F5] text-[#888888] flex items-center justify-center transition-all"
                 aria-label="關閉"
               >
@@ -1336,6 +1407,12 @@ export default function RestaurantsPage() {
             </div>
 
             <div className="p-6 space-y-4">
+              {jsonDialogMessage && (
+                <div className="fixed left-1/2 top-1/2 z-[140] flex -translate-x-1/2 -translate-y-1/2 items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-xs font-bold text-green-700 shadow-xl">
+                  <i className="ti ti-circle-check"></i>
+                  {jsonDialogMessage}
+                </div>
+              )}
               <textarea
                 value={jsonInput}
                 onChange={(e) => setJsonInput(e.target.value)}
@@ -1347,7 +1424,7 @@ export default function RestaurantsPage() {
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => setJsonDialogOpen(false)}
+                    onClick={() => { setJsonDialogOpen(false); setJsonDialogMessage(''); clearTimeout(jsonDialogMessageTimerRef.current); }}
                     className="text-xs font-bold border border-[#EAE8E4] text-[#333333] hover:border-[#333333] px-4 py-2 rounded-lg bg-white transition-all"
                   >
                     取消
@@ -1367,6 +1444,7 @@ export default function RestaurantsPage() {
           </div>
         </div>
       )}
+
     </>
   );
 }

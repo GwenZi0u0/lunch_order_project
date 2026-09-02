@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Navbar from '@/components/Navbar';
+import MessageFormatsManager from '@/components/MessageFormatsManager';
 import { canAccessAdminPage } from '@/lib/adminPermissions';
 
 const formatDate = date => {
@@ -109,6 +110,7 @@ export default function AdminOrderStatsPage() {
           const existing = itemGroups.get(key) || {
             name: orderItem.menuItem?.name || '未命名餐點',
             price: orderItem.unitPrice,
+            category: orderItem.menuItem?.category || '',
             note,
             qty: 0,
             orderNumbers: []
@@ -183,10 +185,10 @@ export default function AdminOrderStatsPage() {
     <div className="min-h-screen bg-[#F9F8F5] text-[#333333]">
       <Navbar user={user} />
       <main className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-8 sm:px-6">
+        <MessageFormatsManager />
         <section className="order-2 space-y-5 rounded-xl border border-[#EAE8E4] bg-white p-5 shadow-sm sm:p-6">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div className="space-y-1">
-              <p className="text-xs font-bold uppercase tracking-widest text-[#888888]">歷史訂餐紀錄</p>
               <h2 className="flex items-center gap-2 text-base font-bold"><i className="ti ti-history text-lg text-[#EA5B3C]" />依日期回查訂餐明細</h2>
             </div>
             <div className="flex w-full flex-col gap-2 sm:flex-row lg:w-auto">
@@ -221,8 +223,7 @@ export default function AdminOrderStatsPage() {
         <section className="order-1 rounded-xl border border-[#EAE8E4] bg-white p-5 shadow-sm sm:p-6">
           <div className="flex flex-col gap-4 border-b border-[#EAE8E4] pb-5 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <p className="text-xs font-bold tracking-widest text-[#888888]">訂單結果</p>
-              <h1 className="mt-1 text-xl font-bold">訂餐統計</h1>
+              <h1 className="text-xl font-bold">訂餐統計</h1>
             </div>
             <input type="date" value={selectedDate} onChange={event => setSelectedDate(event.target.value)} className="rounded-lg border border-[#EAE8E4] bg-white px-3 py-2 text-sm font-bold focus:border-[#EA5B3C] focus:outline-none" />
           </div>
@@ -243,8 +244,28 @@ export default function AdminOrderStatsPage() {
               <p className="py-12 text-center text-sm text-[#888888]">此日期尚無餐廳訂餐統計。</p>
             ) : restaurantGroups.map(group => {
               const collapsed = collapsedRestaurants[group.id] !== false;
-              const basicText = group.items.map(item => `${item.name}${item.note ? ` ${item.note}` : ''} *${item.qty}`).join('\n');
-              const numberedText = group.items.map(item => `${item.name}${item.note ? ` ${item.note}` : ''} *${item.qty} [編號:${item.orderNumbers.sort().join('、')}]`).join('\n');
+              const sortedItems = [...group.items].sort((left, right) => {
+                const leftIsAlaCarte = left.category.includes('單點') || left.category.includes('加點');
+                const rightIsAlaCarte = right.category.includes('單點') || right.category.includes('加點');
+                if (leftIsAlaCarte !== rightIsAlaCarte) return leftIsAlaCarte ? 1 : -1;
+                const nameOrder = left.name.localeCompare(right.name, 'zh-Hant', { numeric: true });
+                if (nameOrder !== 0) return nameOrder;
+                return left.note.localeCompare(right.note, 'zh-Hant', { numeric: true });
+              });
+              const alaCarteQuantity = sortedItems
+                .filter(item => item.category.includes('單點') || item.category.includes('加點'))
+                .reduce((sum, item) => sum + item.qty, 0);
+              const mealQuantity = group.quantity - alaCarteQuantity;
+              const basicText = [
+                ...sortedItems.map(item => `${item.name}${item.note ? `/${item.note}` : ''}*${item.qty}`),
+                '',
+                `共計${mealQuantity}份餐，單點${alaCarteQuantity}份`,
+                `共計$${group.amount}`
+              ].join('\n');
+              const numberedItemText = sortedItems
+                .map(item => `${item.name}${item.note ? ` ${item.note}` : ''} *${item.qty} [編號:${[...item.orderNumbers].sort().join('、')}]`)
+                .join('\n');
+              const numberedText = `${numberedItemText}\n\n共計${mealQuantity}份餐，單點${alaCarteQuantity}份\n共計$${group.amount}`;
               return (
                 <section key={group.id} className="overflow-hidden rounded-md border border-[#EAE8E4] bg-white">
                   <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#EAE8E4] bg-[#F9F8F5] p-4">

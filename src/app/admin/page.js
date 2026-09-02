@@ -130,7 +130,8 @@ export default function AdminDashboard() {
   const [copiedTodayOrders, setCopiedTodayOrders] = useState(false);
   const [todayItemsDialogOpen, setTodayItemsDialogOpen] = useState(false);
   const [todayOrdersDialogOpen, setTodayOrdersDialogOpen] = useState(false);
-  const [collapsedTodayRestaurantIds, setCollapsedTodayRestaurantIds] = useState({});
+  const [collapsedTodayItemIds, setCollapsedTodayItemIds] = useState({});
+  const [collapsedTodayOrderIds, setCollapsedTodayOrderIds] = useState({});
   const [messageFormats, setMessageFormats] = useState([]);
   const [messageFormatDialogOpen, setMessageFormatDialogOpen] = useState(false);
   const [messageFormatDraft, setMessageFormatDraft] = useState({ id: '', title: '', content: '' });
@@ -830,7 +831,7 @@ export default function AdminDashboard() {
         {/* Header Title */}
         <div className="flex justify-between items-center border-b border-[#EAE8E4] pb-4">
           <h2 className="text-xl font-bold text-[#333333] flex items-center gap-2">
-            <i className="ti ti-chart-bar text-2xl text-[#EA5B3C]"></i> 訂單統計與公告
+            <i className="ti ti-chart-bar text-2xl text-[#EA5B3C]"></i> 本日訂餐結果與公告
           </h2>
           <div className="flex gap-2">
             <button
@@ -856,7 +857,8 @@ export default function AdminDashboard() {
 
             <div className="space-y-4">
               {todayRestaurantItemGroups.length > 0 ? todayRestaurantItemGroups.map(group => {
-                const isCollapsed = Boolean(collapsedTodayRestaurantIds[group.id]);
+                const isItemsCollapsed = collapsedTodayItemIds[group.id] !== false;
+                const isOrdersCollapsed = collapsedTodayOrderIds[group.id] !== false;
                 const groupAreaSections = ['A', 'B'].map(area => ({
                   area,
                   orders: group.orders.filter(order => getSeatArea(order) === area)
@@ -865,59 +867,70 @@ export default function AdminDashboard() {
                 const groupAreaBCount = group.orders.filter(order => getSeatArea(order) === 'B').length;
                 return (
                   <section key={group.id} className="overflow-hidden rounded-md border border-[#EAE8E4] bg-white">
-                    <button
-                      type="button"
-                      onClick={() => setCollapsedTodayRestaurantIds(current => ({ ...current, [group.id]: !current[group.id] }))}
-                      aria-expanded={!isCollapsed}
+                    <div
                       className="flex w-full items-center justify-between gap-3 bg-[#F9F8F5] px-4 py-3 text-left"
                     >
                       <span className="flex min-w-0 items-center gap-2 text-base font-bold">
                         <span className="truncate text-[#333333]">{group.name}</span>
                         <span className="shrink-0 text-[#B5B2AD]">｜</span>
+                        <span className="shrink-0 text-[#333333]">{group.orders.length} 人</span>
+                        <span className="shrink-0 text-[#B5B2AD]">｜</span>
+                        <span className="shrink-0 text-[#333333]">{group.quantity} 份，單點 {group.alaCarteQuantity} 份</span>
+                        <span className="shrink-0 text-[#B5B2AD]">｜</span>
                         <span className="shrink-0 text-[#EA5B3C]">NT$ {group.amount}</span>
                       </span>
-                      <i className={`ti shrink-0 text-[#888888] ${isCollapsed ? 'ti-chevron-down' : 'ti-chevron-up'}`}></i>
-                    </button>
-                    {!isCollapsed && (
+                    </div>
                       <div className="space-y-5 p-4">
-                        <div className="grid grid-cols-2 gap-3">
-                          <div className="rounded-lg border border-[#EAE8E4] bg-[#F9F8F5] p-3">
-                            <p className="text-[10px] font-bold text-[#888888]">訂購人數</p>
-                            <p className="mt-1 text-base font-bold text-[#333333]">{group.orders.length} 人</p>
-                          </div>
-                          <div className="rounded-lg border border-[#EAE8E4] bg-[#F9F8F5] p-3">
-                            <p className="text-[10px] font-bold text-[#888888]">訂單金額</p>
-                            <p className="mt-1 text-base font-bold text-[#EA5B3C]">NT$ {group.amount}</p>
-                          </div>
-                        </div>
                         <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
                         <div className="space-y-3">
-                          <h4 className="flex items-center justify-between gap-2 text-sm font-bold text-[#333333]">
-                            <span className="flex items-center gap-2"><i className="ti ti-list-check text-[#EA5B3C]"></i>品項總計</span>
+                          <h4 className="flex items-center justify-between gap-2 rounded-lg border border-[#F0EDE8] bg-[#F9F8F5] px-3 py-2 text-sm font-bold text-[#333333]">
+                            <span className="flex items-center gap-2">
+                              <i className="ti ti-list-check text-[#EA5B3C]"></i>
+                              <span>品項統計</span>
+                            </span>
                             <span className="flex items-center gap-1.5">
-                              <span className="mr-1 text-[11px] text-[#888888]">共計 {group.quantity} 份，單點 {group.alaCarteQuantity} 份</span>
                               <button type="button" onClick={copyTodayItemSummary} disabled={group.items.length === 0} className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[#EAE8E4] bg-white text-[#888888] disabled:opacity-40" aria-label={`複製${group.name}品項統計結果`} title="複製"><i className={`ti ${copiedItemSummary ? 'ti-check text-green-600' : 'ti-copy'}`}></i></button>
                               <button type="button" onClick={() => setTodayItemsDialogOpen(true)} disabled={group.items.length === 0} className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[#EAE8E4] bg-white text-[#888888] disabled:opacity-40" aria-label={`展開${group.name}品項總計`} title="展開"><i className="ti ti-arrows-maximize"></i></button>
+                              <button
+                                type="button"
+                                onClick={() => setCollapsedTodayItemIds(current => ({ ...current, [group.id]: current[group.id] === false }))}
+                                aria-expanded={!isItemsCollapsed}
+                                className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[#EAE8E4] bg-white text-[#888888]"
+                                aria-label={isItemsCollapsed ? `展開${group.name}品項統計` : `收合${group.name}品項統計`}
+                                title={isItemsCollapsed ? '展開' : '收合'}
+                              >
+                                <i className={`ti ${isItemsCollapsed ? 'ti-chevron-down' : 'ti-chevron-up'}`}></i>
+                              </button>
                             </span>
                           </h4>
-                          <div className="max-h-[240px] space-y-2 overflow-y-auto pr-1 kaizen-scrollbar">
+                          {!isItemsCollapsed && <div className="max-h-[128px] space-y-2 overflow-y-auto pr-1 kaizen-scrollbar md:max-h-[240px]">
                             {group.items.length > 0 ? group.items.map(item => (
                               <div key={`${item.name}-${item.note || 'no-note'}`} className="flex items-center justify-between gap-3 rounded-lg border border-[#EAE8E4] px-3 py-2 text-xs">
                                 <span className="min-w-0 truncate"><span className="font-bold text-[#333333]">{item.name}</span>{item.note && <span className="text-[#888888]">/{formatItemNoteDisplay(item.note, item.menuItem)}</span>}</span>
                                 <span className="shrink-0 text-[#888888]">x {item.qty}</span>
                               </div>
                             )) : <p className="py-6 text-center text-xs text-[#888888]">此餐廳目前沒有訂餐品項。</p>}
-                          </div>
+                          </div>}
                         </div>
                         <div className="space-y-3">
-                          <h4 className="flex items-center justify-between gap-2 text-sm font-bold text-[#333333]">
+                          <h4 className="flex items-center justify-between gap-2 rounded-lg border border-[#F0EDE8] bg-[#F9F8F5] px-3 py-2 text-sm font-bold text-[#333333]">
                             <span className="flex items-center gap-2"><i className="ti ti-users text-[#EA5B3C]"></i>訂購者訂餐內容</span>
                             <span className="flex items-center gap-1.5">
                               <button type="button" onClick={copyTodayOrders} disabled={group.orders.length === 0} className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[#EAE8E4] bg-white text-[#EA5B3C] disabled:opacity-40" aria-label={`複製${group.name}今日訂購者訂單`} title="複製"><i className={`ti ${copiedTodayOrders ? 'ti-check text-green-600' : 'ti-copy'}`}></i></button>
                               <button type="button" onClick={() => setTodayOrdersDialogOpen(true)} disabled={group.orders.length === 0} className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[#EAE8E4] bg-white text-[#888888] disabled:opacity-40" aria-label={`展開${group.name}今日訂購者訂餐內容`} title="展開"><i className="ti ti-arrows-maximize"></i></button>
+                              <button
+                                type="button"
+                                onClick={() => setCollapsedTodayOrderIds(current => ({ ...current, [group.id]: current[group.id] === false }))}
+                                aria-expanded={!isOrdersCollapsed}
+                                className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[#EAE8E4] bg-white text-[#888888]"
+                                aria-label={isOrdersCollapsed ? `展開${group.name}訂購者訂餐內容` : `收合${group.name}訂購者訂餐內容`}
+                                title={isOrdersCollapsed ? '展開' : '收合'}
+                              >
+                                <i className={`ti ${isOrdersCollapsed ? 'ti-chevron-down' : 'ti-chevron-up'}`}></i>
+                              </button>
                             </span>
                           </h4>
-                          <div className="max-h-[240px] space-y-3 overflow-y-auto pr-1 kaizen-scrollbar">
+                          {!isOrdersCollapsed && <div className="max-h-[240px] space-y-3 overflow-y-auto pr-1 kaizen-scrollbar">
                             <div className="sticky top-0 z-20 grid grid-cols-2 divide-x divide-[#EAE8E4] rounded-lg border border-[#EAE8E4] bg-[#F9F8F5] py-2 text-center text-xs font-bold text-[#333333] shadow-sm">
                               <span>A 區 <span className="text-[#EA5B3C]">{groupAreaACount}</span> 人</span>
                               <span>B 區 <span className="text-[#EA5B3C]">{groupAreaBCount}</span> 人</span>
@@ -933,81 +946,13 @@ export default function AdminDashboard() {
                                 ))}
                               </div>
                             )) : <p className="py-6 text-center text-xs text-[#888888]">此餐廳目前沒有訂購者。</p>}
-                          </div>
+                          </div>}
                         </div>
                         </div>
                       </div>
-                    )}
                   </section>
                 );
               }) : <div className="rounded-lg border border-[#EAE8E4] bg-[#F9F8F5] px-3 py-8 text-center text-xs text-[#888888]">今日尚無餐廳或訂餐內容。</div>}
-            </div>
-          </div>
-
-          <div className="bg-white border border-[#EAE8E4] rounded-xl shadow-sm p-6 space-y-5">
-            <div className="flex items-center justify-between gap-3 border-b border-[#EAE8E4] pb-4">
-              <div>
-                <p className="text-xs font-bold text-[#888888] tracking-widest">管理者常用內容</p>
-                <h3 className="mt-1 text-lg font-bold text-[#333333]">訊息格式</h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => openMessageFormatDialog()}
-                className="inline-flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-full bg-[#EA5B3C] text-white transition-colors hover:bg-[#333333]"
-                aria-label="新增訊息格式"
-                title="新增訊息格式"
-              >
-                <i className="ti ti-plus text-sm"></i>
-              </button>
-            </div>
-
-            {messageFormatMessage && (
-              <div className="rounded-lg border border-[#EAE8E4] bg-[#F9F8F5] px-3 py-2 text-xs font-bold text-[#666666]">
-                {messageFormatMessage}
-              </div>
-            )}
-
-            <div className="space-y-3">
-              {messageFormats.length > 0 ? messageFormats.map(format => (
-                <div key={format.id} className="rounded-xl border border-[#EAE8E4] bg-[#F9F8F5] p-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <h4 className="min-w-0 flex-1 break-words text-base font-bold text-[#333333]">{format.title}</h4>
-                    <div className="flex shrink-0 items-center gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => copyMessageFormat(format)}
-                        className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#EAE8E4] bg-white text-[#888888] transition-all hover:border-[#EA5B3C] hover:text-[#EA5B3C]"
-                        aria-label={`複製 ${format.title}`}
-                        title="複製"
-                      >
-                        <i className={`ti ${copiedMessageFormatId === format.id ? 'ti-check text-green-600' : 'ti-copy'}`}></i>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => openMessageFormatDialog(format)}
-                        className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-[#EAE8E4] bg-white text-[#888888] transition-all hover:border-[#EA5B3C] hover:text-[#EA5B3C]"
-                        aria-label={`編輯 ${format.title}`}
-                        title="編輯"
-                      >
-                        <i className="ti ti-pencil"></i>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setMessageFormatToDelete(format)}
-                        className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-red-200 bg-white text-red-600 transition-all hover:bg-red-50"
-                        aria-label={`刪除 ${format.title}`}
-                        title="刪除"
-                      >
-                        <i className="ti ti-trash"></i>
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )) : (
-                <div className="rounded-xl border border-dashed border-[#D6D1CA] bg-[#F9F8F5] px-4 py-10 text-center text-xs text-[#888888]">
-                  尚未建立訊息格式，請點擊右上角新增。
-                </div>
-              )}
             </div>
           </div>
 

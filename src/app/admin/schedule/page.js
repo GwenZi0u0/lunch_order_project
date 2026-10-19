@@ -75,6 +75,20 @@ function getMenuItemCategory(menuItem) {
   return String(menuItem?.category || '\u672a\u5206\u985e').trim() || '\u672a\u5206\u985e';
 }
 
+function matchesFuzzyMenuName(name, searchTerm) {
+  const normalizedName = String(name || '').toLowerCase().replace(/\s+/g, '');
+  const normalizedSearchTerm = String(searchTerm || '').toLowerCase().replace(/\s+/g, '');
+  if (!normalizedSearchTerm) return true;
+
+  let searchIndex = 0;
+  for (const character of normalizedName) {
+    if (character === normalizedSearchTerm[searchIndex]) searchIndex += 1;
+    if (searchIndex === normalizedSearchTerm.length) return true;
+  }
+
+  return false;
+}
+
 function getMenuCategoryPriority(category) {
   const value = String(category || '');
   if (value.includes('\u9910\u76d2')) return 0;
@@ -198,6 +212,7 @@ export default function AdminDashboard() {
   const [memberSearchTerm, setMemberSearchTerm] = useState('');
   const [memberPickerOpen, setMemberPickerOpen] = useState(false);
   const [orderMenuCategory, setOrderMenuCategory] = useState('');
+  const [orderMenuSearchTerm, setOrderMenuSearchTerm] = useState('');
   const [selectedOrderDetail, setSelectedOrderDetail] = useState(null);
   const [isSavingOrder, setIsSavingOrder] = useState(false);
   const [orderSearchTerm, setOrderSearchTerm] = useState('');
@@ -222,6 +237,17 @@ export default function AdminDashboard() {
   const [isNotificationPanelExpanded, setIsNotificationPanelExpanded] = useState(false);
   const [isPortalPreviewOpen, setIsPortalPreviewOpen] = useState(false);
   const [nextWeekMenuConfirmOpen, setNextWeekMenuConfirmOpen] = useState(false);
+
+  useEffect(() => {
+    if (!orderEditor) return;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [orderEditor]);
 
   useEffect(() => {
     // Check authentication and role
@@ -423,6 +449,10 @@ export default function AdminDashboard() {
       if (proteinDifference) return proteinDifference;
       return (a.name || '').localeCompare(b.name || '', 'zh-Hant');
     });
+  const normalizedOrderMenuSearchTerm = orderMenuSearchTerm.trim().toLowerCase().replace(/\s+/g, '');
+  const filteredOrderMenuItems = sortedOrderMenuItems.filter(item =>
+    matchesFuzzyMenuName(item.name, normalizedOrderMenuSearchTerm)
+  );
   const normalizedMemberSearchTerm = memberSearchTerm.trim().toLowerCase();
   const filteredMembers = members.filter(member => {
     if (!normalizedMemberSearchTerm) return true;
@@ -739,6 +769,7 @@ export default function AdminDashboard() {
     setMemberSearchTerm('');
     setMemberPickerOpen(false);
     setOrderMenuCategory('');
+    setOrderMenuSearchTerm('');
     setOrderEditor({
       orderId: null,
       restaurantId: scheduledOrderRestaurants[0]?.restaurantId || '',
@@ -766,6 +797,7 @@ export default function AdminDashboard() {
     setMemberSearchTerm(order.user?.name || '');
     setMemberPickerOpen(false);
     setOrderMenuCategory('');
+    setOrderMenuSearchTerm('');
     setOrderEditor({
       orderId: order.id,
       restaurantId: allActiveMenuItems.find(menu => menu.id === order.orderItems[0]?.menuItemId)?.restaurantId
@@ -1645,11 +1677,38 @@ export default function AdminDashboard() {
                     </div>
 
                     {orderEditor && (
-                      <div className="rounded-xl border border-[#EAE8E4] bg-[#F9F8F5] p-4 space-y-4">
-                        <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
-                          <div className="relative space-y-1.5">
-                            <label className="text-xs font-bold text-[#888888]">{'\u6210\u54e1'}</label>
-                            <div className="relative">
+                      <div
+                        className="fixed inset-0 z-[75] flex items-center justify-center bg-black/50 p-3 sm:p-6"
+                        onMouseDown={(event) => {
+                          if (event.target === event.currentTarget && !isSavingOrder) setOrderEditor(null);
+                        }}
+                      >
+                        <div
+                          role="dialog"
+                          aria-modal="true"
+                          aria-labelledby="admin-order-editor-title"
+                          className="flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-[#EAE8E4] bg-white shadow-2xl"
+                        >
+                          <div className="flex items-center justify-between gap-3 border-b border-[#EAE8E4] px-4 py-3 sm:px-5">
+                            <h3 id="admin-order-editor-title" className="text-sm font-bold text-[#333333]">
+                              {orderEditor.orderId ? '編輯成員訂單' : '新增成員訂單'}
+                            </h3>
+                            <button
+                              type="button"
+                              onClick={() => setOrderEditor(null)}
+                              disabled={isSavingOrder}
+                              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#EAE8E4] bg-white text-[#888888] transition-all hover:border-[#EA5B3C] hover:text-[#EA5B3C] disabled:opacity-50"
+                              aria-label="關閉並取消訂單編輯"
+                              title="關閉並取消"
+                            >
+                              <i className="ti ti-x text-base"></i>
+                            </button>
+                          </div>
+                          <div className="space-y-4 overflow-y-auto p-4 sm:p-5">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                          <div className="relative flex items-center gap-3 md:col-span-3">
+                            <label className="shrink-0 text-xs font-bold text-[#888888]">{'\u6210\u54e1'}</label>
+                            <div className="relative min-w-0 flex-1">
                               <i className="ti ti-search pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-[#AAA39A]"></i>
                               <input
                               type="search"
@@ -1690,50 +1749,57 @@ export default function AdminDashboard() {
                               </div>
                             )}
                           </div>
-                          <div className="space-y-1.5">
-                            <label className="text-xs font-bold text-[#888888]">餐廳</label>
-                            <select
-                              value={selectedOrderRestaurantId}
-                              onChange={(event) => {
-                                setOrderMenuCategory('');
-                                setOrderEditor(previous => ({
-                                  ...previous,
-                                  restaurantId: event.target.value,
-                                  quantities: {},
-                                  itemNotes: {},
-                                  itemCustomOptions: {}
-                                }));
-                              }}
-                              disabled={Boolean(orderEditor.orderId)}
-                              className="w-full rounded-lg border border-[#EAE8E4] bg-white px-3 py-2 text-xs font-medium text-[#333333] focus:border-[#EA5B3C] focus:outline-none disabled:bg-[#F2EFEA] disabled:text-[#888888]"
-                              aria-label="選擇加單餐廳"
-                            >
-                              {scheduledOrderRestaurants.map(config => (
-                                <option key={config.restaurantId} value={config.restaurantId}>
-                                  {config.restaurant?.name || '未命名餐廳'}
-                                </option>
-                              ))}
-                            </select>
+                          <div className="flex min-w-0 items-center gap-3">
+                            <label className="shrink-0 text-xs font-bold text-[#888888]">餐廳</label>
+                            <div className="relative min-w-0 flex-1">
+                              <select
+                                value={selectedOrderRestaurantId}
+                                onChange={(event) => {
+                                  setOrderMenuCategory('');
+                                  setOrderMenuSearchTerm('');
+                                  setOrderEditor(previous => ({
+                                    ...previous,
+                                    restaurantId: event.target.value,
+                                    quantities: {},
+                                    itemNotes: {},
+                                    itemCustomOptions: {}
+                                  }));
+                                }}
+                                disabled={Boolean(orderEditor.orderId)}
+                                className="w-full appearance-none rounded-lg border border-[#EAE8E4] bg-white px-3 py-2 pr-9 text-xs font-medium text-[#333333] focus:border-[#EA5B3C] focus:outline-none disabled:bg-[#F2EFEA] disabled:text-[#888888]"
+                                aria-label="選擇加單餐廳"
+                              >
+                                {scheduledOrderRestaurants.map(config => (
+                                  <option key={config.restaurantId} value={config.restaurantId}>
+                                    {config.restaurant?.name || '未命名餐廳'}
+                                  </option>
+                                ))}
+                              </select>
+                              <i className="ti ti-chevron-down pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-[#888888]" aria-hidden="true"></i>
+                            </div>
                           </div>
-                          <div className="space-y-1.5">
-                            <label className="text-xs font-bold text-[#888888]">{'\u985e\u578b'}</label>
-                            <select
-                              value={orderMenuCategory}
-                              onChange={(e) => setOrderMenuCategory(e.target.value)}
-                              className="w-full rounded-lg border border-[#EAE8E4] bg-white px-3 py-2 text-xs font-medium text-[#333333] focus:border-[#EA5B3C] focus:outline-none"
-                              aria-label={'\u7be9\u9078\u9910\u9ede\u985e\u578b'}
-                            >
-                              <option value="">{'\u5168\u90e8\u985e\u578b'}</option>
-                              {orderMenuCategories.map((category, index) => (
-                                <option key={category} value={category}>
-                                  {String(index + 1).padStart(2, '0')} {category}
-                                </option>
-                              ))}
-                            </select>
+                          <div className="flex min-w-0 items-center gap-3">
+                            <label className="shrink-0 text-xs font-bold text-[#888888]">{'\u985e\u578b'}</label>
+                            <div className="relative min-w-0 flex-1">
+                              <select
+                                value={orderMenuCategory}
+                                onChange={(e) => setOrderMenuCategory(e.target.value)}
+                                className="w-full appearance-none rounded-lg border border-[#EAE8E4] bg-white px-3 py-2 pr-9 text-xs font-medium text-[#333333] focus:border-[#EA5B3C] focus:outline-none"
+                                aria-label={'\u7be9\u9078\u9910\u9ede\u985e\u578b'}
+                              >
+                                <option value="">{'\u5168\u90e8\u985e\u578b'}</option>
+                                {orderMenuCategories.map((category, index) => (
+                                  <option key={category} value={category}>
+                                    {String(index + 1).padStart(2, '0')} {category}
+                                  </option>
+                                ))}
+                              </select>
+                              <i className="ti ti-chevron-down pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-[#888888]" aria-hidden="true"></i>
+                            </div>
                           </div>
-                          <div className="space-y-1.5">
-                            <label className="text-xs font-bold text-[#888888]">{'\u5ea7\u4f4d\u5340'}</label>
-                            <div className="grid grid-cols-2 rounded-lg border border-[#EAE8E4] bg-white p-1">
+                          <div className="flex min-w-0 items-center gap-3">
+                            <label className="shrink-0 text-xs font-bold text-[#888888]">{'\u5ea7\u4f4d\u5340'}</label>
+                            <div className="grid min-w-0 flex-1 grid-cols-2 rounded-lg border border-[#EAE8E4] bg-white p-1">
                               {['A', 'B'].map(area => (
                                 <button
                                   key={area}
@@ -1751,20 +1817,32 @@ export default function AdminDashboard() {
                               ))}
                             </div>
                           </div>
-                          <div className="space-y-1.5">
-                            <label className="text-xs font-bold text-[#888888]">{'\u5099\u8a3b'}</label>
+                          <div className="flex min-w-0 items-center gap-3 md:col-span-3">
+                            <label className="shrink-0 text-xs font-bold text-[#888888]">{'\u5099\u8a3b'}</label>
                             <input
                               type="text"
                               value={orderEditor.note}
                               onChange={(e) => setOrderEditor(prev => ({ ...prev, note: e.target.value }))}
-                              className="w-full text-xs px-3 py-2 border border-[#EAE8E4] rounded-lg focus:outline-none focus:border-[#EA5B3C] bg-white font-medium"
+                              className="min-w-0 flex-1 text-xs px-3 py-2 border border-[#EAE8E4] rounded-lg focus:outline-none focus:border-[#EA5B3C] bg-white font-medium"
                               placeholder={'\u53ef\u586b\u5beb\u52a0\u98ef\u3001\u4e0d\u8981\u9999\u83dc\u7b49'}
                             />
                           </div>
                         </div>
 
+                        <label className="relative block">
+                          <i className="ti ti-search pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-[#888888]" aria-hidden="true"></i>
+                          <input
+                            type="search"
+                            value={orderMenuSearchTerm}
+                            onChange={(event) => setOrderMenuSearchTerm(event.target.value)}
+                            placeholder="搜尋餐點名稱"
+                            aria-label="搜尋餐點名稱"
+                            className="w-full rounded-lg border border-[#EAE8E4] bg-white py-2 pl-9 pr-3 text-xs font-medium text-[#333333] placeholder:text-[#AAA39A] focus:border-[#EA5B3C] focus:outline-none"
+                          />
+                        </label>
+
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-72 overflow-y-auto pr-1 custom-scrollbar">
-                          {sortedOrderMenuItems.map(item => (
+                          {filteredOrderMenuItems.map(item => (
                             <div key={item.id} className="space-y-2 rounded-lg border border-[#EAE8E4] bg-white px-3 py-2">
                               <div className="flex items-center justify-between gap-3">
                                 <div className="min-w-0">
@@ -1775,6 +1853,7 @@ export default function AdminDashboard() {
                                   type="number"
                                   min="0"
                                   value={orderEditor.quantities[item.id] || 0}
+                                  onFocus={(event) => event.target.select()}
                                   onChange={(e) => updateOrderItemQuantity(item.id, e.target.value)}
                                   className="w-20 text-xs px-2 py-1.5 border border-[#EAE8E4] rounded-lg text-right focus:outline-none focus:border-[#EA5B3C]"
                                 />
@@ -1801,9 +1880,9 @@ export default function AdminDashboard() {
                               </div>
                             </div>
                           ))}
-                          {sortedOrderMenuItems.length === 0 && (
+                          {filteredOrderMenuItems.length === 0 && (
                             <div className="md:col-span-2 rounded-lg border border-dashed border-[#D6D1CA] bg-white px-4 py-8 text-center text-xs font-bold text-[#888888]">
-                              {'\u6b64\u985e\u578b\u76ee\u524d\u6c92\u6709\u53ef\u9078\u64c7\u7684\u9910\u9ede\u3002'}
+                              {normalizedOrderMenuSearchTerm ? '找不到符合搜尋條件的餐點。' : '\u6b64\u985e\u578b\u76ee\u524d\u6c92\u6709\u53ef\u9078\u64c7\u7684\u9910\u9ede\u3002'}
                             </div>
                           )}
                         </div>
@@ -1829,6 +1908,8 @@ export default function AdminDashboard() {
                           >
                             <i className={isSavingOrder ? 'ti ti-loader animate-spin text-base' : 'ti ti-check text-base'}></i>
                           </button>
+                        </div>
+                          </div>
                         </div>
                       </div>
                     )}

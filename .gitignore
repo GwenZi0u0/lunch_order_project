@@ -1,18 +1,66 @@
 node_modules/
 .next/
+out/
+dist/
+build/
+coverage/
 .node-dist/
+.vercel/
 
-.env
-.env*.local
+.env*
+!.env.example
 
-prisma/dev.db
-prisma/dev.db-journal
+# Local databases and database exports
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sql
+*.dump
+*.backup
+*.bak
+*.csv
+*.tsv
+*.xls
+*.xlsx
+*.xlsm
+*.jsonl
+*.ndjson
+*.parquet
+*.feather
+*.arrow
 
+# Uploaded and generated data
+uploads/
+storage/
+data/
+export/
+exports/
+backup/
+backups/
+postgres-data/
+mysql-data/
+logs/
 *.log
 server.out.log
 server.err.log
 
+# Credentials, certificates, and private keys
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+*service-account*.json
+*service_account*.json
+
+# Python environments and caches
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+
 .DS_Store
 Thumbs.db
-
-.vercel

@@ -1,9 +1,12 @@
 import { SignJWT, jwtVerify } from 'jose';
 import prisma from '@/lib/db';
 
-const SECRET_KEY = new TextEncoder().encode(
-  process.env.JWT_SECRET || 'lunch-kaizen-secret-key-default-12345678-xyz'
-);
+const jwtSecret = process.env.JWT_SECRET;
+if (!jwtSecret) {
+  throw new Error('JWT_SECRET environment variable is required');
+}
+
+const SECRET_KEY = new TextEncoder().encode(jwtSecret);
 
 export async function signJWT(payload) {
   return await new SignJWT(payload)

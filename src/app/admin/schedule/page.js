@@ -1210,7 +1210,7 @@ export default function AdminDashboard() {
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 border-b border-[#EAE8E4] pb-4">
             <div>
               <h2 className="text-xl font-bold text-[#333333] flex items-center gap-2">
-                <i className="ti ti-calendar-week text-2xl text-[#EA5B3C]"></i> 週菜單排程
+                <i className="ti ti-calendar-week text-2xl text-[#EA5B3C]"></i> 午餐排程
               </h2>
             </div>
           </div>

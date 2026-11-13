@@ -8,6 +8,8 @@ export default function Navbar({ user, interactionDisabled = false }) {
   const pathname = usePathname();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [isScheduleSubmenuOpen, setIsScheduleSubmenuOpen] = useState(false);
+  const [isMobileScheduleOpen, setIsMobileScheduleOpen] = useState(false);
   const profileMenuRef = useRef(null);
   const mobileMenuRef = useRef(null);
   const isAdmin = user?.role === 'admin';
@@ -17,10 +19,17 @@ export default function Navbar({ user, interactionDisabled = false }) {
     ? isAdmin && !isOrderingView ? '/admin' : '/portal'
     : '/';
   const displayName = user?.name?.replace(/\s*\((餘額充足|餘額歸零|帳戶欠款)\)\s*$/, '') || '';
+  const scheduleChildItems = [
+    { label: '午餐排程', href: '/admin/schedule' },
+    { label: '飲料排程', href: '/admin/schedule/drinks' },
+    { label: '團訂排程', href: '/admin/schedule/group' },
+  ];
 
   useEffect(() => {
     setIsMenuOpen(false);
     setIsProfileOpen(false);
+    setIsScheduleSubmenuOpen(false);
+    setIsMobileScheduleOpen(false);
   }, [pathname]);
 
   useEffect(() => {
@@ -90,7 +99,7 @@ export default function Navbar({ user, interactionDisabled = false }) {
 
   const adminNavItems = [
         { label: '訂單公告', href: '/admin#order-stats-announcement', page: 'overview', icon: 'ti ti-clipboard-list' },
-        { label: '供餐排程', href: '/admin/schedule', page: 'schedule', icon: 'ti ti-calendar-event' },
+        { label: '供餐排程', href: '/admin/schedule', page: 'schedule', icon: 'ti ti-calendar-event', children: scheduleChildItems },
         { label: '訂餐統計', href: '/admin/order-stats', page: 'order-stats', icon: 'ti ti-chart-bar' },
         { label: '餐廳管理', href: '/admin/restaurants', page: 'restaurants', icon: 'ti ti-tools-kitchen-2' },
         { label: '儲值管理', href: '/admin/wallets', page: 'wallets', icon: 'ti ti-wallet' },
@@ -107,15 +116,7 @@ export default function Navbar({ user, interactionDisabled = false }) {
   const navItems = isViewer
     ? [...orderingNavItems, ...adminNavItems.filter(item => item.page === user?.viewerPage)]
     : isAdmin && !isOrderingView
-    ? [
-        { label: '訂單公告', href: '/admin#order-stats-announcement', icon: 'ti ti-clipboard-list' },
-        { label: '供餐排程', href: '/admin/schedule', icon: 'ti ti-calendar-event' },
-        { label: '訂餐統計', href: '/admin/order-stats', icon: 'ti ti-chart-bar' },
-        { label: '餐廳管理', href: '/admin/restaurants', icon: 'ti ti-tools-kitchen-2' },
-        { label: '儲值管理', href: '/admin/wallets', icon: 'ti ti-wallet' },
-        { label: '帳務軌跡', href: '/admin/accounting-audit', icon: 'ti ti-file-invoice' },
-        { label: '人員管理', href: '/admin/users', icon: 'ti ti-users' },
-      ]
+    ? adminNavItems
     : orderingNavItems;
 
   const modeSwitch = isAdmin
@@ -132,6 +133,10 @@ export default function Navbar({ user, interactionDisabled = false }) {
 
   return (
     <header
+      onMouseLeave={() => setIsScheduleSubmenuOpen(false)}
+      onKeyDown={event => {
+        if (event.key === 'Escape') setIsScheduleSubmenuOpen(false);
+      }}
       inert={interactionDisabled ? '' : undefined}
       aria-disabled={interactionDisabled || undefined}
       className={`sticky top-0 z-50 bg-[#F9F8F5]/90 backdrop-blur-md border-b border-[#EAE8E4] px-4 sm:px-6 py-4 transition-all duration-300 ${interactionDisabled ? 'pointer-events-none select-none' : ''}`}
@@ -153,19 +158,28 @@ export default function Navbar({ user, interactionDisabled = false }) {
 
           {user && (
             <nav className="hidden md:flex gap-6 items-center">
-              {navItems.map(item => (
-                <button
-                  key={item.href}
-                  onClick={() => navigateTo(item.href)}
-                  className={`text-sm font-bold transition-colors ${
-                    pathname === item.href
-                      ? 'text-[#EA5B3C]'
-                      : 'text-[#333333] hover:text-[#EA5B3C]'
-                  }`}
-                >
-                  {item.label}
-                </button>
-              ))}
+              {navItems.map(item => {
+                const isActive = pathname === item.href || (item.children && pathname?.startsWith(`${item.href}/`));
+
+                return (
+                  <div
+                    key={item.href}
+                    className="relative"
+                    onMouseEnter={() => setIsScheduleSubmenuOpen(Boolean(item.children))}
+                    onFocus={() => item.children && setIsScheduleSubmenuOpen(true)}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => navigateTo(item.href)}
+                      aria-expanded={item.children ? isScheduleSubmenuOpen : undefined}
+                      aria-controls={item.children ? 'schedule-submenu' : undefined}
+                      className={`relative inline-flex items-center pb-2 text-sm font-bold transition-colors after:absolute after:bottom-0 after:left-0 after:h-0.5 after:bg-[#EA5B3C] after:transition-[width] after:duration-300 ${isActive ? 'text-[#EA5B3C] after:w-full' : 'text-[#333333] after:w-0 hover:text-[#EA5B3C] hover:after:w-full'}`}
+                    >
+                      {item.label}
+                    </button>
+                  </div>
+                );
+              })}
             </nav>
           )}
         </div>
@@ -279,23 +293,88 @@ export default function Navbar({ user, interactionDisabled = false }) {
               </div>
             </div>
 
-            {navItems.map(item => (
-              <button
-                key={item.href}
-                onClick={() => navigateTo(item.href)}
-                className={`w-full h-11 px-3 rounded-lg flex items-center gap-3 text-sm font-bold transition-all ${
-                  pathname === item.href
-                    ? 'bg-[#FFF3EF] text-[#EA5B3C]'
-                    : 'text-[#333333] hover:bg-[#F9F8F5]'
-                }`}
-              >
-                <i className={`${item.icon} text-lg`}></i>
-                <span>{item.label}</span>
-              </button>
-            ))}
+            {navItems.map(item => {
+              const isActive = pathname === item.href || (item.children && pathname?.startsWith(`${item.href}/`));
+
+              return (
+                <div
+                  key={item.href}
+                >
+                  <div className={`flex items-center rounded-lg transition-colors ${
+                    isActive ? 'bg-[#FFF3EF]' : ''
+                  }`}>
+                    <button
+                      type="button"
+                      onClick={() => item.children
+                        ? setIsMobileScheduleOpen(open => !open)
+                        : navigateTo(item.href)}
+                      aria-expanded={item.children ? isMobileScheduleOpen : undefined}
+                      aria-controls={item.children ? 'mobile-schedule-submenu' : undefined}
+                      className={`h-11 min-w-0 flex-1 rounded-l-lg px-3 flex items-center gap-3 text-left text-sm font-bold transition-all ${
+                        isActive ? 'text-[#EA5B3C]' : 'text-[#333333]'
+                      }`}
+                    >
+                      <i className={`${item.icon} text-lg`}></i>
+                      <span>{item.label}</span>
+                    </button>
+                    {item.children && (
+                      <button
+                        type="button"
+                        aria-label={isMobileScheduleOpen ? '收合供餐排程子選單' : '展開供餐排程子選單'}
+                        aria-expanded={isMobileScheduleOpen}
+                        aria-controls="mobile-schedule-submenu"
+                        onClick={() => setIsMobileScheduleOpen(open => !open)}
+                        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-r-lg text-[#666666] transition-colors"
+                      >
+                        <i className={`ti ${isMobileScheduleOpen ? 'ti-chevron-up' : 'ti-chevron-down'} text-base`}></i>
+                      </button>
+                    )}
+                  </div>
+                  {item.children && (
+                    <div id="mobile-schedule-submenu" hidden={!isMobileScheduleOpen} className="ml-7 border-l border-[#EAE8E4] pl-2">
+                      {item.children.map(child => (
+                        <button
+                          key={child.href}
+                          type="button"
+                          onClick={() => navigateTo(child.href)}
+                          className={`flex h-10 w-full items-center rounded-lg px-3 text-left text-xs font-bold transition-all ${
+                            pathname === child.href ? 'bg-[#FFF3EF] text-[#EA5B3C]' : 'text-[#666666] hover:bg-[#F9F8F5] hover:text-[#EA5B3C]'
+                          }`}
+                        >
+                          {child.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </nav>
         </div>
       )}
+
+      {user && isScheduleSubmenuOpen && !isOrderingView && (
+        <nav id="schedule-submenu" aria-label="供餐排程子選單" className="absolute left-0 right-0 top-full z-[60] border-b border-[#EAE8E4] bg-[#F9F8F5]/95 px-4 py-3 shadow-[0_12px_24px_rgba(0,0,0,0.08)] backdrop-blur-md sm:px-6">
+          <div className="mx-auto flex max-w-[1200px] items-center gap-2 overflow-x-auto">
+            {scheduleChildItems.map(item => (
+              <button
+                key={item.href}
+                type="button"
+                aria-current={pathname === item.href ? 'page' : undefined}
+                onClick={() => navigateTo(item.href)}
+                className={`inline-flex shrink-0 items-center rounded-lg px-4 py-2.5 text-sm font-bold transition-colors ${
+                  pathname === item.href
+                    ? 'bg-[#FFF3EF] text-[#EA5B3C]'
+                    : 'text-[#666666] hover:bg-white hover:text-[#EA5B3C]'
+                }`}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+        </nav>
+      )}
+
     </header>
   );
 }

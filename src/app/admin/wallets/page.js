@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
+import * as XLSX from 'xlsx';
 import Navbar from '@/components/Navbar';
 import { canAccessAdminPage } from '@/lib/adminPermissions';
 
@@ -19,6 +20,17 @@ function toDateKey(date) {
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
+}
+
+function toTaipeiDateKey(date) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Taipei',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
 }
 
 function getMonthDays(monthDate) {
@@ -59,6 +71,9 @@ export default function WalletsManagementPage() {
   const [isLedgerCalendarOpen, setIsLedgerCalendarOpen] = useState(false);
   const [ledgerCalendarMonth, setLedgerCalendarMonth] = useState(() => new Date());
   const [activeEmailUserId, setActiveEmailUserId] = useState('');
+  const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const exportMenuRef = useRef(null);
   
   // Deposit Modal State
   const [selectedUser, setSelectedUser] = useState(null); // User object to deposit to
@@ -119,6 +134,26 @@ export default function WalletsManagementPage() {
       window.removeEventListener('touchmove', closeEmailPopover);
     };
   }, [activeEmailUserId]);
+
+  useEffect(() => {
+    if (!isExportMenuOpen) return;
+
+    const closeExportMenu = (event) => {
+      if (!exportMenuRef.current?.contains(event.target)) {
+        setIsExportMenuOpen(false);
+      }
+    };
+    const closeExportMenuOnEscape = (event) => {
+      if (event.key === 'Escape') setIsExportMenuOpen(false);
+    };
+
+    document.addEventListener('pointerdown', closeExportMenu);
+    document.addEventListener('keydown', closeExportMenuOnEscape);
+    return () => {
+      document.removeEventListener('pointerdown', closeExportMenu);
+      document.removeEventListener('keydown', closeExportMenuOnEscape);
+    };
+  }, [isExportMenuOpen]);
 
   useEffect(() => {
     if (!selectedUser) return;
@@ -305,6 +340,103 @@ export default function WalletsManagementPage() {
     }
   };
 
+  const exportWalletExcel = async () => {
+    if (isReadOnly || isExporting) return;
+
+    setIsExporting(true);
+    setIsExportMenuOpen(false);
+
+    try {
+      const downloadTime = new Date();
+      const endDate = toTaipeiDateKey(downloadTime);
+      const startDateValue = new Date(`${endDate}T00:00:00Z`);
+      startDateValue.setUTCDate(startDateValue.getUTCDate() - 89);
+      const startDate = startDateValue.toISOString().slice(0, 10);
+      const params = new URLSearchParams({ action: 'history', startDate, endDate });
+      const response = await fetch(`/api/wallets?${params.toString()}`);
+      const history = await response.json();
+      if (!response.ok || !Array.isArray(history)) {
+        throw new Error(history.error || '無法載入近 90 天的錢包異動紀錄。');
+      }
+
+      const timestamp = new Intl.DateTimeFormat('zh-TW', {
+        timeZone: 'Asia/Taipei',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hourCycle: 'h23'
+      }).format(downloadTime).replaceAll('/', '-');
+      const signedMoneyFormat = '+"NT$ "#,##0;-"NT$ "#,##0;"NT$ "0';
+      const walletRows = [
+        ['下載時間', timestamp],
+        ['系統正餘額總額', positiveBalanceTotal],
+        ['系統欠款總額', debtBalanceTotal],
+        [],
+        ['人員姓名', '當前餘額', '預扣後金額'],
+        ...users.map(walletUser => [
+          getDisplayName(walletUser.name),
+          Number(walletUser.balance) || 0,
+          Number(walletUser.availableBalance ?? (walletUser.balance - (walletUser.pendingHoldAmount || 0))) || 0
+        ])
+      ];
+      const walletSheet = XLSX.utils.aoa_to_sheet(walletRows);
+      ['B2', 'B3'].forEach(cell => {
+        if (walletSheet[cell]) walletSheet[cell].z = '"NT$ "#,##0';
+      });
+      for (let row = 6; row < walletRows.length + 1; row += 1) {
+        ['B', 'C'].forEach(column => {
+          const cell = walletSheet[`${column}${row}`];
+          if (cell) cell.z = signedMoneyFormat;
+        });
+      }
+      walletSheet['!cols'] = [{ wch: 24 }, { wch: 22 }, { wch: 22 }];
+
+      const historyRows = [
+        [`匯出期間：${startDate} 至 ${endDate}（最多 90 天）`],
+        [],
+        ['交易時間', '人員姓名', '異動金額', '來源', '操作經手人', '備註'],
+        ...history.map(transaction => [
+          new Intl.DateTimeFormat('zh-TW', {
+            timeZone: 'Asia/Taipei',
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hourCycle: 'h23'
+          }).format(new Date(transaction.createdAt)).replaceAll('/', '-'),
+          getDisplayName(transaction.user?.name || ''),
+          Number(transaction.amount) || 0,
+          transaction.source || (transaction.type === 'charge' ? '訂單扣款' : '-'),
+          transaction.operator ? getDisplayName(transaction.operator.name) : '系統自動',
+          transaction.note || '-'
+        ])
+      ];
+      const historySheet = XLSX.utils.aoa_to_sheet(historyRows);
+      for (let row = 4; row < historyRows.length + 1; row += 1) {
+        const cell = historySheet[`C${row}`];
+        if (cell) cell.z = signedMoneyFormat;
+      }
+      historySheet['!cols'] = [
+        { wch: 22 }, { wch: 24 }, { wch: 18 }, { wch: 20 }, { wch: 20 }, { wch: 36 }
+      ];
+
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, walletSheet, '錢包總覽');
+      XLSX.utils.book_append_sheet(workbook, historySheet, '近90天異動');
+      XLSX.writeFile(workbook, `錢包名冊_${endDate}.xlsx`);
+      setStatusMsg({ text: 'Excel 已下載（錢包總覽與近 90 天異動）。', type: 'success' });
+    } catch (error) {
+      setStatusMsg({ text: error.message || 'Excel 匯出失敗，請稍後再試。', type: 'error' });
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   const renderWalletActionForm = (containerClassName = '') => {
     if (!selectedUser) return null;
 
@@ -475,7 +607,7 @@ export default function WalletsManagementPage() {
         </div>
 
         {statusMsg.text && (
-          <div className="fixed bottom-6 right-6 z-50 max-w-[360px] p-4 bg-green-50 border border-green-200 text-green-700 text-xs font-bold rounded-xl shadow-[0_12px_30px_rgba(0,0,0,0.08)] flex items-start gap-2">
+          <div className={`fixed bottom-6 right-6 z-50 max-w-[360px] p-4 text-xs font-bold rounded-xl shadow-[0_12px_30px_rgba(0,0,0,0.08)] flex items-start gap-2 ${statusMsg.type === 'error' ? 'bg-red-50 border border-red-200 text-red-700' : 'bg-green-50 border border-green-200 text-green-700'}`}>
             <i className="ti ti-discount-check text-lg"></i>
             <span className="leading-relaxed">{statusMsg.text}</span>
           </div>
@@ -545,6 +677,34 @@ export default function WalletsManagementPage() {
                     />
                     <i className="ti ti-search absolute left-2.5 top-2.5 text-[#888888]"></i>
                   </div>
+                  {!isReadOnly && (
+                    <div ref={exportMenuRef} className="relative shrink-0">
+                      <button
+                        type="button"
+                        aria-label="錢包名冊更多操作"
+                        aria-haspopup="menu"
+                        aria-expanded={isExportMenuOpen}
+                        onClick={() => setIsExportMenuOpen(current => !current)}
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-[#EAE8E4] bg-white text-[#555555] transition-all hover:border-[#EA5B3C] hover:text-[#EA5B3C]"
+                      >
+                        <i className="ti ti-dots-vertical text-lg"></i>
+                      </button>
+                      {isExportMenuOpen && (
+                        <div role="menu" className="absolute right-0 top-full z-30 mt-2 w-56 rounded-xl border border-[#EAE8E4] bg-white p-1.5 shadow-[0_10px_24px_rgba(0,0,0,0.12)]">
+                          <button
+                            type="button"
+                            role="menuitem"
+                            disabled={isExporting || users.length === 0}
+                            onClick={exportWalletExcel}
+                            className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-xs font-bold text-[#333333] transition-colors hover:bg-[#F9F8F5] hover:text-[#EA5B3C] disabled:cursor-wait disabled:opacity-50"
+                          >
+                            <i className={`ti ${isExporting ? 'ti-loader-2 animate-spin' : 'ti-file-spreadsheet'} text-base`}></i>
+                            {isExporting ? '匯出中...' : '匯出 Excel'}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
 

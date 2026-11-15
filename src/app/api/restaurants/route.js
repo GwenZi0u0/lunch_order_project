@@ -224,6 +224,9 @@ export async function POST(request) {
       }
 
       return newRest;
+    }, {
+      maxWait: 10000,
+      timeout: 30000
     });
 
     const finalRestaurant = await prisma.restaurant.findUnique({
@@ -343,6 +346,9 @@ export async function PUT(request) {
       });
 
       return updatedRest;
+    }, {
+      maxWait: 10000,
+      timeout: 30000
     });
 
     const finalRestaurant = await prisma.restaurant.findUnique({

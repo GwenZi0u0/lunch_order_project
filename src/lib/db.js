@@ -1,11 +1,14 @@
 import { PrismaClient } from '@prisma/client';
 
 const getDatabaseUrl = () => {
-  const rawUrl = process.env.DATABASE_URL;
+  const rawUrl = process.env.POSTGRES_PRISMA_URL || process.env.DATABASE_URL;
   if (!rawUrl) return rawUrl;
 
   try {
     const url = new URL(rawUrl);
+    if (process.env.POSTGRES_PRISMA_URL) {
+      url.searchParams.set('pgbouncer', 'true');
+    }
     url.searchParams.set('connection_limit', '1');
     return url.toString();
   } catch {

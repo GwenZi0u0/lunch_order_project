@@ -91,6 +91,38 @@ function parseCustomizationOptions(value) {
   return [];
 }
 
+function parseRequiredCustomizationOptionGroups(value, options = [], legacyValue = null) {
+  let groups = [];
+  if (Array.isArray(value)) groups = value;
+  else if (typeof value === 'string' && value.trim()) {
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) groups = parsed;
+    } catch {}
+  }
+  const availableOptions = new Set(options);
+  const normalizedGroups = groups.map((group, index) => ({
+    title: String(group.title || '').trim() || `必選範圍 ${String(index + 1).padStart(2, '0')}`,
+    options: Array.isArray(group.options)
+      ? [...new Set(group.options.map(option => String(option).trim()).filter(option => availableOptions.has(option)))]
+      : []
+  })).filter(group => group.options.length > 0);
+  if (normalizedGroups.length > 0) return normalizedGroups;
+
+  let legacyOptions = [];
+  if (Array.isArray(legacyValue)) legacyOptions = legacyValue;
+  else if (typeof legacyValue === 'string' && legacyValue.trim()) {
+    try {
+      const parsed = JSON.parse(legacyValue);
+      if (Array.isArray(parsed)) legacyOptions = parsed;
+    } catch {}
+  }
+  legacyOptions = [...new Set(legacyOptions.map(option => String(option).trim()).filter(option => availableOptions.has(option)))];
+  return legacyOptions.length > 0
+    ? [{ title: '必選範圍 01', options: legacyOptions }]
+    : [];
+}
+
 function normalizeItemNote(menuItem, value) {
   const noteParts = String(value || '').split(';').map(part => part.trim()).filter(Boolean);
   const configuredOptions = parseCustomizationOptions(menuItem?.customizationOptions);
@@ -330,6 +362,25 @@ export async function POST(request) {
           error: `其中一間餐廳已截止訂購（${closedRestaurantConfig.orderDeadline || '09:40'}）。`
         }, { status: 400 });
       }
+    }
+
+    const missingRequiredItem = items.find(item => {
+      const menuItem = menuItems.find(candidate => candidate.id === item.menuItemId);
+      if (!menuItem) return false;
+      const requiredGroups = parseRequiredCustomizationOptionGroups(
+        menuItem.requiredCustomizationOptionGroups,
+        parseCustomizationOptions(menuItem.customizationOptions),
+        menuItem.requiredCustomizationOptions
+      );
+      if (requiredGroups.length === 0) return false;
+      const selectedOptions = new Set(normalizeItemNote(menuItem, item.note).split(';').map(part => part.trim()));
+      return requiredGroups.some(group => group.options.filter(option => selectedOptions.has(option)).length !== 1);
+    });
+    if (missingRequiredItem) {
+      const menuItem = menuItems.find(candidate => candidate.id === missingRequiredItem.menuItemId);
+      return NextResponse.json({
+        error: `「${menuItem?.name || '餐點'}」尚未選擇必選客製化項目。`
+      }, { status: 400 });
     }
 
     // Calculate total amount

@@ -59,6 +59,17 @@ function serializeCustomizationOptions(value) {
   return JSON.stringify(normalizeCustomizationOptions(value));
 }
 
+function serializeRequiredCustomizationOptionGroups(value, options) {
+  const availableOptions = new Set(normalizeCustomizationOptions(options));
+  const groups = Array.isArray(value) ? value : [];
+  return JSON.stringify(groups.map(group => ({
+    title: String(group.title || '').trim(),
+    options: [...new Set((Array.isArray(group.options) ? group.options : [])
+      .map(option => String(option).trim())
+      .filter(option => availableOptions.has(option)))]
+  })).filter(group => group.options.length > 0));
+}
+
 function normalizeCategoryOrder(value, menuItems = []) {
   const categories = [...new Set(
     (menuItems || []).map(item => String(item.category || '餐盒').trim()).filter(Boolean)
@@ -172,6 +183,9 @@ export async function POST(request) {
             name: item.name,
             price: parseInt(item.price, 10) || 0,
             customizationOptions: serializeCustomizationOptions(item.customizationOptions),
+            customizationSettingTitle: String(item.customizationSettingTitle || '').trim() || null,
+            requiredCustomizationOptions: null,
+            requiredCustomizationOptionGroups: serializeRequiredCustomizationOptionGroups(item.requiredCustomizationOptionGroups, item.customizationOptions),
             category: item.category || '主食',
             isAvailable: item.isAvailable !== false,
             }
@@ -278,6 +292,9 @@ export async function PUT(request) {
           name: item.name,
           price: parseInt(item.price, 10) || 0,
           customizationOptions: serializeCustomizationOptions(item.customizationOptions),
+          customizationSettingTitle: String(item.customizationSettingTitle || '').trim() || null,
+          requiredCustomizationOptions: null,
+          requiredCustomizationOptionGroups: serializeRequiredCustomizationOptionGroups(item.requiredCustomizationOptionGroups, item.customizationOptions),
           category: item.category || '主食',
           isAvailable: item.isAvailable !== false,
         };

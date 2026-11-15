@@ -26,6 +26,42 @@ function parseCustomizationOptions(value) {
   return DEFAULT_CUSTOMIZATION_OPTIONS;
 }
 
+function parseRequiredCustomizationOptionGroups(value, options = [], legacyValue = null) {
+  let parsedGroups = [];
+  if (Array.isArray(value)) {
+    parsedGroups = value;
+  } else if (typeof value === 'string' && value.trim()) {
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) parsedGroups = parsed;
+    } catch {
+      parsedGroups = [];
+    }
+  }
+  const availableOptions = new Set(options);
+  const groups = parsedGroups.map((group, index) => ({
+    title: String(group.title || '').trim(),
+    options: Array.isArray(group.options)
+      ? [...new Set(group.options.map(option => String(option).trim()).filter(option => availableOptions.has(option)))]
+      : [],
+    fallbackTitle: `選項組 ${String(index + 1).padStart(2, '0')}`
+  })).filter(group => group.options.length > 0);
+  if (groups.length > 0) return groups;
+
+  let legacyOptions = [];
+  if (Array.isArray(legacyValue)) legacyOptions = legacyValue;
+  else if (typeof legacyValue === 'string' && legacyValue.trim()) {
+    try {
+      const parsed = JSON.parse(legacyValue);
+      if (Array.isArray(parsed)) legacyOptions = parsed;
+    } catch {}
+  }
+  legacyOptions = [...new Set(legacyOptions.map(option => String(option).trim()).filter(option => availableOptions.has(option)))];
+  return legacyOptions.length > 0
+    ? [{ title: '選項組 01', fallbackTitle: '選項組 01', options: legacyOptions }]
+    : [];
+}
+
 function splitExistingItemNote(menuItem, note) {
   const options = parseCustomizationOptions(menuItem?.customizationOptions);
   const selectedOptions = options.filter(option => (note || '').includes(option));
@@ -504,9 +540,19 @@ export default function PortalPage() {
   const handleCustomOptionToggle = (option) => {
     setEditingMenuItemDraft(prev => {
       const current = prev.options || [];
+      const configuredOptions = parseCustomizationOptions(editingMenuItem?.customizationOptions);
+      const requiredGroups = parseRequiredCustomizationOptionGroups(
+        editingMenuItem?.requiredCustomizationOptionGroups,
+        configuredOptions,
+        editingMenuItem?.requiredCustomizationOptions
+      );
+      const groupsContainingOption = requiredGroups.filter(group => group.options.includes(option));
       const next = current.includes(option)
         ? current.filter(item => item !== option)
-        : [...current, option];
+        : [
+            ...current.filter(item => !groupsContainingOption.some(group => group.options.includes(item))),
+            option
+          ];
 
       return { ...prev, options: next };
     });
@@ -516,6 +562,12 @@ export default function PortalPage() {
     if (!editingMenuItem) return;
 
     const options = sortSelectedOptions(editingMenuItem.id, editingMenuItemDraft.options);
+    const requiredGroups = parseRequiredCustomizationOptionGroups(
+      editingMenuItem.requiredCustomizationOptionGroups,
+      parseCustomizationOptions(editingMenuItem.customizationOptions),
+      editingMenuItem.requiredCustomizationOptions
+    );
+    if (requiredGroups.some(group => group.options.filter(option => options.includes(option)).length !== 1)) return;
     const note = normalizeOrderText(editingMenuItemDraft.note);
     const composedNote = [...options, note].filter(Boolean).join('; ');
     const key = `${editingMenuItem.id}::${composedNote}`;
@@ -783,6 +835,36 @@ export default function PortalPage() {
   const editingMenuItem = getMenuItemById(editingMenuItemId);
   const editingMenuItemQty = editingMenuItem ? editingMenuItemDraft.quantity || 0 : 0;
   const editingMenuItemOptions = editingMenuItem ? parseCustomizationOptions(editingMenuItem.customizationOptions) : [];
+  const editingMenuItemRequiredOptionGroups = editingMenuItem
+    ? parseRequiredCustomizationOptionGroups(
+        editingMenuItem.requiredCustomizationOptionGroups,
+        parseCustomizationOptions(editingMenuItem.customizationOptions),
+        editingMenuItem.requiredCustomizationOptions
+      )
+    : [];
+  const invalidRequiredOptionGroups = editingMenuItemRequiredOptionGroups.filter(group => (
+    group.options.filter(option => (editingMenuItemDraft.options || []).includes(option)).length !== 1
+  ));
+  const requiredOptionSet = new Set(editingMenuItemRequiredOptionGroups.flatMap(group => group.options));
+  const renderCustomizationOption = (option, groupTitle = '') => {
+    const selected = (editingMenuItemDraft.options || []).includes(option);
+    return (
+      <button
+        key={`${groupTitle}-${option}`}
+        type="button"
+        onClick={() => handleCustomOptionToggle(option)}
+        aria-pressed={selected}
+        aria-label={groupTitle ? `${groupTitle}：${option}` : option}
+        className={`rounded-full border px-3 py-2 text-xs font-bold transition-all ${
+          selected
+            ? 'border-[#EA5B3C] bg-[#FFF3EF] text-[#EA5B3C]'
+            : 'border-[#EAE8E4] bg-white text-[#888888] hover:border-[#EA5B3C] hover:text-[#EA5B3C]'
+        }`}
+      >
+        {option}
+      </button>
+    );
+  };
   const activeRestaurantStats = activeSchedule?.stats?.restaurants?.find(
     stats => stats.restaurantId === activeRestaurant?.id
   );
@@ -1599,24 +1681,31 @@ export default function PortalPage() {
 
               <div className="space-y-5 px-5 py-5">
                 <div className="space-y-2">
-                  <div className="flex flex-wrap gap-2">
-                    {editingMenuItemOptions.map(option => {
-                      const selected = (editingMenuItemDraft.options || []).includes(option);
-                      return (
-                        <button
-                          key={option}
-                          type="button"
-                          onClick={() => handleCustomOptionToggle(option)}
-                          className={`rounded-full border px-3 py-2 text-xs font-bold transition-all ${
-                            selected
-                              ? 'border-[#EA5B3C] bg-[#FFF3EF] text-[#EA5B3C]'
-                              : 'border-[#EAE8E4] bg-white text-[#888888] hover:border-[#EA5B3C] hover:text-[#EA5B3C]'
-                          }`}
-                        >
-                          {option}
-                        </button>
-                      );
-                    })}
+                  {editingMenuItemRequiredOptionGroups.length > 0 && (
+                    <div className="space-y-2">
+                      <div className="text-[11px] font-bold text-[#EA5B3C]">必選</div>
+                      {editingMenuItemRequiredOptionGroups.map(group => {
+                        const selectedCount = group.options.filter(option => (editingMenuItemDraft.options || []).includes(option)).length;
+                        const isInvalid = selectedCount !== 1;
+                        return (
+                          <div key={`${group.title}-${group.options.join('|')}`} className="space-y-1">
+                            <div className="flex flex-wrap gap-2">
+                              {group.options.map(option => renderCustomizationOption(option, group.title || group.fallbackTitle))}
+                            </div>
+                            {isInvalid && (
+                              <p className="text-[11px] font-bold text-[#EA5B3C]" role="status">
+                                {selectedCount === 0 ? '請從' : '只能從'}「{group.title || group.fallbackTitle}」選擇一項
+                              </p>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                  <div className={`flex flex-wrap gap-2 ${editingMenuItemRequiredOptionGroups.length > 0 ? 'border-t border-[#F0ECE6] pt-3' : ''}`}>
+                    {editingMenuItemOptions
+                      .filter(option => !requiredOptionSet.has(option))
+                      .map(option => renderCustomizationOption(option))}
                   </div>
                 </div>
 
@@ -1647,7 +1736,7 @@ export default function PortalPage() {
                 <button
                   type="button"
                   onClick={applyMenuItemDialog}
-                  disabled={editingMenuItemQty === 0}
+                  disabled={editingMenuItemQty === 0 || invalidRequiredOptionGroups.length > 0}
                   className="flex-[1.5] rounded-xl bg-[#EA5B3C] py-3 text-xs font-bold text-white shadow-sm transition-all hover:bg-[#333333] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-[#EA5B3C]"
                 >
                   加入訂購清單

@@ -37,6 +37,23 @@ function getTaipeiDateRange(startDate, endDate) {
   return range;
 }
 
+function getSixMonthHistoryStart() {
+  const parts = new Intl.DateTimeFormat('en', {
+    timeZone: 'Asia/Taipei',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date());
+  const dateParts = Object.fromEntries(parts.map(({ type, value }) => [type, value]));
+  const cutoff = new Date(Date.UTC(
+    Number(dateParts.year),
+    Number(dateParts.month) - 1 - 6,
+    Number(dateParts.day),
+  ));
+  const cutoffKey = `${cutoff.getUTCFullYear()}-${String(cutoff.getUTCMonth() + 1).padStart(2, '0')}-${String(cutoff.getUTCDate()).padStart(2, '0')}`;
+  return new Date(`${cutoffKey}T00:00:00+08:00`);
+}
+
 export async function GET(request) {
   try {
     const user = await getCurrentUser(request);
@@ -124,7 +141,17 @@ export async function GET(request) {
 
       const where = {};
       if (queryUserId) where.userId = queryUserId;
-      if (createdAtRange) where.createdAt = createdAtRange;
+      if (scope === 'mine') {
+        const sixMonthStart = getSixMonthHistoryStart();
+        where.createdAt = {
+          ...createdAtRange,
+          gte: createdAtRange?.gte && createdAtRange.gte > sixMonthStart
+            ? createdAtRange.gte
+            : sixMonthStart,
+        };
+      } else if (createdAtRange) {
+        where.createdAt = createdAtRange;
+      }
 
       const transactions = await prisma.balanceTransaction.findMany({
         where,
@@ -267,6 +294,64 @@ export async function PATCH(request) {
     });
 
     return NextResponse.json({ success: true, user: updatedUser });
+  } catch (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+export async function DELETE(request) {
+  try {
+    const user = await getCurrentUser(request);
+    if (!user || user.role !== 'admin') {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+
+    const { targetUserId } = await request.json();
+    if (!targetUserId || typeof targetUserId !== 'string') {
+      return NextResponse.json({ error: 'Invalid member id' }, { status: 400 });
+    }
+    if (targetUserId === user.userId) {
+      return NextResponse.json({ error: '不能刪除目前登入的管理者帳號。' }, { status: 400 });
+    }
+
+    const result = await prisma.$transaction(async tx => {
+      const target = await tx.user.findUnique({
+        where: { id: targetUserId },
+        select: { id: true, name: true, role: true, balance: true },
+      });
+      if (!target) return { error: '找不到此成員。', status: 404 };
+
+      if (target.balance !== 0) {
+        return { error: '此成員帳款尚未結清，請先將餘額結清後再刪除。', status: 409 };
+      }
+
+      if (target.role === 'admin') {
+        const adminCount = await tx.user.count({ where: { role: 'admin' } });
+        if (adminCount <= 1) {
+          return { error: '系統至少需要保留一位管理者，無法刪除此成員。', status: 409 };
+        }
+      }
+
+      const pendingOrders = await tx.order.count({
+        where: {
+          userId: targetUserId,
+          status: { in: ACTIVE_HOLD_STATUSES },
+          chargedAt: null,
+          schedule: { deliveredAt: null },
+        },
+      });
+      if (pendingOrders > 0) {
+        return { error: '此成員仍有未結帳的訂單，請先完成帳款處理後再刪除。', status: 409 };
+      }
+
+      await tx.user.delete({ where: { id: targetUserId } });
+      return { success: true, name: target.name };
+    });
+
+    if (!result.success) {
+      return NextResponse.json({ error: result.error }, { status: result.status });
+    }
+    return NextResponse.json({ success: true, name: result.name });
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

@@ -390,7 +390,6 @@ export default function UsersManagementPage() {
                 </div>
               </div>
 
-              <div className="mt-5 rounded-xl border border-[#EAE8E4] bg-[#F9F8F5] p-4">
                 {draftRole === 'viewer' && (
                 <div className="mt-5 grid grid-cols-[auto_minmax(0,1fr)] items-center gap-4 rounded-xl border border-[#EAE8E4] bg-[#F9F8F5] p-4">
                   <label htmlFor="viewer-page" className="text-sm font-bold text-[#333333]">檢視頁面</label>

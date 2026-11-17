@@ -41,7 +41,7 @@ function getHistoryDateBounds() {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const earliest = new Date(today);
-  earliest.setMonth(earliest.getMonth() - 18);
+  earliest.setMonth(earliest.getMonth() - 6);
   return {
     earliest,
     earliestKey: toDateKey(earliest),

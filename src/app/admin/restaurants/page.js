@@ -55,6 +55,98 @@ function optionsToInputValue(value) {
   return normalizeCustomizationOptions(value).join(', ');
 }
 
+function normalizeRequiredCustomizationOptionGroups(value, options = [], legacyValue = null) {
+  let parsedGroups = [];
+  if (Array.isArray(value)) {
+    parsedGroups = value;
+  } else if (typeof value === 'string' && value.trim()) {
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) parsedGroups = parsed;
+    } catch {
+      parsedGroups = [];
+    }
+  }
+
+  const availableOptions = new Set(options);
+  const groups = parsedGroups.map((group, index) => ({
+    id: group.id || `required-group-${index + 1}`,
+    title: String(group.title || '').trim(),
+    options: Array.isArray(group.options)
+      ? [...new Set(group.options.map(option => String(option).trim()).filter(option => availableOptions.has(option)))]
+      : []
+  })).filter(group => group.options.length > 0);
+  if (groups.length > 0) return groups;
+
+  const legacyOptions = Array.isArray(legacyValue)
+    ? legacyValue.map(option => String(option).trim()).filter(option => availableOptions.has(option))
+    : (() => {
+        try {
+          const parsed = JSON.parse(String(legacyValue || '[]'));
+          return Array.isArray(parsed) ? parsed.map(option => String(option).trim()).filter(option => availableOptions.has(option)) : [];
+        } catch {
+          return [];
+        }
+      })();
+  return legacyOptions.length > 0
+    ? [{ id: 'required-group-legacy', title: '必選範圍 01', options: [...new Set(legacyOptions)] }]
+    : [];
+}
+
+function serializeRequiredCustomizationOptionGroups(groups = [], options = []) {
+  const availableOptions = new Set(options);
+  return groups.map(group => ({
+    title: String(group.title || '').trim(),
+    options: [...new Set((group.options || []).map(option => String(option).trim()).filter(option => availableOptions.has(option)))]
+  })).filter(group => group.options.length > 0);
+}
+
+function buildCustomizationSettings(items = []) {
+  const settings = [];
+  const settingsByOptions = new Map();
+  const preparedItems = items.map(item => {
+    const options = normalizeCustomizationOptions(item.customizationOptions);
+    const title = String(item.customizationSettingTitle || '').trim();
+    const requiredOptionGroups = normalizeRequiredCustomizationOptionGroups(
+      item.requiredCustomizationOptionGroups,
+      options,
+      item.requiredCustomizationOptions
+    );
+    if (options.length === 0) {
+      return {
+        ...item,
+        customizationOptions: options,
+        customizationSettingTitle: title,
+        requiredCustomizationOptionGroups: requiredOptionGroups,
+        customizationSettingId: ''
+      };
+    }
+
+    const signature = JSON.stringify([options, title, requiredOptionGroups.map(group => ({ title: group.title, options: group.options }))]);
+    let setting = settingsByOptions.get(signature);
+    if (!setting) {
+      setting = {
+        id: `customization-${settings.length + 1}`,
+        title,
+        options: [...options],
+        requiredOptionGroups: requiredOptionGroups.map((group, index) => ({ ...group, id: `required-group-${index + 1}` }))
+      };
+      settings.push(setting);
+      settingsByOptions.set(signature, setting);
+    }
+
+    return {
+      ...item,
+      customizationOptions: options,
+      customizationSettingTitle: title,
+      requiredCustomizationOptionGroups: requiredOptionGroups,
+      customizationSettingId: setting.id
+    };
+  });
+
+  return { items: preparedItems, settings };
+}
+
 function getDefaultCategoryOrder(items = []) {
   const priority = category => {
     if (category.includes('餐盒')) return 0;
@@ -125,6 +217,9 @@ export default function RestaurantsPage() {
   const [isMenuImageProcessing, setIsMenuImageProcessing] = useState(false);
   const [menuItems, setMenuItems] = useState([]); // [{ name, price, category }] category maps to JSON "類型"
   const [categoryOrder, setCategoryOrder] = useState([]);
+  const [customizationSettings, setCustomizationSettings] = useState([]);
+  const [editingCustomizationSettingId, setEditingCustomizationSettingId] = useState('');
+  const [customizationSettingDraft, setCustomizationSettingDraft] = useState(null);
   const [draggedCategory, setDraggedCategory] = useState('');
   const [isMenuTableDragging, setIsMenuTableDragging] = useState(false);
   const menuTableDragRef = useRef({
@@ -168,6 +263,12 @@ export default function RestaurantsPage() {
       price: parseInt(item.price, 10) || 0,
       category: (item.category || '').trim(),
       customizationOptions: normalizeCustomizationOptions(item.customizationOptions),
+      customizationSettingTitle: String(item.customizationSettingTitle || '').trim(),
+      requiredCustomizationOptionGroups: normalizeRequiredCustomizationOptionGroups(
+        item.requiredCustomizationOptionGroups,
+        normalizeCustomizationOptions(item.customizationOptions),
+        item.requiredCustomizationOptions
+      ),
       isAvailable: item.isAvailable !== false,
     })),
   });
@@ -257,7 +358,11 @@ export default function RestaurantsPage() {
       setNewRestName(parsed.name);
       setNewRestPhone(parsed.phone);
       setNewRestNote(parsed.note);
-      setMenuItems(parsed.menuItems);
+      const customizationData = buildCustomizationSettings(parsed.menuItems);
+      setMenuItems(customizationData.items);
+      setCustomizationSettings(customizationData.settings);
+      setEditingCustomizationSettingId('');
+      setCustomizationSettingDraft(null);
       const importedCategoryOrder = getDefaultCategoryOrder(parsed.menuItems);
       setCategoryOrder(previousOrder => editingRestaurantId
         ? [
@@ -345,10 +450,14 @@ export default function RestaurantsPage() {
       const parsed = result.data;
       setNewRestName(parsed.name || '');
       setNewRestPhone(parsed.phone || '');
-      setMenuItems((parsed.menuItems || []).map(item => ({
+      const customizationData = buildCustomizationSettings((parsed.menuItems || []).map(item => ({
         ...item,
         customizationOptions: normalizeCustomizationOptions(item.customizationOptions)
       })));
+      setMenuItems(customizationData.items);
+      setCustomizationSettings(customizationData.settings);
+      setEditingCustomizationSettingId('');
+      setCustomizationSettingDraft(null);
       
       if (result.warning) {
         setOcrWarning(result.warning);
@@ -372,8 +481,184 @@ export default function RestaurantsPage() {
     });
   };
 
+  const handleAddCustomizationSetting = () => {
+    if (editingCustomizationSettingId) return;
+    const draft = { id: `customization-new-${Date.now()}`, title: '', options: [], requiredOptionGroups: [] };
+    setEditingCustomizationSettingId(draft.id);
+    setCustomizationSettingDraft(draft);
+  };
+
+  const handleBeginCustomizationSettingEdit = setting => {
+    if (editingCustomizationSettingId || editingMenuItemIndex !== null) return;
+    setEditingCustomizationSettingId(setting.id);
+    setCustomizationSettingDraft({
+      ...setting,
+      options: [...setting.options],
+      requiredOptionGroups: (setting.requiredOptionGroups || []).map(group => ({
+        ...group,
+        options: [...group.options]
+      }))
+    });
+  };
+
+  const handleCancelCustomizationSettingEdit = () => {
+    setEditingCustomizationSettingId('');
+    setCustomizationSettingDraft(null);
+  };
+
+  const handleConfirmCustomizationSettingEdit = () => {
+    if (!customizationSettingDraft) return;
+    const draft = {
+      ...customizationSettingDraft,
+      title: String(customizationSettingDraft.title || '').trim(),
+      options: (customizationSettingDraft.options || []).map(option => String(option).trim()).filter(Boolean),
+      requiredOptionGroups: serializeRequiredCustomizationOptionGroups(
+        customizationSettingDraft.requiredOptionGroups || [],
+        (customizationSettingDraft.options || []).map(option => String(option).trim()).filter(Boolean)
+      ).map((group, index) => ({
+        ...group,
+        id: customizationSettingDraft.requiredOptionGroups?.[index]?.id || `required-group-${index + 1}`
+      }))
+    };
+    setCustomizationSettings(prev => prev.some(setting => setting.id === draft.id)
+      ? prev.map(setting => setting.id === draft.id ? draft : setting)
+      : [...prev, draft]);
+    setMenuItems(prev => prev.map(item => (
+      item.customizationSettingId === draft.id
+        ? {
+            ...item,
+            customizationOptions: [...draft.options],
+            customizationSettingTitle: draft.title,
+            requiredCustomizationOptionGroups: draft.requiredOptionGroups.map(group => ({ ...group, options: [...group.options] }))
+          }
+        : item
+    )));
+    setEditingCustomizationSettingId('');
+    setCustomizationSettingDraft(null);
+  };
+
+  const handleCustomizationSettingDraftChange = changes => {
+    setCustomizationSettingDraft(prev => prev ? { ...prev, ...changes } : prev);
+  };
+
+  const handleCustomizationSettingOptionChange = (optionIndex, value) => {
+    if (!customizationSettingDraft) return;
+    const nextOptions = [...customizationSettingDraft.options];
+    const previousOption = nextOptions[optionIndex];
+    nextOptions[optionIndex] = value;
+    const requiredOptionGroups = (customizationSettingDraft.requiredOptionGroups || []).map(group => ({
+      ...group,
+      options: [...new Set(group.options.map(option => option === previousOption ? value : option).filter(option => nextOptions.includes(option)))]
+    })).filter(group => group.options.length > 0);
+    handleCustomizationSettingDraftChange({ options: nextOptions, requiredOptionGroups });
+  };
+
+  const handleAddRequiredOptionGroup = () => {
+    if (!customizationSettingDraft) return;
+    const group = {
+      id: `required-group-${Date.now()}`,
+      title: '',
+      options: []
+    };
+    handleCustomizationSettingDraftChange({
+      requiredOptionGroups: [...(customizationSettingDraft.requiredOptionGroups || []), group]
+    });
+  };
+
+  const handleRequiredOptionGroupTitleChange = (groupId, title) => {
+    if (!customizationSettingDraft) return;
+    handleCustomizationSettingDraftChange({
+      requiredOptionGroups: customizationSettingDraft.requiredOptionGroups.map(group => (
+        group.id === groupId ? { ...group, title } : group
+      ))
+    });
+  };
+
+  const handleRequiredOptionGroupToggle = (groupId, option) => {
+    if (!customizationSettingDraft) return;
+    handleCustomizationSettingDraftChange({
+      requiredOptionGroups: customizationSettingDraft.requiredOptionGroups.map(group => (
+        group.id !== groupId ? group : {
+          ...group,
+          options: group.options.includes(option)
+            ? group.options.filter(item => item !== option)
+            : [...group.options, option]
+        }
+      ))
+    });
+  };
+
+  const handleRemoveRequiredOptionGroup = groupId => {
+    if (!customizationSettingDraft) return;
+    handleCustomizationSettingDraftChange({
+      requiredOptionGroups: customizationSettingDraft.requiredOptionGroups.filter(group => group.id !== groupId)
+    });
+  };
+
+  const handleAddCustomizationOption = () => {
+    if (!customizationSettingDraft) return;
+    handleCustomizationSettingDraftChange({ options: [...customizationSettingDraft.options, ''] });
+  };
+
+  const handleRemoveCustomizationOption = optionIndex => {
+    if (!customizationSettingDraft) return;
+    const removedOption = customizationSettingDraft.options[optionIndex];
+    handleCustomizationSettingDraftChange({
+      options: customizationSettingDraft.options.filter((_, index) => index !== optionIndex),
+      requiredOptionGroups: (customizationSettingDraft.requiredOptionGroups || []).map(group => ({
+        ...group,
+        options: group.options.filter(option => option !== removedOption)
+      })).filter(group => group.options.length > 0)
+    });
+  };
+
+  const handleRemoveCustomizationSetting = settingId => {
+    if (editingCustomizationSettingId) return;
+    const isAssigned = menuItems.some(item => item.customizationSettingId === settingId);
+    if (isAssigned) return;
+    setCustomizationSettings(prev => prev.filter(setting => setting.id !== settingId));
+  };
+
+  const handleMenuItemCustomizationSettingChange = (index, settingId) => {
+    const setting = customizationSettings.find(item => item.id === settingId);
+    setMenuItems(prev => prev.map((item, itemIndex) => (
+      itemIndex === index
+        ? {
+            ...item,
+            customizationSettingId: setting?.id || '',
+            customizationOptions: setting ? [...setting.options] : [],
+            customizationSettingTitle: setting?.title || '',
+            requiredCustomizationOptionGroups: setting
+              ? setting.requiredOptionGroups.map(group => ({ ...group, options: [...group.options] }))
+              : []
+          }
+        : item
+    )));
+  };
+
   const handleAddMenuItem = () => {
-    const newItem = { name: '', price: 0, category: '餐盒', customizationOptions: DEFAULT_CUSTOMIZATION_OPTIONS, isAvailable: true };
+    if (editingCustomizationSettingId) return;
+    const defaultSignature = JSON.stringify(DEFAULT_CUSTOMIZATION_OPTIONS);
+    let defaultSetting = customizationSettings.find(setting => JSON.stringify(setting.options) === defaultSignature);
+    if (!defaultSetting) {
+      defaultSetting = {
+        id: `customization-new-${Date.now()}`,
+        title: '',
+        options: [...DEFAULT_CUSTOMIZATION_OPTIONS],
+        requiredOptionGroups: []
+      };
+      setCustomizationSettings(prev => [...prev, defaultSetting]);
+    }
+    const newItem = {
+      name: '',
+      price: 0,
+      category: '餐盒',
+      customizationOptions: [...DEFAULT_CUSTOMIZATION_OPTIONS],
+      customizationSettingId: defaultSetting.id,
+      customizationSettingTitle: defaultSetting.title || '',
+      requiredCustomizationOptionGroups: (defaultSetting.requiredOptionGroups || []).map(group => ({ ...group, options: [...group.options] })),
+      isAvailable: true
+    };
     setMenuItems(prev => [newItem, ...prev]);
     setEditingMenuItemIndex(0);
     setEditingMenuItemOriginal({ ...newItem, customizationOptions: [...newItem.customizationOptions] });
@@ -390,7 +675,7 @@ export default function RestaurantsPage() {
   };
 
   const handleStartMenuItemEdit = (index) => {
-    if (editingMenuItemIndex !== null) return;
+    if (editingMenuItemIndex !== null || editingCustomizationSettingId) return;
     const item = menuItems[index];
     setEditingMenuItemIndex(index);
     setEditingMenuItemOriginal({
@@ -437,6 +722,9 @@ export default function RestaurantsPage() {
     setNewRestMenuImage('');
     setMenuItems([]);
     setCategoryOrder([]);
+    setCustomizationSettings([]);
+    setEditingCustomizationSettingId('');
+    setCustomizationSettingDraft(null);
     setDraggedCategory('');
     setEditingMenuItemIndex(null);
     setEditingMenuItemOriginal(null);
@@ -451,6 +739,12 @@ export default function RestaurantsPage() {
       price: item.price,
       category: item.category || '',
       customizationOptions: normalizeCustomizationOptions(item.customizationOptions),
+      customizationSettingTitle: item.customizationSettingTitle || '',
+      requiredCustomizationOptionGroups: normalizeRequiredCustomizationOptionGroups(
+        item.requiredCustomizationOptionGroups,
+        normalizeCustomizationOptions(item.customizationOptions),
+        item.requiredCustomizationOptions
+      ),
       isAvailable: item.isAvailable !== false,
     }));
 
@@ -461,7 +755,11 @@ export default function RestaurantsPage() {
     setNewRestPhone(restaurant.phone || '');
     setNewRestNote(restaurant.note || '');
     setNewRestMenuImage(restaurant.menuImageDataUrl || '');
-    setMenuItems(editableItems);
+    const customizationData = buildCustomizationSettings(editableItems);
+    setMenuItems(customizationData.items);
+    setCustomizationSettings(customizationData.settings);
+    setEditingCustomizationSettingId('');
+    setCustomizationSettingDraft(null);
     const initialCategoryOrder = [
       ...(restaurant.categoryOrder || []),
       ...getDefaultCategoryOrder(editableItems)
@@ -496,6 +794,12 @@ export default function RestaurantsPage() {
       price: item.price,
       category: item.category || '',
       customizationOptions: normalizeCustomizationOptions(item.customizationOptions),
+      customizationSettingTitle: item.customizationSettingTitle || '',
+      requiredCustomizationOptionGroups: normalizeRequiredCustomizationOptionGroups(
+        item.requiredCustomizationOptionGroups,
+        normalizeCustomizationOptions(item.customizationOptions),
+        item.requiredCustomizationOptions
+      ),
       isAvailable: item.isAvailable !== false,
     }));
     const previewCategoryOrder = [
@@ -509,7 +813,11 @@ export default function RestaurantsPage() {
     setNewRestPhone(restaurant.phone || '');
     setNewRestNote(restaurant.note || '');
     setNewRestMenuImage(restaurant.menuImageDataUrl || '');
-    setMenuItems(previewItems);
+    const customizationData = buildCustomizationSettings(previewItems);
+    setMenuItems(customizationData.items);
+    setCustomizationSettings(customizationData.settings);
+    setEditingCustomizationSettingId('');
+    setCustomizationSettingDraft(null);
     setCategoryOrder(previewCategoryOrder);
     setEditingMenuItemIndex(null);
     setEditingMenuItemOriginal(null);
@@ -534,6 +842,11 @@ export default function RestaurantsPage() {
       if (proteinDifference) return proteinDifference;
       return (a.item.name || '').localeCompare(b.item.name || '', 'zh-Hant');
     });
+  const editorCustomizationSettings = editingCustomizationSettingId && customizationSettingDraft
+    ? customizationSettings.some(setting => setting.id === editingCustomizationSettingId)
+      ? customizationSettings.map(setting => setting.id === editingCustomizationSettingId ? customizationSettingDraft : setting)
+      : [...customizationSettings, customizationSettingDraft]
+    : customizationSettings;
   const currentEditData = buildComparableRestaurant(
     newRestName,
     newRestPhone,
@@ -664,6 +977,10 @@ export default function RestaurantsPage() {
   };
 
   const handleSaveRestaurant = async () => {
+    if (editingCustomizationSettingId) {
+      setStatusMsg({ text: '請先確認或取消目前的客製化設定編輯。', type: 'error' });
+      return;
+    }
     if (!newRestName) {
       setStatusMsg({ text: '請輸入餐廳名稱！', type: 'error' });
       return;
@@ -687,7 +1004,10 @@ export default function RestaurantsPage() {
           phone: newRestPhone,
           note: newRestNote,
           menuImageDataUrl: newRestMenuImage,
-          menuItems,
+          menuItems: menuItems.map(({ customizationSettingId, ...item }) => ({
+            ...item,
+            price: parseInt(item.price, 10) || 0
+          })),
           categoryOrder: displayedCategoryOrder
         })
       });
@@ -861,7 +1181,7 @@ export default function RestaurantsPage() {
                     <>
                       <button
                         type="button"
-                        disabled={isSaving || !newRestName || menuItems.length === 0 || !hasEditChanges}
+                        disabled={isSaving || !!editingCustomizationSettingId || !newRestName || menuItems.length === 0 || !hasEditChanges}
                         onClick={handleSaveRestaurant}
                         title="儲存餐廳變更"
                         aria-label="儲存餐廳變更"
@@ -975,7 +1295,7 @@ export default function RestaurantsPage() {
 
                 {newRestMenuImage ? (
                   <div className="relative overflow-hidden rounded-lg border border-[#EAE8E4] bg-white">
-                    <img src={newRestMenuImage} alt={`${newRestName || '餐廳'}菜單預覽`} className="max-h-72 w-full object-contain" />
+                    <img src={newRestMenuImage} alt={`${newRestName || '餐廳'}菜單預覽`} className="max-h-48 w-full object-contain" />
                     {!viewingRestaurantId && (
                       <button
                         type="button"
@@ -1004,7 +1324,8 @@ export default function RestaurantsPage() {
                   {!viewingRestaurantId && (
                     <button
                       onClick={handleAddMenuItem}
-                      className="text-xs font-bold border border-[#EAE8E4] text-[#333333] hover:text-[#EA5B3C] hover:border-[#EA5B3C] px-3 py-1.5 rounded-lg bg-white transition-all flex items-center gap-1"
+                      disabled={!!editingCustomizationSettingId}
+                      className="text-xs font-bold border border-[#EAE8E4] text-[#333333] hover:text-[#EA5B3C] hover:border-[#EA5B3C] px-3 py-1.5 rounded-lg bg-white transition-all flex items-center gap-1 disabled:cursor-not-allowed disabled:opacity-40"
                     >
                       <i className="ti ti-plus"></i> 新增品項
                     </button>
@@ -1012,9 +1333,9 @@ export default function RestaurantsPage() {
                 </div>
 
                 {displayedCategoryOrder.length > 0 && (
-                  <div className="space-y-2 rounded-xl border border-[#EAE8E4] bg-[#F9F8F5] p-3">
+                  <div className="space-y-2 rounded-lg border border-[#EAE8E4] bg-[#F9F8F5] p-3">
                     <div className="flex items-center justify-between gap-3">
-                      <span className="text-xs font-bold text-[#666666]">類型書籤排序</span>
+                      <span className="text-xs font-bold text-[#666666]">類型書籤</span>
                       <span className="text-[10px] text-[#888888]">
                         {viewingRestaurantId ? '唯讀預覽' : '拖曳調整訂購頁顯示順序'}
                       </span>
@@ -1044,8 +1365,241 @@ export default function RestaurantsPage() {
                         </button>
                       ))}
                     </div>
+                    {!viewingRestaurantId && (
+                      <p className="text-[10px] leading-5 text-[#888888]">
+                        新增類型請在品項表格的「類型」欄輸入名稱；輸入或選用後會加入書籤排序。
+                      </p>
+                    )}
                   </div>
                 )}
+
+                <section className="space-y-3 rounded-lg border border-[#EAE8E4] bg-white p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <h5 className="text-xs font-bold text-[#333333]">客製化選擇設定</h5>
+                      <p className="mt-1 text-[10px] leading-5 text-[#888888]">
+                        集中編輯客製化選項；品項表格可用設定編號快速套用。可設定必選範圍，範圍內恰選一項，範圍外自由選擇。
+                        設定會沿用品項現有客製化資料；未套用至品項的設定不會保存。
+                      </p>
+                    </div>
+                    {!viewingRestaurantId && (
+                      <button
+                        type="button"
+                        onClick={handleAddCustomizationSetting}
+                        disabled={editingMenuItemIndex !== null || !!editingCustomizationSettingId}
+                        className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-[#EAE8E4] bg-white px-3 py-2 text-[10px] font-bold text-[#555555] transition-colors hover:border-[#EA5B3C] hover:text-[#EA5B3C] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-[#EAE8E4] disabled:hover:text-[#555555]"
+                      >
+                        <i className="ti ti-plus"></i>
+                        新增設定
+                      </button>
+                    )}
+                  </div>
+
+                  {editorCustomizationSettings.length === 0 ? (
+                    <div className="rounded-lg border border-dashed border-[#D6D1CA] bg-[#F9F8F5] px-4 py-5 text-center text-[10px] text-[#888888]">
+                      尚無客製化設定。新增設定後，可在品項表格中指定要套用的設定。
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 gap-3">
+                      {editorCustomizationSettings.map((setting, settingIndex) => {
+                        const assignedCount = menuItems.filter(item => item.customizationSettingId === setting.id).length;
+                        const settingNumber = String(settingIndex + 1).padStart(2, '0');
+                        const isEditingSetting = editingCustomizationSettingId === setting.id;
+                        const requiredOptionGroups = setting.requiredOptionGroups || [];
+                        const hasIncompleteRequiredGroup = requiredOptionGroups.some(group => group.options.length === 0);
+                        const optionPreview = [
+                          setting.options.filter(Boolean).join('、'),
+                          requiredOptionGroups.length > 0
+                            ? `必選範圍：${requiredOptionGroups.map((group, index) => `${group.title || `範圍 ${index + 1}`}（${group.options.join('／')}）`).join('；')}`
+                            : ''
+                        ].filter(Boolean).join('　');
+
+                        return (
+                          <div key={setting.id} className="space-y-3 rounded-md border border-[#EAE8E4] bg-[#F9F8F5] p-3">
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="flex min-w-0 flex-1 items-center gap-2">
+                                <span className="shrink-0 text-xs font-bold text-[#EA5B3C]">{settingNumber}</span>
+                                {isEditingSetting ? (
+                                  <input
+                                    type="text"
+                                    value={setting.title || ''}
+                                    onChange={event => handleCustomizationSettingDraftChange({ title: event.target.value })}
+                                    placeholder="自訂設定名稱"
+                                    aria-label={`設定 ${settingNumber} 名稱`}
+                                    className="min-w-0 flex-1 rounded-lg border border-[#EAE8E4] bg-white px-3 py-2 text-xs font-bold text-[#333333] outline-none transition-colors placeholder:font-normal placeholder:text-[#AAA39A] focus:border-[#EA5B3C]"
+                                  />
+                                ) : (
+                                  <h6 className="min-w-0 flex-1 truncate text-xs font-bold text-[#333333]" title={setting.title || `設定 ${settingNumber}`}>
+                                    {setting.title || `設定 ${settingNumber}`}
+                                  </h6>
+                                )}
+                                <span className="shrink-0 text-[10px] text-[#888888]">{assignedCount} 個品項</span>
+                              </div>
+                              {!viewingRestaurantId && (isEditingSetting ? (
+                                <div className="flex shrink-0 items-center gap-1">
+                                  <button
+                                    type="button"
+                                    disabled={hasIncompleteRequiredGroup}
+                                    onClick={handleConfirmCustomizationSettingEdit}
+                                    aria-label={`確認設定 ${settingNumber}`}
+                                    title={hasIncompleteRequiredGroup ? '每個必選範圍至少選一個選項' : '暫存設定'}
+                                    className="flex h-8 w-8 items-center justify-center rounded-full border border-green-200 bg-white text-green-700 transition-colors hover:bg-green-50 disabled:cursor-not-allowed disabled:opacity-35"
+                                  >
+                                    <i className="ti ti-check text-sm"></i>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={handleCancelCustomizationSettingEdit}
+                                    aria-label={`取消設定 ${settingNumber} 編輯`}
+                                    title="取消編輯"
+                                    className="flex h-8 w-8 items-center justify-center rounded-full border border-[#EAE8E4] bg-white text-[#777777] transition-colors hover:border-red-200 hover:text-red-600"
+                                  >
+                                    <i className="ti ti-x text-sm"></i>
+                                  </button>
+                                </div>
+                              ) : (
+                                <div className="flex shrink-0 items-center gap-1">
+                                  <button
+                                    type="button"
+                                    disabled={!!editingCustomizationSettingId || editingMenuItemIndex !== null}
+                                    onClick={() => handleBeginCustomizationSettingEdit(setting)}
+                                    aria-label={`編輯設定 ${settingNumber}`}
+                                    title="編輯設定"
+                                    className="flex h-8 w-8 items-center justify-center rounded-full border border-[#EAE8E4] bg-white text-[#777777] transition-colors hover:border-[#EA5B3C] hover:text-[#EA5B3C] disabled:cursor-not-allowed disabled:opacity-35"
+                                  >
+                                    <i className="ti ti-pencil text-sm"></i>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={assignedCount > 0 || !!editingCustomizationSettingId || editingMenuItemIndex !== null}
+                                    onClick={() => handleRemoveCustomizationSetting(setting.id)}
+                                    aria-label={`刪除設定 ${settingNumber}`}
+                                    title={assignedCount > 0 ? '請先將套用品項改用其他設定' : '刪除設定'}
+                                    className="flex h-8 w-8 items-center justify-center rounded-full border border-[#EAE8E4] bg-white text-[#888888] transition-colors hover:border-red-200 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-35"
+                                  >
+                                    <i className="ti ti-trash text-sm"></i>
+                                  </button>
+                                </div>
+                              )
+                              )}
+                            </div>
+
+                            {isEditingSetting ? (
+                              <>
+                                <div className="space-y-2">
+                                  {setting.options.length === 0 && (
+                                    <p className="text-[10px] text-[#99928A]">尚無選項，請新增至少一個客製化選項。</p>
+                                  )}
+                                  {setting.options.map((option, optionIndex) => (
+                                    <div key={`${setting.id}-${optionIndex}`} className="flex items-center gap-2">
+                                      <span className="w-6 shrink-0 text-center text-[10px] font-bold text-[#AAA39A]">
+                                        {String(optionIndex + 1).padStart(2, '0')}
+                                      </span>
+                                      <input
+                                        type="text"
+                                        value={option}
+                                        onChange={event => handleCustomizationSettingOptionChange(optionIndex, event.target.value)}
+                                        placeholder="輸入客製化選項"
+                                        className="min-w-0 flex-1 rounded-lg border border-[#EAE8E4] bg-white px-3 py-2 text-xs text-[#333333] outline-none transition-colors placeholder:text-[#AAA39A] focus:border-[#EA5B3C]"
+                                      />
+                                      <button
+                                        type="button"
+                                        onClick={() => handleRemoveCustomizationOption(optionIndex)}
+                                        aria-label={`刪除設定 ${settingNumber} 的選項 ${option}`}
+                                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[#99928A] transition-colors hover:bg-red-50 hover:text-red-600"
+                                      >
+                                        <i className="ti ti-x text-sm"></i>
+                                      </button>
+                                    </div>
+                                  ))}
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={handleAddCustomizationOption}
+                                  className="inline-flex items-center gap-1 rounded-lg px-2 py-1.5 text-[10px] font-bold text-[#EA5B3C] transition-colors hover:bg-white"
+                                >
+                                  <i className="ti ti-plus"></i>
+                                  新增選項
+                                </button>
+                                <div className="space-y-3 rounded-lg border border-[#EAE8E4] bg-white p-3">
+                                  <div className="flex items-center justify-between gap-3">
+                                    <div>
+                                      <div className="text-[11px] font-bold text-[#333333]">必選範圍</div>
+                                      <p className="mt-1 text-[10px] text-[#888888]">每個範圍恰選一項；範圍外的選項可不選。</p>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={handleAddRequiredOptionGroup}
+                                      disabled={setting.options.filter(Boolean).length === 0}
+                                      className="inline-flex shrink-0 items-center gap-1 rounded-lg px-2 py-1.5 text-[10px] font-bold text-[#EA5B3C] transition-colors hover:bg-[#F9F8F5] disabled:cursor-not-allowed disabled:opacity-40"
+                                    >
+                                      <i className="ti ti-plus"></i>
+                                      新增範圍
+                                    </button>
+                                  </div>
+                                  {(setting.requiredOptionGroups || []).length === 0 ? (
+                                    <div className="rounded-md border border-dashed border-[#EAE8E4] px-3 py-3 text-[10px] text-[#99928A]">
+                                      尚未設定必選範圍，所有客製化選項皆為自由選擇。
+                                    </div>
+                                  ) : (
+                                    <div className="space-y-2">
+                                      {setting.requiredOptionGroups.map((group, groupIndex) => (
+                                        <div key={group.id} className="space-y-2 rounded-md bg-[#F9F8F5] p-3">
+                                          <div className="flex items-center gap-2">
+                                            <span className="shrink-0 text-[10px] font-bold text-[#EA5B3C]">{String(groupIndex + 1).padStart(2, '0')}</span>
+                                            <input
+                                              type="text"
+                                              value={group.title || ''}
+                                              onChange={event => handleRequiredOptionGroupTitleChange(group.id, event.target.value)}
+                                              placeholder={`範圍名稱，例如：飯類二選一`}
+                                              aria-label={`必選範圍 ${groupIndex + 1} 名稱`}
+                                              className="min-w-0 flex-1 rounded-md border border-[#EAE8E4] bg-white px-2.5 py-1.5 text-[10px] outline-none focus:border-[#EA5B3C]"
+                                            />
+                                            <button
+                                              type="button"
+                                              onClick={() => handleRemoveRequiredOptionGroup(group.id)}
+                                              aria-label={`刪除必選範圍 ${groupIndex + 1}`}
+                                              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[#99928A] hover:bg-red-50 hover:text-red-600"
+                                            >
+                                              <i className="ti ti-x text-xs"></i>
+                                            </button>
+                                          </div>
+                                          <div className="flex flex-wrap gap-2">
+                                            {setting.options.filter(Boolean).map(option => {
+                                              const usedInAnotherGroup = setting.requiredOptionGroups.some(otherGroup => (
+                                                otherGroup.id !== group.id && otherGroup.options.includes(option)
+                                              ));
+                                              return (
+                                              <label key={`${group.id}-${option}`} className={`inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-[10px] font-medium transition-colors ${(group.options || []).includes(option) ? 'border-[#EA5B3C] bg-[#FFF3EF] text-[#EA5B3C]' : 'border-[#EAE8E4] bg-white text-[#666666]'}`}>
+                                                <input
+                                                  type="checkbox"
+                                                  checked={(group.options || []).includes(option)}
+                                                  onChange={() => handleRequiredOptionGroupToggle(group.id, option)}
+                                                  disabled={usedInAnotherGroup && !(group.options || []).includes(option)}
+                                                  className="accent-[#EA5B3C]"
+                                                />
+                                                {option}
+                                              </label>
+                                            );
+                                            })}
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              </>
+                            ) : (
+                              <p className="truncate text-[11px] text-[#777777]" title={optionPreview || '尚無選項'}>
+                                {optionPreview || '尚無選項'}
+                              </p>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </section>
 
                 {menuItems.length === 0 ? (
                   <div className="text-center py-10 border border-dashed border-[#D6D1CA] rounded-xl text-xs text-[#888888] space-y-2">
@@ -1053,7 +1607,7 @@ export default function RestaurantsPage() {
                     <p>尚無任何餐點項目。</p>
                   </div>
                 ) : (
-                  <div className="relative overflow-hidden rounded-xl border border-[#EAE8E4]">
+                  <div className="relative overflow-hidden rounded-lg border border-[#EAE8E4]">
                     <div
                       className={`overflow-x-auto touch-pan-y ${
                         isMenuTableDragging ? 'cursor-grabbing select-none' : 'cursor-grab'
@@ -1071,16 +1625,16 @@ export default function RestaurantsPage() {
                       role="region"
                       aria-label="菜單品項表格，可按住拖曳左右移動"
                     >
-                    <table className="min-w-[710px] w-full table-fixed text-left border-collapse text-xs">
+                    <table className="min-w-[680px] w-full table-fixed text-left border-collapse text-xs">
                       <thead>
                         <tr className="bg-[#F9F8F5] text-[#888888] font-bold border-b border-[#EAE8E4]">
-                          <th className="w-[150px] p-3">品項名稱</th>
-                          <th className="p-3 w-[120px]">單價 (NT$)</th>
-                          <th className="w-[72px] p-3 text-center">類型</th>
-                          <th className="p-3 min-w-[220px]">客製化選項</th>
+                          <th className="w-[140px] p-2">品項名稱</th>
+                          <th className="p-2 w-[100px]">單價 (NT$)</th>
+                          <th className="w-[100px] p-2">類型書籤</th>
+                          <th className="w-[160px] p-2">客製化設定</th>
                           <th
                             data-table-actions
-                            className="sticky right-0 z-10 w-[148px] cursor-default border-l border-[#EAE8E4] bg-[#F9F8F5] p-3 text-center"
+                            className="sticky right-0 z-10 w-[120px] cursor-default border-l border-[#EAE8E4] bg-[#F9F8F5] p-2 text-center"
                           >
                             操作
                           </th>
@@ -1091,13 +1645,20 @@ export default function RestaurantsPage() {
                           const isEditing = editingMenuItemIndex === index;
                           const isAvailable = item.isAvailable !== false;
                           const itemLabel = item.name || '未命名品項';
+                          const categoryIndex = displayedCategoryOrder.indexOf(item.category);
+                          const customizationSettingIndex = customizationSettings.findIndex(
+                            setting => setting.id === item.customizationSettingId
+                          );
+                          const customizationSettingLabel = customizationSettingIndex >= 0
+                            ? `${String(customizationSettingIndex + 1).padStart(2, '0')} ${customizationSettings[customizationSettingIndex].title || optionsToInputValue(customizationSettings[customizationSettingIndex].options) || '未設定選項'}`
+                            : '未套用設定';
 
                           return (
                           <tr
                             key={item.id || `new-${index}`}
                             className={isAvailable ? 'hover:bg-[#F9F8F5]/30' : 'bg-[#F4F3F1] text-[#999999]'}
                           >
-                            <td className="p-2">
+                            <td className="p-1.5">
                               {isEditing ? <input
                                 type="text"
                                 value={item.name}
@@ -1109,52 +1670,80 @@ export default function RestaurantsPage() {
                                 </div>
                               )}
                             </td>
-                            <td className="p-2">
+                            <td className="p-1.5">
                               {isEditing ? <input
                                 type="number"
-                                value={item.price}
-                                onChange={(e) => handleMenuItemChange(index, 'price', parseInt(e.target.value, 10) || 0)}
+                                value={item.price ?? ''}
+                                onFocus={(event) => {
+                                  if (Number(item.price) === 0) event.currentTarget.select();
+                                }}
+                                onChange={(e) => handleMenuItemChange(index, 'price', e.target.value)}
                                 className="w-full text-xs px-2 py-1.5 border border-[#EAE8E4] rounded focus:outline-none focus:border-[#EA5B3C] bg-white font-bold"
                               /> : <span className="block px-2 py-1.5 font-bold">NT$ {item.price}</span>}
                             </td>
-                            <td className="p-2 text-center">
+                            <td className="p-1.5 text-center">
                               {isEditing ? (
-                                <div className="flex items-center gap-1.5">
-                                  <span className="shrink-0 text-[10px] font-bold text-[#EA5B3C]">
-                                    {String(Math.max(0, displayedCategoryOrder.indexOf(item.category)) + 1).padStart(2, '0')}
-                                  </span>
+                                <div className="space-y-1.5">
+                                  <select
+                                    value={displayedCategoryOrder.includes(item.category) ? item.category : ''}
+                                    onChange={event => handleMenuItemChange(index, 'category', event.target.value)}
+                                    aria-label={`選擇 ${itemLabel} 的類型書籤`}
+                                    className="w-full rounded border border-[#EAE8E4] bg-white px-1.5 py-1.5 text-[10px] font-bold text-[#EA5B3C] outline-none focus:border-[#EA5B3C]"
+                                  >
+                                    <option value="" disabled>選擇書籤</option>
+                                    {displayedCategoryOrder.map((category, categoryOrderIndex) => (
+                                      <option key={category} value={category}>
+                                        {String(categoryOrderIndex + 1).padStart(2, '0')} {category}
+                                      </option>
+                                    ))}
+                                  </select>
                                   <input
                                     type="text"
                                     value={item.category || ''}
                                     onChange={(e) => handleMenuItemChange(index, 'category', e.target.value)}
-                                    className="min-w-0 flex-1 text-xs px-2 py-1.5 border border-[#EAE8E4] rounded focus:outline-none focus:border-[#EA5B3C] bg-white font-medium"
+                                    placeholder="或輸入新類型"
+                                    aria-label={`輸入 ${itemLabel} 的新類型書籤`}
+                                    className="w-full min-w-0 rounded border border-[#EAE8E4] bg-white px-1.5 py-1.5 text-[10px] font-medium outline-none focus:border-[#EA5B3C]"
                                   />
                                 </div>
                               ) : (
-                                <span
-                                  className="block py-1.5 text-xs font-bold text-[#EA5B3C]"
-                                  title={item.category || '主食'}
+                                <div className="flex items-center gap-1.5 px-2 py-1.5" title={item.category || '主食'}>
+                                  <span className="shrink-0 text-[10px] font-bold text-[#EA5B3C]">
+                                    {String(Math.max(0, categoryIndex) + 1).padStart(2, '0')}
+                                  </span>
+                                  <span className="min-w-0 truncate text-[10px] font-bold text-[#555555]">
+                                    {item.category || '主食'}
+                                  </span>
+                                </div>
+                              )}
+                            </td>
+                            <td className="p-1.5">
+                              {viewingRestaurantId ? (
+                                <span className="block truncate px-2 py-1.5 text-[10px] text-[#666666]" title={customizationSettingLabel}>
+                                  {customizationSettingIndex >= 0 ? customizationSettingLabel : optionsToInputValue(item.customizationOptions) || '—'}
+                                </span>
+                              ) : (
+                                <select
+                                  value={item.customizationSettingId || ''}
+                                  onChange={event => handleMenuItemCustomizationSettingChange(index, event.target.value)}
+                                  disabled={editingMenuItemIndex !== null || !!editingCustomizationSettingId || customizationSettings.length === 0}
+                                  aria-label={`選擇 ${itemLabel} 的客製化設定`}
+                                  title={editingMenuItemIndex !== null ? '請先完成目前品項編輯' : customizationSettingLabel}
+                                  className="w-full max-w-[140px] rounded-lg border border-[#EAE8E4] bg-white px-1.5 py-2 text-[10px] font-bold text-[#555555] outline-none transition-colors focus:border-[#EA5B3C] disabled:cursor-not-allowed disabled:bg-[#F4F3F1] disabled:opacity-60"
                                 >
-                                  {String(Math.max(0, displayedCategoryOrder.indexOf(item.category)) + 1).padStart(2, '0')}
-                                </span>
+                                  <option value="">--</option>
+                                  {customizationSettings.map((setting, settingIndex) => (
+                                    <option key={setting.id} value={setting.id} disabled={normalizeCustomizationOptions(setting.options).length === 0}>
+                                  {String(settingIndex + 1).padStart(2, '0')} {setting.title || optionsToInputValue(setting.options) || '未設定選項'}
+                                    </option>
+                                  ))}
+                                </select>
                               )}
                             </td>
-                            <td className="p-2">
-                              {isEditing ? <input
-                                type="text"
-                                value={optionsToInputValue(item.customizationOptions)}
-                                onChange={(e) => handleMenuItemChange(index, 'customizationOptions', normalizeCustomizationOptions(e.target.value))}
-                                className="w-full text-xs px-2 py-1.5 border border-[#EAE8E4] rounded focus:outline-none focus:border-[#EA5B3C] bg-white font-medium"
-                              /> : (
-                                <span className="block truncate px-2 py-1.5" title={optionsToInputValue(item.customizationOptions)}>
-                                  {optionsToInputValue(item.customizationOptions) || '—'}
-                                </span>
-                              )}
-                            </td>
-                            <td data-table-actions className={`sticky right-0 cursor-default border-l border-[#EAE8E4] p-2 ${
+                            <td data-table-actions className={`sticky right-0 cursor-default border-l border-[#EAE8E4] p-1.5 ${
                               isAvailable ? 'bg-white' : 'bg-[#F4F3F1]'
                             }`}>
-                              <div className="flex items-center justify-center gap-1">
+                              <div className="flex items-center justify-center gap-0.5">
                               {viewingRestaurantId ? (
                                 <span className="text-[10px] font-bold tracking-wider text-[#888888]">唯讀</span>
                               ) : (
@@ -1162,7 +1751,7 @@ export default function RestaurantsPage() {
                               <button
                                 type="button"
                                 onClick={() => handleToggleMenuItem(index)}
-                                className={`flex h-7 w-7 items-center justify-center rounded-full border transition-all ${
+                                className={`flex h-6 w-6 items-center justify-center rounded-full border transition-all ${
                                   isAvailable
                                     ? 'border-green-200 text-green-700 hover:bg-green-50'
                                     : 'border-gray-300 text-gray-500 hover:bg-white'
@@ -1177,7 +1766,7 @@ export default function RestaurantsPage() {
                                   <button
                                     type="button"
                                     onClick={handleCancelMenuItemEdit}
-                                    className="flex h-7 w-7 items-center justify-center rounded-full border border-[#D6D1CA] bg-white text-[#777777] transition-all hover:border-red-300 hover:bg-red-50 hover:text-red-600"
+                                    className="flex h-6 w-6 items-center justify-center rounded-full border border-[#D6D1CA] bg-white text-[#777777] transition-all hover:border-red-300 hover:bg-red-50 hover:text-red-600"
                                     aria-label={`取消編輯 ${itemLabel}`}
                                     title="取消編輯"
                                   >
@@ -1186,7 +1775,7 @@ export default function RestaurantsPage() {
                                   <button
                                     type="button"
                                     onClick={handleConfirmMenuItemEdit}
-                                    className="flex h-7 w-7 items-center justify-center rounded-full border border-green-600 bg-green-600 text-white transition-all hover:bg-green-700"
+                                    className="flex h-6 w-6 items-center justify-center rounded-full border border-green-600 bg-green-600 text-white transition-all hover:bg-green-700"
                                     aria-label={`確認編輯 ${itemLabel}`}
                                     title="確認編輯"
                                   >
@@ -1197,10 +1786,10 @@ export default function RestaurantsPage() {
                                 <button
                                   type="button"
                                   onClick={() => handleStartMenuItemEdit(index)}
-                                  disabled={editingMenuItemIndex !== null}
-                                  className="flex h-7 w-7 items-center justify-center rounded-full border border-[#D6D1CA] text-[#555555] transition-all hover:border-[#EA5B3C] hover:text-[#EA5B3C] disabled:cursor-not-allowed disabled:opacity-35"
+                                  disabled={editingMenuItemIndex !== null || !!editingCustomizationSettingId}
+                                  className="flex h-6 w-6 items-center justify-center rounded-full border border-[#D6D1CA] text-[#555555] transition-all hover:border-[#EA5B3C] hover:text-[#EA5B3C] disabled:cursor-not-allowed disabled:opacity-35"
                                   aria-label={`編輯 ${itemLabel}`}
-                                  title={editingMenuItemIndex !== null ? '請先完成目前品項編輯' : '編輯品項'}
+                                  title={editingCustomizationSettingId ? '請先確認或取消客製化設定編輯' : editingMenuItemIndex !== null ? '請先完成目前品項編輯' : '編輯品項'}
                                 >
                                   <i className="ti ti-pencil"></i>
                                 </button>
@@ -1208,7 +1797,7 @@ export default function RestaurantsPage() {
                               <button
                                 type="button"
                                 onClick={() => handleRemoveMenuItem(index)}
-                                className="flex h-7 w-7 items-center justify-center rounded-full border border-transparent text-red-600 transition-all hover:border-red-200 hover:bg-red-50"
+                                className="flex h-6 w-6 items-center justify-center rounded-full border border-transparent text-red-600 transition-all hover:border-red-200 hover:bg-red-50"
                                 aria-label={`刪除 ${itemLabel}`}
                                 title="刪除品項"
                               >
@@ -1225,7 +1814,7 @@ export default function RestaurantsPage() {
                     </table>
                     </div>
                     <div
-                      className="pointer-events-none absolute bottom-0 right-0 z-30 h-3 w-[148px] border-l border-[#EAE8E4] bg-white"
+                      className="pointer-events-none absolute bottom-0 right-0 z-30 h-3 w-[120px] border-l border-[#EAE8E4] bg-white"
                       aria-hidden="true"
                     ></div>
                   </div>
@@ -1236,7 +1825,7 @@ export default function RestaurantsPage() {
               {menuItems.length > 0 && !editingRestaurantId && !viewingRestaurantId && (
                 <div className="pt-4 border-t border-[#EAE8E4] flex justify-end">
                   <button
-                    disabled={isSaving || !newRestName}
+                    disabled={isSaving || !!editingCustomizationSettingId || !newRestName}
                     onClick={handleSaveRestaurant}
                     className="px-8 py-3 text-xs font-bold bg-[#EA5B3C] text-white rounded-xl shadow-sm hover:bg-[#333333] transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
                   >

@@ -41,6 +41,9 @@ model MenuItem {
   price                Int
   category             String
   customizationOptions String?
+  customizationSettingTitle String?
+  requiredCustomizationOptions String?
+  requiredCustomizationOptionGroups String?
   isAvailable          Boolean     @default(true)
   orderItems           OrderItem[]
 }

@@ -22,6 +22,10 @@ export default function UsersManagementPage() {
   const [draftViewerPage, setDraftViewerPage] = useState('overview');
   const [activeRoleInfo, setActiveRoleInfo] = useState('');
   const [statusMsg, setStatusMsg] = useState({ text: '', type: '' });
+  const [deleteCandidate, setDeleteCandidate] = useState(null);
+  const [deletingUserId, setDeletingUserId] = useState('');
+  const [accountSettledConfirmed, setAccountSettledConfirmed] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
 
   useEffect(() => {
     const loadPage = async () => {
@@ -74,6 +78,20 @@ export default function UsersManagementPage() {
       window.removeEventListener('keydown', handleKeyDown);
     };
   }, [selectedMember, updatingUserId]);
+
+  useEffect(() => {
+    if (!deleteCandidate) return undefined;
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const handleKeyDown = event => {
+      if (event.key === 'Escape' && !deletingUserId) setDeleteCandidate(null);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.body.style.overflow = originalOverflow;
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [deleteCandidate, deletingUserId]);
 
   const filteredMembers = useMemo(() => {
     const keyword = searchTerm.trim().toLowerCase();
@@ -134,6 +152,37 @@ export default function UsersManagementPage() {
       setStatusMsg({ text: error.message, type: 'error' });
     } finally {
       setUpdatingUserId('');
+    }
+  };
+
+  const openDeleteConfirmation = member => {
+    setDeleteCandidate(member);
+    setAccountSettledConfirmed(false);
+    setDeleteError('');
+  };
+
+  const handleDeleteMember = async () => {
+    if (!deleteCandidate || !accountSettledConfirmed || deletingUserId) return;
+
+    setDeletingUserId(deleteCandidate.id);
+    setDeleteError('');
+    try {
+      const response = await fetch('/api/wallets', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ targetUserId: deleteCandidate.id }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || '刪除成員失敗');
+
+      const deletedName = getDisplayName(deleteCandidate.name);
+      setMembers(current => current.filter(member => member.id !== deleteCandidate.id));
+      setDeleteCandidate(null);
+      setStatusMsg({ text: `已刪除成員「${deletedName}」及其消費紀錄。`, type: 'success' });
+    } catch (error) {
+      setDeleteError(error.message);
+    } finally {
+      setDeletingUserId('');
     }
   };
 
@@ -227,15 +276,27 @@ export default function UsersManagementPage() {
                     </div>
                     <p className="mt-1 truncate text-xs text-[#888888]">{member.email}</p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => openMemberSettings(member)}
-                    className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[#EAE8E4] bg-white text-[#888888] transition-all hover:border-[#EA5B3C] hover:text-[#EA5B3C]"
-                    aria-label={`設定 ${getDisplayName(member.name)}`}
-                    title="人員設定"
-                  >
-                    <i className="ti ti-settings text-lg"></i>
-                  </button>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => openMemberSettings(member)}
+                      className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[#EAE8E4] bg-white text-[#888888] transition-all hover:border-[#EA5B3C] hover:text-[#EA5B3C]"
+                      aria-label={`設定 ${getDisplayName(member.name)}`}
+                      title="人員設定"
+                    >
+                      <i className="ti ti-settings text-lg"></i>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isSelf || Boolean(deletingUserId)}
+                      onClick={() => openDeleteConfirmation(member)}
+                      className="inline-flex h-[38px] w-[38px] items-center justify-center rounded-full bg-red-600 text-white transition-colors hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-40"
+                      aria-label={`刪除 ${getDisplayName(member.name)}`}
+                      title={isSelf ? '不能刪除目前登入的管理者' : '刪除成員'}
+                    >
+                      <i className="ti ti-minus text-xl"></i>
+                    </button>
+                  </div>
                 </article>
               );
             })}
@@ -329,7 +390,7 @@ export default function UsersManagementPage() {
                 </div>
               </div>
 
-              {draftRole === 'viewer' && (
+                {draftRole === 'viewer' && (
                 <div className="mt-5 grid grid-cols-[auto_minmax(0,1fr)] items-center gap-4 rounded-xl border border-[#EAE8E4] bg-[#F9F8F5] p-4">
                   <label htmlFor="viewer-page" className="text-sm font-bold text-[#333333]">檢視頁面</label>
                   <div className="relative min-w-0">
@@ -373,6 +434,74 @@ export default function UsersManagementPage() {
                 className="rounded-xl bg-[#EA5B3C] py-3 text-sm font-bold text-white hover:bg-[#d94f33] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {updatingUserId ? '儲存中...' : '儲存'}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {deleteCandidate && (
+        <div
+          className="fixed inset-0 z-[110] flex items-center justify-center bg-black/45 p-4 backdrop-blur-[2px]"
+          role="presentation"
+          onMouseDown={event => {
+            if (event.target === event.currentTarget && !deletingUserId) setDeleteCandidate(null);
+          }}
+        >
+          <section
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="delete-member-title"
+            aria-describedby="delete-member-description"
+            className="w-full max-w-md rounded-2xl border border-red-100 bg-white p-6 shadow-2xl"
+          >
+            <div className="flex items-start gap-4">
+              <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-red-100 text-red-600">
+                <i className="ti ti-alert-triangle text-2xl"></i>
+              </span>
+              <div>
+                <h2 id="delete-member-title" className="text-lg font-bold text-[#333333]">確認刪除成員？</h2>
+                <p className="mt-1 text-sm font-bold text-red-600">{getDisplayName(deleteCandidate.name)}</p>
+              </div>
+            </div>
+            <div id="delete-member-description" className="mt-5 space-y-2 text-sm leading-6 text-[#555555]">
+              <p>刪除後將一併刪除此用戶的所有消費紀錄與訂購紀錄，且無法復原。</p>
+              <p className="font-bold text-red-600">請先確認帳款已結清。若仍有餘額或未結帳訂單，系統將阻止刪除。</p>
+            </div>
+
+            <label className="mt-5 flex cursor-pointer items-start gap-3 rounded-xl border border-[#EAE8E4] bg-[#F9F8F5] p-3 text-sm font-bold text-[#444444]">
+              <input
+                type="checkbox"
+                checked={accountSettledConfirmed}
+                disabled={Boolean(deletingUserId)}
+                onChange={event => setAccountSettledConfirmed(event.target.checked)}
+                className="mt-0.5 h-4 w-4 shrink-0 accent-red-600"
+              />
+              <span>我已確認此成員帳款結清，並了解所有紀錄將被刪除。</span>
+            </label>
+
+            {deleteError && (
+              <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold leading-5 text-red-700" role="alert">
+                {deleteError}
+              </p>
+            )}
+
+            <div className="mt-6 grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                disabled={Boolean(deletingUserId)}
+                onClick={() => setDeleteCandidate(null)}
+                className="rounded-xl border border-[#EAE8E4] bg-white py-3 text-sm font-bold text-[#555555] hover:border-[#BBBBBB] disabled:opacity-50"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                disabled={!accountSettledConfirmed || Boolean(deletingUserId)}
+                onClick={handleDeleteMember}
+                className="rounded-xl bg-red-600 py-3 text-sm font-bold text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {deletingUserId ? '刪除中...' : '確認刪除'}
               </button>
             </div>
           </section>
